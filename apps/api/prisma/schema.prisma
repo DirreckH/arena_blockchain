@@ -1,0 +1,485 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PropositionType {
+  consensus
+}
+
+enum PropositionStructure {
+  binary
+}
+
+enum RollingMode {
+  non_rolling
+  rolling
+}
+
+enum SettlementTarget {
+  final
+}
+
+enum PropositionCategory {
+  general
+  sports
+  ai
+  brand_research
+  politics
+  entertainment
+}
+
+enum PropositionStatus {
+  draft
+  scheduled
+  live
+  frozen
+  revealing
+  settled
+  closed
+  archived
+}
+
+enum PropositionResultKind {
+  resolved
+  void
+}
+
+enum PropositionVoidReason {
+  insufficient_sample
+  tie
+}
+
+enum DispatchTaskStatus {
+  assigned
+  started
+  submitted
+  skipped
+  expired
+  cancelled
+}
+
+enum ResponseReviewStatus {
+  pending_review
+  valid
+  partial_valid
+  invalid
+  fraud_suspected
+}
+
+enum MarketStatus {
+  pre_live
+  live
+  frozen_for_reveal
+  settling
+  settled
+  cancelled
+}
+
+enum BetStatus {
+  placed
+  settled
+  cancelled
+}
+
+enum BetSettlementOutcome {
+  won
+  lost
+  refund
+}
+
+enum ValidationChainMarketStatus {
+  pre_live
+  live
+  frozen
+  resolved
+  cancelled
+}
+
+enum ValidationChainResultKind {
+  resolved
+  void
+}
+
+enum ValidationChainVoidReason {
+  insufficient_sample
+  tie
+}
+
+enum ValidationChainSyncStatus {
+  idle
+  syncing
+  error
+  paused
+}
+
+enum RewardLedgerSourceType {
+  response
+}
+
+enum RewardLedgerStatus {
+  pending
+  finalized
+  voided
+  reversed
+}
+
+enum RewardLedgerReasonCode {
+  review_valid
+  review_partial_valid
+  invalid_review
+  review_corrected
+  superseded_pending_latest
+  late_submit
+  expired_task_submit
+  revealing_started_submit
+  fraud_suspected_review
+}
+
+enum ReputationLevel {
+  new
+  normal
+  trusted
+  risky
+}
+
+enum UserTagType {
+  quality_reputation
+  interest
+}
+
+enum UserTagSourceType {
+  reputation
+  participation
+}
+
+model SystemKeyValue {
+  id          String    @id @db.Text
+  key         String    @unique @db.Text
+  valueJson   Json?     @map("value_json")
+  description String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  @@index([deletedAt], map: "idx_system_key_value_deleted_at")
+  @@map("system_key_value")
+}
+
+model Proposition {
+  id                     String                  @id @db.Text
+  chainPkId              BigInt?                 @unique(map: "uq_proposition_chain_pk_id") @map("chain_pk_id") @db.BigInt
+  type                   PropositionType         @default(consensus)
+  structure              PropositionStructure    @default(binary)
+  rollingMode            RollingMode             @default(non_rolling) @map("rolling_mode")
+  marketEnabled          Boolean                 @default(true) @map("market_enabled")
+  settlementTarget       SettlementTarget        @default(final) @map("settlement_target")
+  category               PropositionCategory     @default(general)
+  title                  String                  @db.Text
+  description            String                  @db.Text
+  options                String[]
+  sampleConstraints      String[]                @default([]) @map("sample_constraints")
+  minEffectiveSample     Int                     @map("min_effective_sample")
+  minBetAmount           String                  @map("min_bet_amount") @db.Text
+  minDurationSeconds     Int                     @map("min_duration_seconds")
+  maxDurationSeconds     Int                     @map("max_duration_seconds")
+  rewardBudget           String                  @map("reward_budget") @db.Text
+  baseResponseReward     String                  @map("base_response_reward") @db.Text
+  status                 PropositionStatus       @default(draft)
+  resultKind             PropositionResultKind?  @map("result_kind")
+  winningOption          Int?                    @map("winning_option")
+  voidReason             PropositionVoidReason?  @map("void_reason")
+  publishedAt            DateTime?               @map("published_at") @db.Timestamptz(3)
+  liveAt                 DateTime?               @map("live_at") @db.Timestamptz(3)
+  frozenAt               DateTime?               @map("frozen_at") @db.Timestamptz(3)
+  revealStartedAt        DateTime?               @map("reveal_started_at") @db.Timestamptz(3)
+  resultComputedAt       DateTime?               @map("result_computed_at") @db.Timestamptz(3)
+  settledAt              DateTime?               @map("settled_at") @db.Timestamptz(3)
+  closedAt               DateTime?               @map("closed_at") @db.Timestamptz(3)
+  archivedAt             DateTime?               @map("archived_at") @db.Timestamptz(3)
+  createdByUserId        String                  @map("created_by_user_id") @db.Text
+  updatedByUserId        String?                 @map("updated_by_user_id") @db.Text
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  dispatchTasks          DispatchTask[]
+  responses              Response[]
+  effectiveSampleCounter EffectiveSampleCounter?
+  market                 Market?
+  bets                   Bet[]
+  rewardLedgers          RewardLedger[]
+
+  @@index([status, publishedAt], map: "idx_proposition_status_published_at")
+  @@index([status, liveAt], map: "idx_proposition_status_live_at")
+  @@map("proposition")
+}
+
+model DispatchTask {
+  id            String             @id @db.Text
+  propositionId String             @map("proposition_id") @db.Text
+  userId        String             @map("user_id") @db.Text
+  status        DispatchTaskStatus @default(assigned)
+  assignedAt    DateTime           @map("assigned_at") @db.Timestamptz(3)
+  startedAt     DateTime?          @map("started_at") @db.Timestamptz(3)
+  submittedAt   DateTime?          @map("submitted_at") @db.Timestamptz(3)
+  expiresAt     DateTime           @map("expires_at") @db.Timestamptz(3)
+  skipReason    String?            @map("skip_reason") @db.Text
+  expiryReason  String?            @map("expiry_reason") @db.Text
+  cooldownUntil DateTime?          @map("cooldown_until") @db.Timestamptz(3)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  proposition   Proposition        @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  responses     Response[]
+
+  @@index([propositionId, userId, status], map: "idx_dispatch_task_proposition_user_status")
+  @@index([userId, status, expiresAt], map: "idx_dispatch_task_user_status_expires_at")
+  @@index([status, expiresAt], map: "idx_dispatch_task_status_expires_at")
+  @@map("dispatch_task")
+}
+
+model Response {
+  id                 String          @id @db.Text
+  propositionId      String          @map("proposition_id") @db.Text
+  taskId             String          @map("task_id") @db.Text
+  userId             String          @map("user_id") @db.Text
+  responsePayload    Json            @map("response_payload")
+  responseVersion    Int             @default(1) @map("response_version")
+  isLatest           Boolean         @default(true) @map("is_latest")
+  selectedOption     Int             @map("selected_option")
+  confirmationOption Int             @map("confirmation_option")
+  clientStartedAt    DateTime        @map("client_started_at") @db.Timestamptz(3)
+  clientSubmittedAt  DateTime        @map("client_submitted_at") @db.Timestamptz(3)
+  understandingAck   Boolean         @default(false) @map("understanding_ack")
+  submittedAt        DateTime        @map("submitted_at") @db.Timestamptz(3)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  proposition        Proposition     @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  task               DispatchTask    @relation(fields: [taskId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  review             ResponseReview?
+  rewardLedgers      RewardLedger[]
+
+  @@unique([taskId, responseVersion], map: "uq_response_task_version")
+  @@index([propositionId, userId, isLatest], map: "idx_response_proposition_user_is_latest")
+  @@index([taskId, submittedAt], map: "idx_response_task_submitted_at")
+  @@map("response")
+}
+
+model ResponseReview {
+  id               String               @id @db.Text
+  responseId       String               @unique(map: "uq_response_review_response_id") @map("response_id") @db.Text
+  status           ResponseReviewStatus @default(pending_review)
+  qualityScore     Int                  @default(0) @map("quality_score")
+  flags            String[]             @default([])
+  reasonCodes      String[]             @default([]) @map("reason_codes")
+  reviewedByUserId String?              @map("reviewed_by_user_id") @db.Text
+  reviewedAt       DateTime?            @map("reviewed_at") @db.Timestamptz(3)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  response         Response             @relation(fields: [responseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([status, reviewedAt], map: "idx_response_review_status_reviewed_at")
+  @@map("response_review")
+}
+
+model EffectiveSampleCounter {
+  id                String      @id @db.Text
+  propositionId     String      @unique(map: "uq_effective_sample_counter_proposition_id") @map("proposition_id") @db.Text
+  totalResponses    Int         @default(0) @map("total_responses")
+  reviewedResponses Int         @default(0) @map("total_reviewed_count")
+  validCount        Int         @default(0) @map("valid_count")
+  partialValidCount Int         @default(0) @map("partial_valid_count")
+  invalidCount      Int         @default(0) @map("invalid_count")
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  proposition       Proposition @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([updatedAt], map: "idx_effective_sample_counter_updated_at")
+  @@map("effective_sample_counter")
+}
+
+model Market {
+  id                    String           @id @db.Text
+  propositionId         String           @unique(map: "uq_market_proposition_id") @map("proposition_id") @db.Text
+  settlementTarget      SettlementTarget @default(final) @map("settlement_target")
+  status                MarketStatus     @default(pre_live)
+  chainMarketId         String?          @unique(map: "uq_market_chain_market_id") @map("chain_market_id") @db.Text
+  chainPropositionId    String?          @map("chain_proposition_id") @db.Text
+  chainStatus           ValidationChainMarketStatus? @map("chain_status")
+  chainOpenedAt         DateTime?        @map("chain_opened_at") @db.Timestamptz(3)
+  chainFrozenAt         DateTime?        @map("chain_frozen_at") @db.Timestamptz(3)
+  chainResolvedAt       DateTime?        @map("chain_resolved_at") @db.Timestamptz(3)
+  chainCancelledAt      DateTime?        @map("chain_cancelled_at") @db.Timestamptz(3)
+  chainResultKind       ValidationChainResultKind? @map("chain_result_kind")
+  chainWinningOption    Int?             @map("chain_winning_option")
+  chainVoidReason       ValidationChainVoidReason? @map("chain_void_reason")
+  resolutionTxHash      String?          @map("resolution_tx_hash") @db.Text
+  cancelTxHash          String?          @map("cancel_tx_hash") @db.Text
+  chainSyncedAt         DateTime?        @map("chain_synced_at") @db.Timestamptz(3)
+  currentPublicProgress Json?            @map("current_public_progress")
+  lastPublicResult      Json?            @map("last_public_result")
+  liveAt                DateTime?        @map("live_at") @db.Timestamptz(3)
+  frozenAt              DateTime?        @map("frozen_at") @db.Timestamptz(3)
+  settlingAt            DateTime?        @map("settling_at") @db.Timestamptz(3)
+  settledAt             DateTime?        @map("settled_at") @db.Timestamptz(3)
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  proposition           Proposition      @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  bets                  Bet[]
+
+  @@index([status, liveAt], map: "idx_market_status_live_at")
+  @@index([status, settledAt], map: "idx_market_status_settled_at")
+  @@index([chainPropositionId], map: "idx_market_chain_proposition_id")
+  @@index([chainStatus], map: "idx_market_chain_status")
+  @@map("market")
+}
+
+model Bet {
+  id                String                @id @db.Text
+  marketId          String                @map("market_id") @db.Text
+  propositionId     String                @map("proposition_id") @db.Text
+  userId            String                @map("user_id") @db.Text
+  selectedOption    Int                   @map("selected_option")
+  stakeAmount       String                @map("stake_amount") @db.Text
+  status            BetStatus             @default(placed)
+  placedAt          DateTime              @map("placed_at") @db.Timestamptz(3)
+  settledAt         DateTime?             @map("settled_at") @db.Timestamptz(3)
+  settlementOutcome BetSettlementOutcome? @map("settlement_outcome")
+  grossPayout       String?               @map("gross_payout") @db.Text
+  pnl               String?               @db.Text
+  refundAmount      String?               @map("refund_amount") @db.Text
+  claimed           Boolean               @default(false)
+  claimedAt         DateTime?             @map("claimed_at") @db.Timestamptz(3)
+  claimTxHash       String?               @map("claim_tx_hash") @db.Text
+  refundedAt        DateTime?             @map("refunded_at") @db.Timestamptz(3)
+  refundTxHash      String?               @map("refund_tx_hash") @db.Text
+  chainSyncedAt     DateTime?             @map("chain_synced_at") @db.Timestamptz(3)
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  market            Market                @relation(fields: [marketId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  proposition       Proposition           @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([marketId, userId], map: "uq_bet_market_user")
+  @@index([propositionId, userId], map: "idx_bet_proposition_user")
+  @@index([status, placedAt], map: "idx_bet_status_placed_at")
+  @@map("bet")
+}
+
+model ValidationChainEvent {
+  id                 String   @id @default(cuid()) @db.Text
+  chainId            Int      @map("chain_id")
+  contractAddress    String   @map("contract_address") @db.Text
+  blockNumber        Int      @map("block_number")
+  blockHash          String   @map("block_hash") @db.Text
+  transactionHash    String   @map("transaction_hash") @db.Text
+  transactionIndex   Int      @map("transaction_index")
+  logIndex           Int      @map("log_index")
+  eventName          String   @map("event_name") @db.Text
+  marketChainId      String?  @map("market_chain_id") @db.Text
+  propositionChainId String?  @map("proposition_chain_id") @db.Text
+  payloadJson        Json     @map("payload_json")
+  processedAt        DateTime @default(now()) @map("processed_at") @db.Timestamptz(3)
+
+  @@unique([chainId, transactionHash, logIndex], map: "uq_validation_chain_event_chain_tx_log")
+  @@index([chainId, contractAddress, blockNumber, transactionIndex, logIndex], map: "idx_validation_chain_event_stream_order")
+  @@index([marketChainId], map: "idx_validation_chain_event_market_chain_id")
+  @@index([propositionChainId], map: "idx_validation_chain_event_proposition_chain_id")
+  @@map("validation_chain_event")
+}
+
+model ValidationChainCursor {
+  streamKey           String                    @id @map("stream_key") @db.Text
+  chainId             Int                       @map("chain_id")
+  contractAddress     String                    @map("contract_address") @db.Text
+  lastProcessedBlock  Int?                      @map("last_processed_block")
+  lastProcessedTxHash String?                   @map("last_processed_tx_hash") @db.Text
+  lastProcessedLogIndex Int?                    @map("last_processed_log_index")
+  lastFinalizedBlock  Int?                      @map("last_finalized_block")
+  syncStatus          ValidationChainSyncStatus @default(idle) @map("sync_status")
+  createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("validation_chain_cursor")
+}
+
+model RewardLedger {
+  id                 String                 @id @db.Text
+  propositionId      String                 @map("proposition_id") @db.Text
+  responseId         String                 @map("response_id") @db.Text
+  userId             String                 @map("user_id") @db.Text
+  sourceType         RewardLedgerSourceType @default(response) @map("source_type")
+  sourceId           String                 @map("source_id") @db.Text
+  ledgerVersion      Int                    @default(1) @map("ledger_version")
+  pendingAmount      String                 @map("pending_amount") @db.Text
+  finalAmount        String?                @map("final_amount") @db.Text
+  status             RewardLedgerStatus     @default(pending)
+  reviewStatus       ResponseReviewStatus?  @map("review_status")
+  finalizedAt        DateTime?              @map("finalized_at") @db.Timestamptz(3)
+  voidedAt           DateTime?              @map("voided_at") @db.Timestamptz(3)
+  reversedAt         DateTime?              @map("reversed_at") @db.Timestamptz(3)
+  reversalOfLedgerId String?                @map("reversal_of_ledger_id") @db.Text
+  reasonCode         RewardLedgerReasonCode? @map("reason_code")
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  proposition        Proposition            @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  response           Response               @relation(fields: [responseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([responseId, ledgerVersion], map: "uq_reward_ledger_response_version")
+  @@index([propositionId, userId, sourceType, createdAt], map: "idx_reward_ledger_proposition_user_source")
+  @@index([userId, status], map: "idx_reward_ledger_user_status")
+  @@index([userId, sourceType, sourceId], map: "idx_reward_ledger_user_source")
+  @@map("reward_ledger")
+}
+
+model UserReputation {
+  id              String          @id @db.Text
+  userId          String          @unique(map: "uq_user_reputation_user_id") @map("user_id") @db.Text
+  reputationScore Int             @map("reputation_score")
+  reputationLevel ReputationLevel @map("reputation_level")
+  ruleVersion     String          @map("rule_version") @db.Text
+  metricsJson     Json            @map("metrics_json")
+  computedAt      DateTime        @map("computed_at") @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([reputationLevel, computedAt], map: "idx_user_reputation_level_computed_at")
+  @@map("user_reputation")
+}
+
+model UserTag {
+  id              String            @id @db.Text
+  userId          String            @map("user_id") @db.Text
+  tagKey          String            @map("tag_key") @db.Text
+  tagType         UserTagType       @map("tag_type")
+  tagValue        String            @map("tag_value") @db.Text
+  confidenceScore Int               @map("confidence_score")
+  sourceType      UserTagSourceType @map("source_type")
+  ruleVersion     String            @map("rule_version") @db.Text
+  metadataJson    Json              @map("metadata_json")
+  activatedAt     DateTime          @map("activated_at") @db.Timestamptz(3)
+  expiresAt       DateTime?         @map("expires_at") @db.Timestamptz(3)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([userId, tagKey], map: "uq_user_tag_user_key")
+  @@index([userId, tagType, expiresAt], map: "idx_user_tag_user_type_expires_at")
+  @@map("user_tag")
+}
+
+model InternalAuditEvent {
+  id          String   @id @db.Text
+  entityType  String   @map("entity_type") @db.Text
+  entityId    String   @map("entity_id") @db.Text
+  action      String   @db.Text
+  actorUserId String?  @map("actor_user_id") @db.Text
+  reason      String   @db.Text
+  note        String?  @db.Text
+  metadataJson Json?   @map("metadata_json")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([entityType, entityId, createdAt], map: "idx_internal_audit_entity_created_at")
+  @@index([action, createdAt], map: "idx_internal_audit_action_created_at")
+  @@map("internal_audit_event")
+}

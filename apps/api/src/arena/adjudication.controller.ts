@@ -1,0 +1,65 @@
+import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
+import type { SubmitAdjudicationResponseResult } from "@arena/shared";
+
+import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
+import { SubmitTaskResponseDto } from "./dto/submit-task-response.dto";
+import { AdjudicationViewService } from "./services/adjudication-view.service";
+import { EffectiveSampleCounterService } from "./services/effective-sample-counter.service";
+import { ResponseService } from "./services/response.service";
+
+@Controller("arena/adjudication")
+export class ArenaAdjudicationController {
+  constructor(
+    private readonly adjudicationViews: AdjudicationViewService,
+    private readonly responses: ResponseService,
+    private readonly counters: EffectiveSampleCounterService,
+  ) {}
+
+  @Get("tasks")
+  listTasks(
+    @Req() request: RequestWithUser,
+  ) {
+    return this.adjudicationViews.listTasksForUser(this.getUserId(request));
+  }
+
+  @Get("tasks/:taskId")
+  getTask(
+    @Param("taskId") taskId: string,
+    @Req() request: RequestWithUser,
+  ) {
+    return this.adjudicationViews.getTaskForUser(taskId, this.getUserId(request));
+  }
+
+  @Post("tasks/:taskId/responses")
+  async submitResponse(
+    @Param("taskId") taskId: string,
+    @Body() body: SubmitTaskResponseDto,
+    @Req() request: RequestWithUser,
+  ): Promise<SubmitAdjudicationResponseResult> {
+    const userId = this.getUserId(request);
+    const response = await this.responses.submitResponse({
+      propositionId: body.propositionId,
+      taskId,
+      userId,
+      selectedOption: body.selectedOption as 0 | 1,
+      confirmationOption: body.confirmationOption as 0 | 1,
+      clientStartedAt: body.clientStartedAt,
+      clientSubmittedAt: body.clientSubmittedAt,
+      understandingAck: body.understandingAck,
+      submittedAt: body.submittedAt,
+    });
+    await this.counters.rebuildCounterForProposition(body.propositionId);
+
+    return {
+      taskView: await this.adjudicationViews.getTaskForUser(taskId, userId),
+      responseId: response.id,
+      duplicateRetry: false,
+      reviewRequested: true,
+      counterRebuildRequired: true,
+    };
+  }
+
+  private getUserId(request: RequestWithUser): string {
+    return request.user?.sub as string;
+  }
+}

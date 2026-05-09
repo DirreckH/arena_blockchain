@@ -1,0 +1,38 @@
+{
+  "name": "@arena/shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js",
+      "require": "./dist/src/index.js"
+    },
+    "./auth": {
+      "types": "./dist/src/auth.d.ts",
+      "import": "./dist/src/auth.js",
+      "require": "./dist/src/auth.js"
+    },
+    "./system": {
+      "types": "./dist/src/system.d.ts",
+      "import": "./dist/src/system.js",
+      "require": "./dist/src/system.js"
+    },
+    "./arena": {
+      "types": "./dist/src/arena/index.d.ts",
+      "import": "./dist/src/arena/index.js",
+      "require": "./dist/src/arena/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm run build && node --test dist/tests/**/*.test.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
+  }
+}

@@ -12,7 +12,13 @@ English | [简体中文](./README.md)
 
 Arena is a dual-layer Web3 / AI system that puts respondent adjudication and result-driven validation markets on the same product path.
 
-It is not a generic prediction market, and it is not a demo that loosely stitches together surveys, trading, and wallet login. The repository is trying to establish a stricter product boundary: the adjudication layer produces verifiable outcomes, the validation layer handles staking, settlement, and refunds around those outcomes, and before resolution the public surface exposes progress, not directional signal.
+In more protocol-native language, Arena can be summarized as:
+
+`Arena = short-term judgment oracle + long-term domain reputation graph`
+
+It is designed for subjective decision-making in DAOs and onchain communities: in the short term it produces callable collective decision signals, and in the long term it accumulates domain-specific judgment reputation across participants.
+
+It is not a generic prediction market, it is not a demo that loosely stitches together surveys, trading, and wallet login, and it is not simply a Snapshot replacement. Arena's adjudication layer produces verifiable outcomes, the validation layer handles staking, settlement, and refunds around those outcomes, and before resolution the public surface exposes progress, not directional signal.
 
 The repository already contains three concrete baselines:
 
@@ -20,10 +26,64 @@ The repository already contains three concrete baselines:
 - `Application runtime`: a NestJS API, Prisma, Redis, state machines, and the shared Arena domain model covering proposition, market, bet, reward, reputation, watchlist, and internal ops flows.
 - `Validation chain`: a Hardhat / Solidity validation-market contract path plus runtime chain integration for the minimum credible settlement loop of non-rolling, single-question, binary markets.
 
+## 🧭 Protocol Positioning
+
+From a product perspective, Arena is better described not as a pure prediction market, but as a judgment-oracle protocol for subjective decision contexts.
+
+It can be abstracted into two layers:
+
+`Arena = Consensus Oracle + Domain Reputation Graph`
+
+More plainly:
+
+`Arena = judgment oracle + domain reputation graph`
+
+Each layer solves a different problem:
+
+- `Consensus Oracle`
+  - Solves "how is the crowd judging this question right now?"
+  - Fits DAO and onchain-community workflows such as grant funding, proposal screening, contribution verification, whitelist admission, and content moderation.
+  - Produces short-cycle decision signals that can be consumed by governance contracts, grant protocols, task platforms, or content protocols.
+
+```json
+{
+  "proposal_id": "grant-2026-042",
+  "epoch": 12,
+  "support_rate": 76.4,
+  "verified_participants": 1832,
+  "confidence": 0.82,
+  "result": "support"
+}
+```
+
+- `Domain Reputation Graph`
+  - Solves "whose judgment should carry more weight?"
+  - Arena continuously records how participants judge questions across domains such as AI model evaluation, DeFi risk recognition, DAO governance, open-source contribution review, and content curation.
+  - What accumulates over time is not a one-off voting preference, but domain-specific judgment reputation derived from long-run behavior.
+
+These two layers form Arena's core flywheel:
+
+`short-term consensus output -> enters reputation history -> affects future task weighting -> improves future signal quality -> keeps compounding domain reputation`
+
+That is what makes Arena different from ordinary DAO voting. It does not stop at "who supports this outcome?" It also asks:
+
+- Who supported this conclusion?
+- Have these participants been reliable before?
+- In which domain have they been reliable?
+- Can this result be called directly by an external protocol?
+
+From that perspective, Arena is not just a voting interface replacement. It can become a judgment-signal layer on top of Snapshot, DAO governance systems, grant platforms, task platforms, and content protocols.
+
+The current repository's `Adjudication layer + Validation layer` is the minimum runnable protocol path for that thesis:
+
+- `Adjudication layer` produces the short-term judgment result and enforces the process constraints around it.
+- `Validation layer` handles capital validation, settlement, and refunds around the result.
+- `Reputation` domain and runtime pieces support the accumulation of long-term domain reputation and later weighting logic.
+
 ## 🚀 TL;DR
 
 - What this is
-  - A Web3 / AI dual-layer system that combines a respondent adjudication layer with a validation-market settlement layer.
+  - A Web3 / AI dual-layer system for DAOs and onchain communities: it emits short-term judgment-oracle signals, accumulates long-term domain reputation, and uses validation markets to verify and settle around outcomes.
 - What already runs
   - The frontend product shell, the API / shared-domain baseline, and the validation-chain contract plus minimal runtime integration.
 - Fastest way to try it
@@ -224,34 +284,6 @@ runtime flow
 - Contracts: `Solidity 0.8.20`, `Hardhat`, `OpenZeppelin`
 - Shared domain: `@arena/shared`
 - Database: `PostgreSQL`
-
-## 🧭 Current Product Boundary
-
-If this is your first time entering the repository, lock in these facts first:
-
-- Arena's current product mainline is no longer the old `PK` contract demo.
-- The root still keeps legacy `contracts/Arena.sol` and the old deployment script for historical compatibility, but that path is no longer the validation baseline.
-- The runtime that matches the current product narrative is `proposition + adjudication + validation-chain`.
-- The README intentionally describes implemented capability only within the current MVP and validation-chain scope.
-
-### Current MVP limits
-
-- only `consensus`
-- only `binary`
-- only `non_rolling`
-- only `final`
-- one user, one market, one position
-- validation-chain currently handles only native-asset stake / settlement / claim / refund
-
-### Capability that is explicitly not finished or not claimed
-
-- survey / multi-question propositions
-- hybrid propositions
-- rolling propositions
-- AMM / order book / odds
-- multi-asset betting
-- complex replay / rollback
-- full production ops dashboard
 
 ## 🔀 Runtime Modes
 

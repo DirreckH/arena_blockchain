@@ -59,8 +59,8 @@ function MenuStatusPanel({
   return (
     <section className="account-menu-panel">
       <div className="account-menu-panel-head">
-        <h2>Account status</h2>
-        <span>{isUsingRealData ? 'Using the real account read model.' : 'Using the shared account shell baseline.'}</span>
+        <h2>账户状态</h2>
+        <span>{isUsingRealData ? '使用真实账户读模型。' : '使用共享账户 Shell 基线。'}</span>
       </div>
       <div className="account-menu-status-list">
         {items.map((item) => (
@@ -87,8 +87,8 @@ function MenuTimelinePanel({
   return (
     <section className="account-menu-panel">
       <div className="account-menu-panel-head">
-        <h2>Recent activity</h2>
-        <span>{isUsingRealData ? 'Showing the most recent real account events.' : 'Showing the shared account shell timeline.'}</span>
+        <h2>近期活动</h2>
+        <span>{isUsingRealData ? '展示最新的真实账户事件。' : '展示共享账户 Shell 时间线。'}</span>
       </div>
       <div className="account-menu-timeline">
         {items.map((item) => (
@@ -119,17 +119,17 @@ function MenuShell() {
           <div className="account-empty-icon" aria-hidden="true">
             <LogIn size={28} />
           </div>
-          <strong>Not signed in</strong>
-          <p>Sign in to open the real account shell, preferences surface, and activity timeline from this menu route.</p>
+          <strong>未登录</strong>
+          <p>登录后可从此菜单路由进入真实账户 Shell、偏好设置和活动时间线。</p>
           <div className="account-summary-actions">
             <button className="primary-action" onClick={() => openAuthModal('login')} type="button">
               <LogIn size={16} />
-              <span>Open sign-in</span>
+              <span>打开登录</span>
             </button>
           </div>
         </section>
 
-        <MenuActionGrid title="General entry points" items={ACCOUNT_MENU_SUPPORT_LINKS.slice(0, 4)} />
+        <MenuActionGrid title="常用入口" items={ACCOUNT_MENU_SUPPORT_LINKS.slice(0, 4)} />
       </section>
     )
   }
@@ -138,28 +138,28 @@ function MenuShell() {
   const menuStatusItems = rewards.length > 0 || reputation || tags
     ? [
         {
-          label: 'Current reputation',
+          label: '当前信誉',
           value: summarizeReputationLevel(reputation),
           detail: reputation
-            ? `Score ${reputation.reputationScore} across ${reputation.metrics.reviewedResponseCount} reviewed responses`
-            : 'Waiting for reputation data to populate',
+            ? `分值 ${reputation.reputationScore}，共 ${reputation.metrics.reviewedResponseCount} 条已审核回答`
+            : '等待信誉数据填充',
         },
         {
-          label: 'Pending rewards',
+          label: '待结算奖励',
           value: `${rewardSummary.pendingAmount} USDC`,
-          detail: `${rewardSummary.currentCount} current reward ledger entries`,
+          detail: `${rewardSummary.currentCount} 条奖励账本条目`,
           tone: Number(rewardSummary.pendingAmount) > 0 ? 'positive' : undefined,
         },
         {
-          label: 'Finalized rewards',
+          label: '已完成奖励',
           value: `${rewardSummary.finalizedAmount} USDC`,
-          detail: 'Current reward ledger settled amount',
+          detail: '当前奖励账本已结算金额',
           tone: Number(rewardSummary.finalizedAmount) > 0 ? 'positive' : undefined,
         },
         {
-          label: 'Active tags',
+          label: '活跃标签',
           value: activeTags.length > 0 ? `${activeTags.length}` : '0',
-          detail: activeTags.length > 0 ? activeTags.slice(0, 3).join(' / ') : 'No account tags yet',
+          detail: activeTags.length > 0 ? activeTags.slice(0, 3).join(' / ') : '暂无账户标签',
         },
       ]
     : ACCOUNT_MENU_STATUS_ITEMS
@@ -202,50 +202,50 @@ function MenuShell() {
     <section className="account-menu-layout">
       <AccountShellHeader
         user={mockUser}
-        title="Account menu"
-        description="Use the same account shell to reach activity, settings, and support routes without changing the current product language."
+        title="账户菜单"
+        description="使用同一个账户 Shell 访问活动、设置和支持路由，无需切换当前产品语言。"
         metrics={rewards.length > 0 || reputation ? [
           {
-            label: 'Pending rewards',
+            label: '待结算奖励',
             value: `${rewardSummary.pendingAmount} USDC`,
-            detail: 'Real reward ledger pending amount',
+            detail: '真实奖励账本待结算金额',
             tone: Number(rewardSummary.pendingAmount) > 0 ? 'positive' : undefined,
           },
           {
-            label: 'Finalized rewards',
+            label: '已完成奖励',
             value: `${rewardSummary.finalizedAmount} USDC`,
-            detail: 'Current settled reward amount',
+            detail: '当前已结算奖励金额',
             tone: Number(rewardSummary.finalizedAmount) > 0 ? 'positive' : undefined,
           },
           {
-            label: 'Reputation',
+            label: '信誉',
             value: summarizeReputationLevel(reputation),
-            detail: reputation ? `Score ${reputation.reputationScore}` : 'Waiting for refresh',
+            detail: reputation ? `分值 ${reputation.reputationScore}` : '等待刷新',
           },
           {
-            label: 'Tags',
+            label: '标签',
             value: String(activeTags.length),
-            detail: activeTags.length > 0 ? activeTags.slice(0, 2).join(' / ') : 'No tags yet',
+            detail: activeTags.length > 0 ? activeTags.slice(0, 2).join(' / ') : '暂无标签',
           },
         ] : ACCOUNT_HEADER_METRICS}
         actions={(
           <button className="secondary-action account-menu-logout" onClick={logout} type="button">
             <LogOut size={16} />
-            <span>Sign out</span>
+            <span>退出登录</span>
           </button>
         )}
       />
 
       <div className="account-menu-main-grid">
         <div className="account-menu-main-column">
-          <MenuActionGrid title="Account entry points" items={ACCOUNT_MENU_PRIMARY_LINKS} />
-          <MenuActionGrid title="Support and tools" items={ACCOUNT_MENU_SUPPORT_LINKS} />
+          <MenuActionGrid title="账户入口" items={ACCOUNT_MENU_PRIMARY_LINKS} />
+          <MenuActionGrid title="支持与工具" items={ACCOUNT_MENU_SUPPORT_LINKS} />
         </div>
         <div className="account-menu-side-column">
           {errorMessage ? (
             <section className="account-menu-panel">
               <div className="account-menu-panel-head">
-                <h2>Account data unavailable</h2>
+                <h2>账户数据不可用</h2>
                 <span>{errorMessage}</span>
               </div>
             </section>
@@ -299,7 +299,7 @@ export function UtilityPage({
       {variant === 'search' ? (
         <div className="route-search">
           <Search size={22} />
-          <input readOnly value="" placeholder="Search propositions, topics, or public results" />
+          <input readOnly value="" placeholder="搜索命题、主题或公开结果" />
         </div>
       ) : null}
 
@@ -317,7 +317,7 @@ export function UtilityPage({
           {(variant === 'pages' ? pageLinks : categoryLinks).map((item, index) => (
             <Link to={item.href} key={`${variant}-${item.href}-${index}`}>
               <strong>{item.label}</strong>
-              <span>{variant === 'pages' ? item.caption : 'Open another market category entry point.'}</span>
+              <span>{variant === 'pages' ? item.caption : '打开其他市场分类入口。'}</span>
             </Link>
           ))}
         </div>

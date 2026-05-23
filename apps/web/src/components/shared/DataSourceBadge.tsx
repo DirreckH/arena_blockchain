@@ -1,9 +1,9 @@
 type DataSourceMode = 'live' | 'demo' | 'unavailable'
 
 const sourceLabelByMode: Record<DataSourceMode, string> = {
-  live: 'Live data',
-  demo: 'Demo data',
-  unavailable: 'Unavailable',
+  live: '真实数据',
+  demo: '演示数据',
+  unavailable: '不可用',
 }
 
 export function DataSourceBadge({

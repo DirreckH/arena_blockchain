@@ -5,10 +5,10 @@ import { useRulesIntro } from './RulesIntroContext'
 
 function describeNetwork(chainId: number | null) {
   if (chainId === null) {
-    return 'Network not detected'
+    return '未检测到网络'
   }
 
-  return `Connected chain ID ${chainId}`
+  return `已连接 Chain ID ${chainId}`
 }
 
 export function WalletStatusCard() {
@@ -18,47 +18,47 @@ export function WalletStatusCard() {
 
   const rows = [
     {
-      label: 'Session',
+      label: '会话',
       value: !isAuthenticated
-        ? 'Anonymous'
+        ? '匿名'
         : sessionMode === 'demo'
-          ? 'Demo session'
-          : 'Signed session',
+          ? '演示会话'
+          : '已签名会话',
       detail: !isAuthenticated
-        ? 'No authenticated Arena session'
+        ? '未创建 Arena 认证会话'
         : identity
-          ? `Wallet ${identity.walletAddress}`
-          : 'Authenticated session active',
+          ? `钱包 ${identity.walletAddress}`
+          : '认证会话已激活',
     },
     {
-      label: 'Wallet provider',
-      value: availability === 'available' ? 'Detected' : availability === 'missing' ? 'Missing' : 'Checking',
+      label: '钱包插件',
+      value: availability === 'available' ? '已检测到' : availability === 'missing' ? '未检测到' : '检测中',
       detail: availability === 'missing'
-        ? 'Install or unlock an injected wallet to sign with a real address'
+        ? '请安装或解锁注入式钱包以使用真实地址签名'
         : connectedWalletAddress
-          ? `Injected account ${connectedWalletAddress}`
-          : 'Wallet can be connected when needed',
+          ? `注入账户 ${connectedWalletAddress}`
+          : '需要时可连接钱包',
     },
     {
-      label: 'Network',
+      label: '网络',
       value: networkStatus === 'supported'
-        ? 'Supported'
+        ? '已支持'
         : networkStatus === 'unsupported'
-          ? 'Wrong network'
-          : 'Unknown',
+          ? '网络不匹配'
+          : '未知',
       detail: networkStatus === 'unsupported'
-        ? `${describeNetwork(currentChainId)}. Arena expects chain ID ${configuredChainId}.`
+        ? `${describeNetwork(currentChainId)}，Arena 需要 Chain ID ${configuredChainId}。`
         : networkStatus === 'supported'
-          ? `Ready for Arena chain ID ${configuredChainId}`
-          : 'Arena validates chain readiness when a real wallet signs',
+          ? `已就绪，Arena Chain ID ${configuredChainId}`
+          : '真实钱包签名时 Arena 会验证链就绪状态',
     },
   ]
 
   return (
     <section className="account-menu-panel wallet-status-card">
       <div className="account-menu-panel-head">
-        <h2>Wallet readiness</h2>
-        <span>Real signing, demo sessions, and network readiness stay visible before any authenticated account write.</span>
+        <h2>钱包就绪状态</h2>
+        <span>在任何认证账户写入之前，真实签名、演示会话和网络就绪状态始终可见。</span>
       </div>
       <div className="account-menu-status-list">
         {rows.map((row) => (
@@ -74,11 +74,11 @@ export function WalletStatusCard() {
       <div className="wallet-status-actions">
         {!isAuthenticated ? (
           <button className="primary-action" type="button" onClick={() => openAuthModal('login')}>
-            Connect wallet
+            连接钱包
           </button>
         ) : (
           <Link className="secondary-action" to="/zh/activity">
-            Open account activity
+            查看账户活动
           </Link>
         )}
       </div>

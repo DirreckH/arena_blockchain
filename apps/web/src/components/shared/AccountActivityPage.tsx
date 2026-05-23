@@ -1210,7 +1210,7 @@ export function AccountActivityPage() {
           rows: [
             { label: 'Relayer API 密钥', value: developerSettings.keyCreated ? '已生成示例密钥' : '未生成', tone: developerSettings.keyCreated ? 'info' : 'pending' },
             { label: '开发者码', value: developerSettings.codeEnabled ? '已启用示例码' : '未启用', tone: developerSettings.codeEnabled ? 'info' : 'pending' },
-            { label: '环境范围', value: developerSettings.environment === 'sandbox' ? 'Sandbox' : 'Production', tone: 'neutral' },
+            { label: '环境范围', value: developerSettings.environment === 'sandbox' ? '沙盒' : '生产', tone: 'neutral' },
           ],
         },
       ]

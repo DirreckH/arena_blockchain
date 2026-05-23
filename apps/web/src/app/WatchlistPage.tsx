@@ -43,8 +43,8 @@ export function WatchlistPage() {
     <section className="route-page utility-page">
       <div className="route-header compact">
         <span>Arena</span>
-        <h1>Saved propositions</h1>
-        <p>Keep watchlisted markets inside the same product shell as discovery, activity, and validation.</p>
+        <h1>已保存的命题</h1>
+        <p>在同一个产品界面内管理你关注的命题，与发现、活动和验证层保持连贯。</p>
       </div>
 
       <div className="utility-stack">
@@ -52,21 +52,21 @@ export function WatchlistPage() {
           mode={sourceMode}
           detail={
             !isAuthenticated
-              ? 'Sign in to load your account watchlist.'
+              ? '登录后加载账户关注列表。'
               : sessionMode === 'demo'
-                ? 'This session uses the seeded demo watchlist.'
-                : 'Saved markets are loaded from the authenticated account API.'
+                ? '当前会话使用预置演示关注列表。'
+                : '已保存命题从真实认证账户 API 加载。'
           }
         />
 
         {requestedMarketId && isAuthenticated ? (
           <section className="account-menu-panel watchlist-inline-action">
             <div className="account-menu-panel-head">
-              <h2>{selectedMarketMeta ? selectedMarketMeta.title : 'Watchlist action'}</h2>
+              <h2>{selectedMarketMeta ? selectedMarketMeta.title : '关注操作'}</h2>
               <span>
                 {selectedMarketMeta
-                  ? 'Add or remove the selected proposition without leaving the current flow.'
-                  : 'The requested market was not found in the current public market feed.'}
+                  ? '可在不离开当前流程的情况下添加或移除该命题。'
+                  : '当前公开市场列表中未找到该命题。'}
               </span>
             </div>
             {selectedMarketMeta ? (
@@ -85,13 +85,13 @@ export function WatchlistPage() {
                   }}
                 >
                   {isSaving
-                    ? 'Saving...'
+                    ? '保存中...'
                     : selectedIsAlreadySaved
-                      ? 'Remove from watchlist'
-                      : 'Save to watchlist'}
+                      ? '从关注列表移除'
+                      : '添加到关注列表'}
                 </button>
                 <Link className="secondary-action" to={`/zh/event/${selectedMarketMeta.id}`}>
-                  Open proposition
+                  查看命题详情
                 </Link>
               </div>
             ) : null}
@@ -104,11 +104,11 @@ export function WatchlistPage() {
               <div className="account-empty-icon" aria-hidden="true">
                 <LogIn size={28} />
               </div>
-              <strong>Sign in to sync saved propositions</strong>
-              <p>Your watchlist is now wired to the authenticated Arena account flow instead of a static preview shell.</p>
+              <strong>登录后同步已保存的命题</strong>
+              <p>关注列表已接入真实 Arena 账户，登录后可在任意设备同步查看。</p>
               <div className="account-summary-actions">
                 <button className="primary-action" type="button" onClick={() => openAuthModal('login')}>
-                  Connect wallet
+                  连接钱包
                 </button>
               </div>
             </section>
@@ -119,7 +119,7 @@ export function WatchlistPage() {
         {isAuthenticated && errorMessage ? (
           <section className="account-menu-panel">
             <div className="account-menu-panel-head">
-              <h2>Watchlist unavailable</h2>
+              <h2>关注列表加载失败</h2>
               <span>{errorMessage}</span>
             </div>
           </section>
@@ -128,11 +128,11 @@ export function WatchlistPage() {
         {isAuthenticated && (isLoading || isSaving) ? (
           <section className="account-menu-panel">
             <div className="account-menu-panel-head">
-              <h2>{isLoading ? 'Loading saved propositions' : 'Updating watchlist'}</h2>
+              <h2>{isLoading ? '正在加载已保存命题' : '正在更新关注列表'}</h2>
               <span>
                 {isLoading
-                  ? 'Arena is reading your saved markets from the current account.'
-                  : 'The selected proposition is being written to the current account watchlist.'}
+                  ? '正在从账户读取已保存的命题列表。'
+                  : '正在将所选命题写入账户关注列表。'}
               </span>
             </div>
           </section>
@@ -143,14 +143,14 @@ export function WatchlistPage() {
             <div className="account-empty-icon" aria-hidden="true">
               <Search size={28} />
             </div>
-            <strong>No saved propositions yet</strong>
-            <p>Save from discovery, category, or proposition detail pages and the market will appear here immediately.</p>
+            <strong>还没有保存过命题</strong>
+            <p>在发现页、分类页或命题详情页点击书签图标，命题会立即出现在这里。</p>
             <div className="account-summary-actions">
               <Link className="primary-action" to="/zh">
-                Discover markets
+                去发现命题
               </Link>
               <Link className="secondary-action" to="/zh/markets">
-                Browse rankings
+                浏览排行榜
               </Link>
             </div>
           </section>
@@ -160,12 +160,12 @@ export function WatchlistPage() {
           <>
             <section className="watchlist-summary-row">
               <div className="watchlist-summary-copy">
-                <strong>{watchlist?.totalCount ?? visibleMarkets.length} saved propositions</strong>
-                <span>Use the bookmark action on any proposition card to keep this list current.</span>
+                <strong>已保存 {watchlist?.totalCount ?? visibleMarkets.length} 个命题</strong>
+                <span>在任意命题卡片上点击书签图标即可更新此列表。</span>
               </div>
               <Link className="secondary-action" to="/zh/markets">
                 <Bookmark size={16} />
-                <span>Browse more markets</span>
+                <span>浏览更多命题</span>
               </Link>
             </section>
 

@@ -10,9 +10,9 @@ import { NotFoundPage } from '../shared/NotFoundPage'
 import { ProgressMeter } from '../shared/ProgressMeter'
 import { DataSourceBadge } from '../shared/DataSourceBadge'
 
-const optionCode = (displayOrder: number) => `Option ${String.fromCharCode(64 + displayOrder)}`
+const optionCode = (displayOrder: number) => `选项 ${String.fromCharCode(64 + displayOrder)}`
 const revealLabel = (market: PublicValidationMarketCard) =>
-  market.revealTargetAt ?? market.closesAt ?? 'Reveal target pending'
+  market.revealTargetAt ?? market.closesAt ?? '公开时间待定'
 
 type DiscussionComment = {
   id: string
@@ -194,28 +194,28 @@ export function MarketDetailPage() {
     }
 
     if (sessionMode !== 'demo' && availability === 'missing') {
-      setBetFeedback('Install or unlock an injected wallet before signing a real Arena session')
+      setBetFeedback('请先安装或解锁钱包插件，再签名真实 Arena 会话')
       return
     }
 
     if (sessionMode !== 'demo' && networkStatus === 'unsupported') {
-      setBetFeedback(`Switch wallet network to chain ID ${configuredChainId} before placing a real bet`)
+      setBetFeedback(`请将钱包切换到 Chain ID ${configuredChainId} 后再下注`)
       return
     }
 
     if (!hasSelectedOption) {
-      setBetFeedback('Select one option before placing a bet')
+      setBetFeedback('请先选择一个选项再下注')
       return
     }
 
     const normalizedStakeAmount = stakeAmount.trim()
     if (!isValidStakeAmount(normalizedStakeAmount)) {
-      setBetFeedback('Enter a whole-number stake amount')
+      setBetFeedback('请输入整数下注金额')
       return
     }
 
     if (BigInt(normalizedStakeAmount) < BigInt(rawMarket.minBetAmount)) {
-      setBetFeedback(`Minimum stake is ${rawMarket.minBetAmount}`)
+      setBetFeedback(`最低下注金额为 ${rawMarket.minBetAmount}`)
       return
     }
 
@@ -231,10 +231,10 @@ export function MarketDetailPage() {
       })
       setStakeAmount('')
       setBetFeedback(sessionMode === 'demo'
-        ? `Demo position opened on ${selectedOptionLabel}`
-        : `Position recorded on ${selectedOptionLabel}`)
+        ? `演示持仓已建立：${selectedOptionLabel}`
+        : `持仓已记录：${selectedOptionLabel}`)
     } catch (error) {
-      setBetFeedback(error instanceof Error ? error.message : 'Failed to place position')
+      setBetFeedback(error instanceof Error ? error.message : '下注失败，请稍后重试')
     } finally {
       setIsSubmittingBet(false)
     }
@@ -244,8 +244,8 @@ export function MarketDetailPage() {
     return (
       <section className="route-page detail-route">
         <div className="route-header">
-          <Link className="back-link" to="/zh">Back home</Link>
-          <h1>Loading proposition</h1>
+          <Link className="back-link" to="/zh">返回首页</Link>
+          <h1>加载命题中</h1>
         </div>
       </section>
     )
@@ -258,20 +258,20 @@ export function MarketDetailPage() {
   return (
     <section className="route-page detail-route">
       <div className="route-header">
-        <Link className="back-link" to="/zh">Back home</Link>
+        <Link className="back-link" to="/zh">返回首页</Link>
         <span>{market.category}</span>
         <h1>{market.title}</h1>
-        <p>Detail view exposes the current public status, progress, and option labels.</p>
+        <p>当前页面展示命题公开状态、时间进度和选项标签，不展示任何方向性信息。</p>
       </div>
 
       <DataSourceBadge
         mode={sessionMode === 'demo' ? 'demo' : sourceMode}
         detail={
           sessionMode === 'demo'
-            ? 'The authenticated demo session keeps proposition detail interactive without a real wallet.'
+            ? '当前演示会话无需真实钱包即可交互。'
             : sourceMode === 'live'
-              ? 'Public proposition state is being read from the current Arena market feed.'
-              : 'Public proposition state fell back to demo seed data.'
+              ? '命题公开状态从真实 Arena 市场数据流读取。'
+              : '命题公开状态已回退到演示预置数据。'
         }
       />
 
@@ -288,9 +288,9 @@ export function MarketDetailPage() {
             </div>
 
             <div className="detail-progress-grid">
-              <ProgressMeter label="Time progress" detail={revealLabel(market)} value={market.progress.timeProgressPercent} />
+              <ProgressMeter label="时间进度" detail={revealLabel(market)} value={market.progress.timeProgressPercent} />
               <ProgressMeter
-                label="Effective sample"
+                label="有效样本"
                 detail={`${market.progress.effectiveSampleCount} / ${market.progress.minEffectiveSample}`}
                 value={market.progress.effectiveSampleProgressPercent}
               />
@@ -426,54 +426,54 @@ export function MarketDetailPage() {
 
         <aside className="detail-side-panel">
           <section className="market-bet-card">
-            <h2>Place position</h2>
+            <h2>建立持仓</h2>
             <p className="boundary-note">
               {sessionMode === 'demo'
-                ? 'This path records a seeded demo position without wallet signing.'
-                : 'This path uses a wallet-authenticated Arena session to record the position through the live validation API.'}
+                ? '演示路径：记录预置演示持仓，无需钱包签名。'
+                : '真实路径：通过钱包认证的 Arena 会话向验证层 API 记录持仓。'}
             </p>
             <dl className="market-bet-facts">
               <div>
-                <dt>Wallet session</dt>
-                <dd>{isAuthenticated ? (sessionMode === 'demo' ? 'Demo session' : 'Connected') : 'Not connected'}</dd>
+                <dt>钱包会话</dt>
+                <dd>{isAuthenticated ? (sessionMode === 'demo' ? '演示会话' : '已连接') : '未连接'}</dd>
               </div>
               <div>
-                <dt>Wallet network</dt>
+                <dt>钱包网络</dt>
                 <dd>
                   {sessionMode === 'demo'
-                    ? 'Demo bypass'
+                    ? '演示绕过'
                     : networkStatus === 'supported'
                       ? `Chain ${configuredChainId}`
                       : networkStatus === 'unsupported'
-                        ? `Wrong network (${currentChainId ?? 'unknown'})`
+                        ? `网络不匹配（当前 ${currentChainId ?? '未知'}）`
                         : availability === 'missing'
-                          ? 'Wallet unavailable'
-                          : 'Pending detection'}
+                          ? '钱包不可用'
+                          : '检测中'}
                 </dd>
               </div>
               <div>
-                <dt>Selected option</dt>
-                <dd>{selectedOptionLabel ?? 'Choose an option in the market panel'}</dd>
+                <dt>已选选项</dt>
+                <dd>{selectedOptionLabel ?? '请在上方选择一个选项'}</dd>
               </div>
               <div>
-                <dt>Minimum stake</dt>
+                <dt>最低下注</dt>
                 <dd>{rawMarket?.minBetAmount ?? '0'}</dd>
               </div>
               <div>
-                <dt>Execution mode</dt>
-                <dd>{sessionMode === 'demo' ? 'Demo bypass' : 'Wallet-authenticated account write'}</dd>
+                <dt>执行模式</dt>
+                <dd>{sessionMode === 'demo' ? '演示绕过' : '钱包认证账户写入'}</dd>
               </div>
               <div>
-                <dt>Your position</dt>
+                <dt>当前持仓</dt>
                 <dd>
                   {rawMarket?.currentUserPosition
                     ? `${rawMarket.options[rawMarket.currentUserPosition.selectedOption]} / ${rawMarket.currentUserPosition.stakeAmount}`
-                    : 'No active position'}
+                    : '暂无持仓'}
                 </dd>
               </div>
             </dl>
             <label className="market-bet-field">
-              <span>Stake amount</span>
+              <span>下注金额</span>
               <input
                 value={stakeAmount}
                 onChange={(event) => setStakeAmount(event.target.value)}
@@ -491,16 +491,16 @@ export function MarketDetailPage() {
               }}
             >
               {!isAuthenticated
-                ? 'Login to place a bet'
+                ? '登录后下注'
                 : sessionMode !== 'demo' && availability === 'missing'
-                  ? 'Wallet required'
+                  ? '需要钱包'
                   : sessionMode !== 'demo' && networkStatus === 'unsupported'
-                    ? 'Switch network'
+                    ? '切换网络'
                   : hasExistingPosition
-                    ? 'Position already exists'
+                    ? '已有持仓'
                     : isSubmittingBet
-                      ? 'Submitting bet...'
-                      : 'Place real bet'}
+                      ? '提交中...'
+                      : '确认下注'}
             </button>
             {betFeedback ? <p className="market-bet-feedback">{betFeedback}</p> : null}
             {activeExecution ? (
@@ -509,30 +509,30 @@ export function MarketDetailPage() {
                 <span>{activeExecution.detail}</span>
                 <small>
                   {activeExecution.usesDemoFlow
-                    ? 'No wallet signature or chain transaction was required.'
-                    : 'Wallet authentication was required, but the resulting position is recorded as an Arena account write rather than an on-chain bet transaction.'}
+                    ? '演示模式：无需钱包签名或链上交易。'
+                    : '钱包认证已完成，持仓记录为 Arena 账户写入，而非链上下注交易。'}
                 </small>
               </div>
             ) : null}
           </section>
 
-          <h2>Information boundary</h2>
+          <h2>信息边界</h2>
           <dl>
             <div>
-              <dt>Status</dt>
+              <dt>状态</dt>
               <dd>{market.progress.statusLabel}</dd>
             </div>
             <div>
-              <dt>Pre-reveal public fields</dt>
-              <dd>Status, time progress, effective sample progress</dd>
+              <dt>开奖前公开字段</dt>
+              <dd>状态、时间进度、有效样本进度</dd>
             </div>
             <div>
-              <dt>Security note</dt>
+              <dt>安全说明</dt>
               <dd>{ARENA_INFORMATION_BOUNDARY.notes[0]}</dd>
             </div>
           </dl>
-          <button className="primary-action" onClick={openRulesIntro} type="button">View boundary rules</button>
-          <Link className="secondary-action" to="/zh/markets">View more propositions</Link>
+          <button className="primary-action" onClick={openRulesIntro} type="button">查看边界规则</button>
+          <Link className="secondary-action" to="/zh/markets">浏览更多命题</Link>
         </aside>
       </div>
     </section>

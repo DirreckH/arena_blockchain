@@ -9128,6 +9128,7 @@ img {
   --arena-positive: #16a34a;
   --arena-negative: #dc2626;
   --arena-neutral: #6b7280;
+  --arena-border: #e5e7eb;
   --arena-page-title-size: 24px;
   --arena-page-title-line: 32px;
   --arena-page-title-weight: 600;
@@ -9333,4 +9334,372 @@ body,
 .bet-state-pill.negative,
 .bet-result.negative {
   color: var(--arena-negative);
+}
+
+/* AdjudicationPage tab count badge */
+.tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(22, 82, 240, 0.1);
+  color: #1652f0;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+/* AdjudicationPage list cards */
+.adjudication-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.adjudication-list-card .adjudication-task-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.adjudication-review-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.adjudication-review-badge.pending {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.adjudication-review-badge.positive {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.adjudication-review-badge.negative {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.adjudication-review-badge.neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.adjudication-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  color: #1652f0;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.adjudication-card-link:hover {
+  text-decoration: underline;
+}
+
+.task-date {
+  color: var(--arena-text-secondary);
+  font-size: 12px;
+}
+
+/* Quality summary card */
+.adjudication-quality-summary {
+  margin-bottom: 8px;
+}
+
+.adjudication-quality-stats {
+  display: flex;
+  gap: 24px;
+  margin: 12px 0 8px;
+}
+
+.adjudication-quality-stats > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.adjudication-quality-stats strong {
+  font-size: 22px;
+  font-weight: 750;
+  color: var(--arena-text-primary);
+  line-height: 1.2;
+}
+
+.adjudication-quality-stats span {
+  font-size: 12px;
+  color: var(--arena-text-secondary);
+}
+
+.adjudication-quality-note {
+  font-size: 12px;
+  color: var(--arena-text-secondary);
+  margin-top: 8px;
+}
+
+/* Reward ledger list */
+.reward-ledger-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 12px;
+}
+
+.reward-ledger-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  color: var(--arena-text-secondary);
+  font-size: 13px;
+}
+
+.reward-ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--arena-border);
+}
+
+.reward-ledger-row:last-child {
+  border-bottom: none;
+}
+
+.reward-ledger-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #f4f7fb;
+  flex-shrink: 0;
+  color: var(--arena-text-secondary);
+}
+
+.reward-ledger-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.reward-ledger-copy strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--arena-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reward-ledger-copy span {
+  font-size: 12px;
+  color: var(--arena-text-secondary);
+}
+
+.reward-ledger-amount {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.reward-ledger-amount strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reward-ledger-amount.positive strong {
+  color: var(--arena-positive);
+}
+
+.reward-ledger-amount.negative span {
+  color: var(--arena-negative);
+}
+
+.reward-ledger-amount.neutral span {
+  color: var(--arena-text-secondary);
+  font-size: 12px;
+}
+
+/* Reputation card */
+.reputation-card {
+  margin-top: 12px;
+}
+
+.reputation-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.reputation-score-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reputation-level-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 750;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.reputation-level-badge.level-trusted {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.reputation-level-badge.level-normal {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.reputation-level-badge.level-risky {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.reputation-score-value {
+  font-size: 20px;
+  font-weight: 750;
+  color: var(--arena-text-primary);
+}
+
+.reputation-last-updated {
+  font-size: 12px;
+  color: var(--arena-text-secondary);
+  margin: 0;
+}
+
+.reputation-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+}
+
+.reputation-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.reputation-metric-row span {
+  color: var(--arena-text-secondary);
+}
+
+.reputation-metric-row strong {
+  color: var(--arena-text-primary);
+  font-weight: 700;
+}
+
+.reputation-note {
+  font-size: 12px;
+  color: var(--arena-text-secondary);
+  margin-top: 10px;
+}
+
+.reputation-empty {
+  padding: 12px 0;
+  color: var(--arena-text-secondary);
+  font-size: 13px;
+}
+
+/* Tag profile */
+.tag-profile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tag-profile-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #f1f5f9;
+  color: #475569;
+  min-width: 120px;
+}
+
+.tag-chip.tag-type-interest {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.tag-chip.tag-type-quality_reputation {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.tag-confidence-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.tag-confidence-fill {
+  height: 100%;
+  background: #1652f0;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.tag-confidence-label {
+  font-size: 12px;
+  color: var(--arena-text-secondary);
+  min-width: 36px;
+  text-align: right;
+}
+
+.tag-profile-note {
+  font-size: 12px;
+  color: var(--arena-text-secondary);
+  margin-top: 4px;
+}
+
+.tag-profile-empty {
+  padding: 12px 0;
+  color: var(--arena-text-secondary);
+  font-size: 13px;
 }

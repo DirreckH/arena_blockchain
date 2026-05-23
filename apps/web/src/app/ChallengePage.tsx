@@ -207,7 +207,7 @@ function ChallengeSubmitModal({
                 <span>{step === 0 ? '候选审核前置校验' : step === 1 ? '信息边界与审核口径' : '真实提交回执'}</span>
               </div>
               <div className="challenge-submit-hero-badge">
-                {step === 0 ? 'Ready to review' : step === 1 ? 'Boundary locked' : 'Submitted'}
+                {step === 0 ? '候选准备就绪' : step === 1 ? '信息边界已锁定' : '提交成功'}
               </div>
             </div>
 

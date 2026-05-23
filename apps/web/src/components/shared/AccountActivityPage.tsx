@@ -1,6 +1,9 @@
 import {
   Bell,
   BellRing,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
   Code2,
   Eye,
   FileDown,
@@ -300,10 +303,10 @@ export function AccountActivityPage() {
   const openPositionStakeAmount = overview?.resultOverview.openPositions.totalStakeAmount ?? '0.00'
   const latestExportItem = exports?.items[0] ?? null
   const latestExportSummary = latestExport
-    ? `${latestExport.fileName} · ${latestExport.overview.rewards.length} rewards · ${latestExport.overview.resultOverview.openPositions.totalCount} open positions`
+    ? `${latestExport.fileName} · ${latestExport.overview.rewards.length} 条奖励 · ${latestExport.overview.resultOverview.openPositions.totalCount} 个持仓`
     : latestExportItem
-      ? `${latestExportItem.fileName} · ${latestExportItem.metrics.rewardCount} rewards · ${latestExportItem.metrics.openPositionCount} open positions`
-      : 'No completed export history yet.'
+      ? `${latestExportItem.fileName} · ${latestExportItem.metrics.rewardCount} 条奖励 · ${latestExportItem.metrics.openPositionCount} 个持仓`
+      : '暂无已完成的导出记录。'
   const latestExportCompletedAt = latestExport?.completedAt ?? latestExportItem?.completedAt ?? null
   const latestExportFileName = latestExport?.fileName ?? latestExportItem?.fileName ?? null
   const latestExportStatus = latestExport?.status ?? latestExportItem?.status ?? 'pending'
@@ -475,6 +478,73 @@ export function AccountActivityPage() {
 
           <article className="account-settings-detail-card">
             <div className="account-settings-detail-head">
+              <strong>信誉等级</strong>
+              <p>信誉由回答质量、完成率与参与一致性综合计算，影响未来任务派发优先级。</p>
+            </div>
+            {reputation ? (
+              <div className="reputation-card">
+                <div className="reputation-score-row">
+                  <div className="reputation-score-block">
+                    <strong className={`reputation-level-badge level-${reputation.reputationLevel}`}>
+                      {summarizeReputationLevel(reputation)}
+                    </strong>
+                    <span className="reputation-score-value">{reputation.reputationScore} 分</span>
+                  </div>
+                  <p className="reputation-last-updated">更新于 {formatRelativeTime(reputation.computedAt)}</p>
+                </div>
+                <div className="reputation-metrics">
+                  <div className="reputation-metric-row">
+                    <span>完成率</span>
+                    <strong>{(reputation.metrics.completionRate * 100).toFixed(0)}%</strong>
+                  </div>
+                  <div className="reputation-metric-row">
+                    <span>有效回答率</span>
+                    <strong>{(reputation.metrics.validRate * 100).toFixed(0)}%</strong>
+                  </div>
+                  <div className="reputation-metric-row">
+                    <span>已审核回答</span>
+                    <strong>{reputation.metrics.reviewedResponseCount}</strong>
+                  </div>
+                </div>
+                <p className="reputation-note">New → Normal → Trusted，达到 Trusted 后获得更高优先级派单。</p>
+              </div>
+            ) : (
+              <div className="reputation-empty">
+                <span>信誉尚未生成，提交回答并通过质检后自动计算。</span>
+              </div>
+            )}
+          </article>
+
+          <article className="account-settings-detail-card">
+            <div className="account-settings-detail-head">
+              <strong>用户标签</strong>
+              <p>标签由系统根据你的回答偏好和参与记录生成，用于未来任务的精准派发。</p>
+            </div>
+            {tags && tags.tags.length > 0 ? (
+              <div className="tag-profile-list">
+                {tags.tags.map((tag) => (
+                  <div key={tag.tagKey} className="tag-profile-item">
+                    <span className={`tag-chip tag-type-${tag.tagType}`}>{tag.tagKey}</span>
+                    <div className="tag-confidence-bar" aria-label={`置信度 ${Math.round(tag.confidenceScore * 100)}%`}>
+                      <div
+                        className="tag-confidence-fill"
+                        style={{ width: `${Math.round(tag.confidenceScore * 100)}%` }}
+                      />
+                    </div>
+                    <span className="tag-confidence-label">{Math.round(tag.confidenceScore * 100)}%</span>
+                  </div>
+                ))}
+                <p className="tag-profile-note">置信度越高，标签对派单匹配的贡献越大。标签每轮结算后更新。</p>
+              </div>
+            ) : (
+              <div className="tag-profile-empty">
+                <span>标签尚未生成，参与并通过质检后系统会开始建立你的兴趣与质量画像。</span>
+              </div>
+            )}
+          </article>
+
+          <article className="account-settings-detail-card">
+            <div className="account-settings-detail-head">
               <strong>个人展示偏好</strong>
               <p>这里只承接头像与账户入口的显示方式，不处理公开可见范围。</p>
             </div>
@@ -623,7 +693,7 @@ export function AccountActivityPage() {
       ]
 
       walletBlocks[0]?.rows.push({
-        label: 'Open positions',
+        label: '持仓数',
         value: String(openPositionCount),
         hint: `${openPositionStakeAmount} USDC`,
         tone: openPositionCount > 0 ? 'info' : 'neutral',
@@ -632,6 +702,58 @@ export function AccountActivityPage() {
       return (
         <section className="account-settings-section-stack">
           <DetailCards blocks={walletBlocks} sectionId="wallet" />
+
+          <article className="account-settings-detail-card">
+            <div className="account-settings-detail-head">
+              <strong>回答奖励明细</strong>
+              <p>每笔奖励的质检状态，由平台审核后入账。有效样本贡献回答奖励，质量标准影响未来派单。</p>
+            </div>
+            <div className="reward-ledger-list">
+              {currentRewards.length === 0 ? (
+                <div className="reward-ledger-empty">
+                  <Wallet size={22} />
+                  <span>暂无奖励记录，提交回答后在这里跟踪质检进度。</span>
+                </div>
+              ) : currentRewards.map((reward) => {
+                const isPending = reward.status === 'pending'
+                const isFinalized = reward.status === 'finalized'
+                const isVoided = reward.status === 'voided' || reward.status === 'reversed'
+                const reviewLabel = reward.reviewStatus === 'pending_review' ? '审核中'
+                  : reward.reviewStatus === 'valid' ? '有效'
+                  : reward.reviewStatus === 'partial_valid' ? '部分有效'
+                  : reward.reviewStatus === 'invalid' ? '无效'
+                  : reward.reviewStatus === 'fraud_suspected' ? '异常'
+                  : '待审核'
+
+                return (
+                  <div className="reward-ledger-row" key={reward.ledgerId}>
+                    <div className="reward-ledger-icon" aria-hidden="true">
+                      {isFinalized ? (
+                        <CheckCircle2 size={16} />
+                      ) : isVoided ? (
+                        <CircleAlert size={16} />
+                      ) : (
+                        <Clock3 size={16} />
+                      )}
+                    </div>
+                    <div className="reward-ledger-copy">
+                      <strong>{reward.propositionTitle}</strong>
+                      <span>{reviewLabel} · {formatRelativeTime(reward.createdAt)}</span>
+                    </div>
+                    <div className={`reward-ledger-amount ${isFinalized ? 'positive' : isVoided ? 'negative' : 'neutral'}`}>
+                      {isFinalized && reward.finalAmount ? (
+                        <strong>+{reward.finalAmount} USDC</strong>
+                      ) : isPending ? (
+                        <span>{reward.pendingAmount} USDC 待入账</span>
+                      ) : (
+                        <span>已失效</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </article>
 
           <article className="account-settings-detail-card">
             <div className="account-settings-detail-head">
@@ -876,7 +998,7 @@ export function AccountActivityPage() {
 
       if (latestActivity) {
         deviceBlocks[0]?.rows.splice(1, 0, {
-          label: 'Latest account activity',
+          label: '最近账户活动',
           value: formatRelativeTime(latestActivity.occurredAt),
           hint: latestActivity.propositionTitle,
           tone: 'neutral',
@@ -965,15 +1087,15 @@ export function AccountActivityPage() {
       ]
 
       exportBlocks[0]?.rows.splice(2, 0, {
-        label: 'Settled results',
+        label: '已结算结果',
         value: String(settledCount),
-        hint: `Open positions ${openPositionCount}`,
+        hint: `持仓 ${openPositionCount} 个`,
         tone: settledCount > 0 ? 'info' : 'neutral',
       })
       exportBlocks[0]?.rows.push({
-        label: 'Recent export',
-        value: latestExportCompletedAt ? formatRelativeTime(latestExportCompletedAt) : 'Pending',
-        hint: latestExportFileName ?? 'No completed exports yet',
+        label: '最近导出',
+        value: latestExportCompletedAt ? formatRelativeTime(latestExportCompletedAt) : '待生成',
+        hint: latestExportFileName ?? '暂无已完成导出',
         tone: latestExportCompletedAt ? 'info' : 'pending',
       })
 
@@ -1042,8 +1164,8 @@ export function AccountActivityPage() {
 
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
-                  <strong>Export snapshot</strong>
-                  <p>Generate a real account export record from the current rewards, result overview, and preferences snapshot.</p>
+                  <strong>导出快照</strong>
+                  <p>基于当前奖励记录、结果概览和偏好设置生成一份真实账户导出记录。</p>
                 </div>
                 <button
                   className="account-settings-inline-button"
@@ -1052,24 +1174,24 @@ export function AccountActivityPage() {
                     void createExport().catch(() => {})
                   }}
                 >
-                  {isExporting ? 'Generating export...' : 'Export account snapshot'}
+                  {isExporting ? '生成中...' : '导出账户快照'}
                 </button>
               </div>
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
-                  <strong>Latest export status</strong>
+                  <strong>最近导出状态</strong>
                   <p>
                     {latestExportSummary}
                   </p>
                 </div>
                 <span className="account-settings-inline-value">
-                  {isExportsLoading ? 'Loading...' : latestExportStatus}
+                  {isExportsLoading ? '加载中...' : latestExportStatus}
                 </span>
               </div>
               {exportsErrorMessage ? (
                 <div className="account-settings-control-row">
                   <div className="account-settings-control-copy">
-                    <strong>Export sync</strong>
+                    <strong>导出同步失败</strong>
                     <p>{exportsErrorMessage}</p>
                   </div>
                 </div>

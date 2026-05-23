@@ -33,7 +33,7 @@ export function AuthModal({
     const normalizedWalletAddress = walletAddress.trim()
 
     if (!normalizedWalletAddress) {
-      setErrorMessage('Enter a wallet address or the demo shortcut')
+      setErrorMessage('请输入钱包地址或演示快捷码')
       return
     }
 
@@ -46,7 +46,7 @@ export function AuthModal({
       if (error instanceof Error) {
         setErrorMessage(error.message)
       } else {
-        setErrorMessage('Wallet signature failed')
+        setErrorMessage('钱包签名失败')
       }
     } finally {
       setIsSubmitting(false)
@@ -63,7 +63,7 @@ export function AuthModal({
         role="dialog"
       >
         <button
-          aria-label="Close wallet authentication"
+          aria-label="关闭钱包认证"
           className="rules-intro-close"
           onClick={onClose}
           type="button"
@@ -76,39 +76,39 @@ export function AuthModal({
             <img src={ARENA_LOGO_SRC} alt="Arena" />
             <div>
               <span className="auth-modal-kicker">Arena</span>
-              <h2 id="auth-modal-title">{isSignup ? 'Create wallet session' : 'Sign in with wallet'}</h2>
+              <h2 id="auth-modal-title">{isSignup ? '创建钱包会话' : '钱包登录'}</h2>
             </div>
           </div>
 
           <p className="auth-modal-description">
             {isSignup
-              ? 'Arena creates a wallet-backed session by requesting a challenge, collecting a signature, and exchanging it for an access token.'
-              : 'Arena signs a challenge with your wallet and exchanges the signature for an authenticated session token.'}
+              ? 'Arena 通过发起挑战、收集签名并换取访问令牌来创建钱包绑定的会话。'
+              : 'Arena 使用你的钱包签名挑战，并将签名换取认证会话令牌。'}
           </p>
 
           <div className="auth-modal-fields">
             <label>
-              Wallet address
+              钱包地址
               <input
                 onChange={(event) => setWalletAddress(event.target.value)}
                 placeholder="0x..."
                 value={walletAddress}
               />
             </label>
-            <p className="boundary-note">Enter `demo` to skip wallet signing and enter the full seeded demo session.</p>
+            <p className="boundary-note">输入 `demo` 可跳过钱包签名，直接进入完整预置演示会话。</p>
             <div className="auth-modal-environment">
               <div className="auth-modal-environment-row">
-                <strong>Wallet provider</strong>
-                <span>{availability === 'available' ? 'Detected' : availability === 'missing' ? 'Missing' : 'Checking'}</span>
+                <strong>钱包插件</strong>
+                <span>{availability === 'available' ? '已检测到' : availability === 'missing' ? '未检测到' : '检测中'}</span>
               </div>
               <div className="auth-modal-environment-row">
-                <strong>Network</strong>
+                <strong>网络</strong>
                 <span>
                   {networkStatus === 'supported'
-                    ? `Ready for chain ${configuredChainId}`
+                    ? `Chain ${configuredChainId} 就绪`
                     : networkStatus === 'unsupported'
-                      ? `Wrong network (${currentChainId ?? 'unknown'}), expected ${configuredChainId}`
-                      : 'Arena verifies the chain when a real wallet signs'}
+                      ? `网络不匹配（当前 ${currentChainId ?? '未知'}，需要 ${configuredChainId}）`
+                      : '真实钱包签名时 Arena 会自动验证链'}
                 </span>
               </div>
             </div>
@@ -119,17 +119,17 @@ export function AuthModal({
           <div className="auth-modal-actions">
             <button className="primary-action" disabled={isSubmitting} onClick={handleSubmit} type="button">
               {isSubmitting
-                ? 'Requesting signature...'
+                ? '请求签名中...'
                 : isSignup
-                  ? 'Sign and create session'
-                  : 'Sign and continue'}
+                  ? '签名并创建会话'
+                  : '签名并继续'}
             </button>
             <button
               className="secondary-action"
               onClick={() => onSwitchMode(isSignup ? 'login' : 'signup')}
               type="button"
             >
-              {isSignup ? 'Already have a session? Switch to sign in' : 'Need a fresh session? Switch to sign up'}
+              {isSignup ? '已有会话？切换到登录' : '需要新建会话？切换到注册'}
             </button>
           </div>
         </div>

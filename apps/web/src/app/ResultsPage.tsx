@@ -1526,7 +1526,7 @@ function ResultsPage() {
           {
             label: '最新活动',
             value: overview.summary.latestActivityAt ? formatShortDateTime(overview.summary.latestActivityAt) : '--',
-            detail: overview.summary.latestActivityTitle ?? 'No recent activity',
+            detail: overview.summary.latestActivityTitle ?? '暂无最近活动',
           },
         ],
       }
@@ -1544,26 +1544,26 @@ function ResultsPage() {
   const liveAccountAssetSummaryItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Tracked assets',
+          label: '追踪资产',
           value: `${overview.analytics.assetBreakdown.trackedAmount} USDC`,
-          detail: `Settled payout ${overview.analytics.assetBreakdown.settledGrossPayoutAmount} USDC`,
+          detail: `已结算支出 ${overview.analytics.assetBreakdown.settledGrossPayoutAmount} USDC`,
           tone: 'positive',
         },
         {
-          label: 'Open stake',
+          label: '开仓质押',
           value: `${overview.analytics.assetBreakdown.openStakeAmount} USDC`,
-          detail: `${overview.openPositions.totalCount} active positions`,
+          detail: `${overview.openPositions.totalCount} 个活跃仓位`,
         },
         {
-          label: 'Rewards tracked',
+          label: '奖励追踪',
           value: `${overview.analytics.assetBreakdown.rewardAmount} USDC`,
-          detail: `${overview.analytics.assetBreakdown.pendingRewardAmount} pending / ${overview.analytics.assetBreakdown.finalizedRewardAmount} finalized`,
+          detail: `${overview.analytics.assetBreakdown.pendingRewardAmount} 待结算 / ${overview.analytics.assetBreakdown.finalizedRewardAmount} 已完成`,
           tone: Number(overview.analytics.assetBreakdown.rewardAmount) > 0 ? 'positive' : undefined,
         },
         {
-          label: 'Latest activity',
+          label: '最新活动',
           value: overview.summary.latestActivityAt ? formatShortDateTime(overview.summary.latestActivityAt) : '--',
-          detail: overview.summary.latestActivityTitle ?? 'No recent activity',
+          detail: overview.summary.latestActivityTitle ?? '暂无最近活动',
         },
       ]
     : accountAssetSummaryItems
@@ -1589,14 +1589,14 @@ function ResultsPage() {
         title: item.propositionTitle,
         detail:
           item.resultKind === 'void'
-            ? `Void settlement${item.voidReason ? ` / ${item.voidReason}` : ''}`
+            ? `作废结算${item.voidReason ? ` / ${item.voidReason}` : ''}`
             : item.currentUserSettlementOutcome === 'won'
-              ? 'Settled as winning position'
+              ? '已结算 — 胜出'
               : item.currentUserSettlementOutcome === 'lost'
-                ? 'Settled as losing position'
+                ? '已结算 — 落败'
                 : item.currentUserSettlementOutcome === 'refund'
-                  ? 'Refunded after settlement'
-                  : 'Settled result recorded',
+                  ? '结算退款'
+                  : '结算结果已记录',
         amount:
           formatResultAmount(item.currentUserPnl)
           ?? formatResultAmount(item.currentUserRefundAmount)
@@ -1663,7 +1663,7 @@ function ResultsPage() {
     ? overview.openPositions.items.slice(0, 4).map((item) => ({
         time: formatShortDateTime(item.placedAt),
         title: item.propositionTitle,
-        detail: `Selected ${item.selectedOptionLabel} / ${formatPublicPhaseLabel(item.currentPublicPhase)}`,
+        detail: `已选 ${item.selectedOptionLabel} / ${formatPublicPhaseLabel(item.currentPublicPhase)}`,
         amount: formatUnsignedAmount(item.stakeAmount),
         tone: 'neutral',
       }))
@@ -1672,24 +1672,24 @@ function ResultsPage() {
   const livePositionStatusItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Live',
+          label: '进行中',
           value: String(overview.analytics.positionStructure.liveCount),
-          detail: 'Open positions still accepting or holding exposure',
+          detail: '仍在接受或持有风险敞口的仓位',
         },
         {
-          label: 'Frozen',
+          label: '已冻结',
           value: String(overview.analytics.positionStructure.frozenCount),
-          detail: 'Markets already frozen for reveal',
+          detail: '市场已冻结等待公开结果',
         },
         {
-          label: 'Revealing',
+          label: '公开中',
           value: String(overview.analytics.positionStructure.revealingCount),
-          detail: 'Reveal-adjacent positions waiting for settlement',
+          detail: '临近公开窗口、等待结算的仓位',
         },
         {
-          label: 'Tracked total',
+          label: '追踪总计',
           value: String(overview.analytics.positionStructure.totalCount),
-          detail: 'All open respondent positions in the overview',
+          detail: '总览中全部开仓应答者仓位',
         },
       ]
     : positionStatusItems
@@ -1697,24 +1697,24 @@ function ResultsPage() {
   const liveRecordStatusItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Recent activity',
+          label: '近期活动',
           value: String(overview.recentActivity.length),
-          detail: 'Latest captured account events',
+          detail: '最新捕获的账户事件',
         },
         {
-          label: 'Settled records',
+          label: '已结算记录',
           value: String(overview.settledResults.totals.settledCount),
-          detail: 'Entries already landed in result history',
+          detail: '已进入结果历史的条目',
         },
         {
-          label: 'Pending rewards',
+          label: '待结算奖励',
           value: `${overview.settledResults.totals.pendingRewardAmount} USDC`,
-          detail: 'Awaiting review resolution',
+          detail: '等待审核完成',
         },
         {
-          label: 'Open positions',
+          label: '开放仓位',
           value: String(overview.openPositions.totalCount),
-          detail: 'Still tracked in live or reveal-adjacent phases',
+          detail: '仍在进行中或临近公开阶段',
         },
       ]
     : recordStatusItems
@@ -1746,28 +1746,28 @@ function ResultsPage() {
   const livePositionSnapshotItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Open positions',
+          label: '开放仓位',
           value: String(overview.openPositions.totalCount),
-          detail: `Stake ${overview.openPositions.totalStakeAmount} USDC`,
+          detail: `质押 ${overview.openPositions.totalStakeAmount} USDC`,
         },
         {
-          label: 'Settled results',
+          label: '已结算结果',
           value: String(overview.settledResults.totals.settledCount),
-          detail: `Won ${overview.settledResults.totals.wonCount} / Refund ${overview.settledResults.totals.refundCount}`,
+          detail: `胜出 ${overview.settledResults.totals.wonCount} / 退款 ${overview.settledResults.totals.refundCount}`,
         },
         {
-          label: 'Largest exposure',
+          label: '最大敞口',
           value: overview.summary.largestExposure
             ? `${overview.summary.largestExposure.sharePercent}%`
             : '0%',
           detail: overview.summary.largestExposure
             ? `${overview.summary.largestExposure.category} / ${overview.summary.largestExposure.totalStakeAmount} USDC`
-            : 'No active exposure',
+            : '暂无活跃敞口',
         },
         {
-          label: 'Latest activity',
+          label: '最新活动',
           value: overview.summary.latestActivityAt ? formatShortDateTime(overview.summary.latestActivityAt) : '--',
-          detail: overview.summary.latestActivityTitle ?? 'No recent activity',
+          detail: overview.summary.latestActivityTitle ?? '暂无最近活动',
         },
       ]
     : positionSnapshotItems
@@ -1775,26 +1775,26 @@ function ResultsPage() {
   const liveRecordSummaryItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Recent activity',
+          label: '近期活动',
           value: String(overview.recentActivity.length),
-          detail: 'Latest 12 account events',
+          detail: '最新 12 条账户事件',
         },
         {
-          label: 'Pending rewards',
+          label: '待结算奖励',
           value: `${overview.settledResults.totals.pendingRewardAmount} USDC`,
-          detail: 'Awaiting review resolution',
+          detail: '等待审核完成',
           tone: Number(overview.settledResults.totals.pendingRewardAmount) > 0 ? 'positive' : undefined,
         },
         {
-          label: 'Finalized rewards',
+          label: '已完成奖励',
           value: `${overview.settledResults.totals.finalizedRewardAmount} USDC`,
-          detail: 'Credited reward amount',
+          detail: '已入账奖励金额',
           tone: Number(overview.settledResults.totals.finalizedRewardAmount) > 0 ? 'positive' : undefined,
         },
         {
-          label: 'Settled result records',
+          label: '结算结果记录',
           value: String(overview.settledResults.items.length),
-          detail: 'Derived from respondent result history',
+          detail: '源自应答者结果历史',
         },
       ]
     : recordSummaryItems
@@ -1802,19 +1802,19 @@ function ResultsPage() {
   const liveOverviewStatusItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Settled share',
+          label: '已结算占比',
           value: `${overview.summary.settledSharePercent}%`,
-          detail: 'Share of tracked result entries already settled',
+          detail: '已追踪结果条目中已完成结算的比例',
         },
         {
-          label: 'Open position share',
+          label: '开仓占比',
           value: `${overview.summary.openPositionSharePercent}%`,
-          detail: 'Positions still in live or reveal-adjacent phases',
+          detail: '仍处于进行中或临近公开阶段的仓位',
         },
         {
-          label: 'Pending rewards',
-          value: overview.settledResults.totals.pendingRewardAmount === '0.00' ? '0%' : 'Active',
-          detail: `${overview.settledResults.totals.pendingRewardAmount} USDC pending`,
+          label: '待结算奖励',
+          value: overview.settledResults.totals.pendingRewardAmount === '0.00' ? '0%' : '进行中',
+          detail: `${overview.settledResults.totals.pendingRewardAmount} USDC 待结算`,
         },
       ]
     : overviewStatusItems
@@ -1822,24 +1822,24 @@ function ResultsPage() {
   const liveOverviewOperatingItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Tracked entries',
+          label: '追踪条目',
           value: String(overview.summary.trackedEntryCount),
-          detail: `${overview.settledResults.totals.settledCount} settled / ${overview.openPositions.totalCount} open`,
+          detail: `${overview.settledResults.totals.settledCount} 已结算 / ${overview.openPositions.totalCount} 进行中`,
         },
         {
-          label: 'Settled results',
+          label: '已结算结果',
           value: String(overview.settledResults.totals.settledCount),
-          detail: 'Results already finalized into account history',
+          detail: '已完结入账历史的结果',
         },
         {
-          label: 'Open stake',
+          label: '开仓质押',
           value: `${overview.openPositions.totalStakeAmount} USDC`,
-          detail: 'Capital still tied to open respondent positions',
+          detail: '仍绑定在开仓应答者仓位的资金',
         },
         {
-          label: 'Reward progress',
+          label: '奖励进度',
           value: `${overview.settledResults.totals.finalizedRewardAmount} / ${overview.settledResults.totals.finalizedRewardAmount === '0.00' && overview.settledResults.totals.pendingRewardAmount === '0.00' ? '0.00' : `${Number(overview.settledResults.totals.finalizedRewardAmount) + Number(overview.settledResults.totals.pendingRewardAmount)}` } USDC`,
-          detail: `${overview.settledResults.totals.pendingRewardAmount} USDC pending`,
+          detail: `${overview.settledResults.totals.pendingRewardAmount} USDC 待结算`,
           tone: Number(overview.settledResults.totals.finalizedRewardAmount) > 0 ? 'positive' : undefined,
         },
       ]
@@ -1848,30 +1848,30 @@ function ResultsPage() {
   const livePerformanceBreakdownItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Best settled pnl',
+          label: '最佳结算盈亏',
           value: overview.performance.bestSettledPnl?.amount ?? '0.00',
           detail: overview.performance.bestSettledPnl
             ? `${overview.performance.bestSettledPnl.propositionTitle} / ${formatShortDateTime(overview.performance.bestSettledPnl.settledAt)}`
-            : 'No settled pnl records',
+            : '暂无结算盈亏记录',
           tone: overview.performance.bestSettledPnl && overview.performance.bestSettledPnl.amount.startsWith('-') ? 'negative' : 'positive',
         },
         {
-          label: 'Worst settled pnl',
+          label: '最差结算盈亏',
           value: overview.performance.worstSettledPnl?.amount ?? '0.00',
           detail: overview.performance.worstSettledPnl
             ? `${overview.performance.worstSettledPnl.propositionTitle} / ${formatShortDateTime(overview.performance.worstSettledPnl.settledAt)}`
-            : 'No settled pnl records',
+            : '暂无结算盈亏记录',
           tone: overview.performance.worstSettledPnl?.amount.startsWith('-') ? 'negative' : undefined,
         },
         {
-          label: 'Positive settled share',
+          label: '正收益结算占比',
           value: `${overview.performance.positiveSettledPnlRate}%`,
-          detail: `${overview.performance.positiveSettledPnlCount} / ${overview.performance.trackedSettledPnlCount} settled pnl entries`,
+          detail: `${overview.performance.positiveSettledPnlCount} / ${overview.performance.trackedSettledPnlCount} 条结算盈亏`,
         },
         {
-          label: 'Average settled pnl',
+          label: '平均结算盈亏',
           value: overview.performance.averageSettledPnlAmount,
-          detail: `${overview.performance.flatSettledPnlCount} flat / ${overview.performance.negativeSettledPnlCount} negative`,
+          detail: `${overview.performance.flatSettledPnlCount} 持平 / ${overview.performance.negativeSettledPnlCount} 亏损`,
           tone: overview.performance.averageSettledPnlAmount.startsWith('-') ? 'negative' : undefined,
         },
       ]
@@ -1880,36 +1880,36 @@ function ResultsPage() {
   const liveSettlementSummaryItems: SummaryItem[] = overview
     ? [
         {
-          label: 'Net pnl',
+          label: '净盈亏',
           value: `${overview.settledResults.totals.totalPnl} USDC`,
-          detail: 'Across settled respondent results',
+          detail: '所有已结算应答者结果汇总',
           tone: overview.settledResults.totals.totalPnl.startsWith('-') ? 'negative' : 'positive',
         },
         {
-          label: 'Gross payout',
+          label: '总派彩',
           value: `${overview.settledResults.totals.totalGrossPayout} USDC`,
-          detail: 'Returned from settlement engine',
+          detail: '结算引擎返还金额',
         },
         {
-          label: 'Refund amount',
+          label: '退款金额',
           value: `${overview.settledResults.totals.totalRefundAmount} USDC`,
-          detail: 'Refunded across void/tie outcomes',
+          detail: '作废/平局结果的退款汇总',
         },
         {
-          label: 'Reward finalized',
+          label: '已完成奖励',
           value: `${overview.settledResults.totals.finalizedRewardAmount} USDC`,
-          detail: 'Finalized respondent reward amount',
+          detail: '已完结的应答者奖励',
           tone: Number(overview.settledResults.totals.finalizedRewardAmount) > 0 ? 'positive' : undefined,
         },
         {
-          label: 'Reward pending',
+          label: '待结算奖励',
           value: `${overview.settledResults.totals.pendingRewardAmount} USDC`,
-          detail: 'Pending respondent reward amount',
+          detail: '等待完结的应答者奖励',
         },
         {
-          label: 'Settled count',
+          label: '已结算数量',
           value: String(overview.settledResults.totals.settledCount),
-          detail: 'Total settled result entries',
+          detail: '结算结果条目总数',
         },
       ]
     : settlementSummaryItems
@@ -1967,17 +1967,17 @@ function ResultsPage() {
   const liveSettlementBands = overview
     ? [
         {
-          label: 'Positive pnl',
+          label: '正收益',
           value: overview.analytics.settlementDistribution.positiveSharePercent,
           width: Math.max(8, overview.analytics.settlementDistribution.positiveSharePercent),
         },
         {
-          label: 'Flat pnl',
+          label: '持平',
           value: overview.analytics.settlementDistribution.flatSharePercent,
           width: Math.max(8, overview.analytics.settlementDistribution.flatSharePercent),
         },
         {
-          label: 'Negative pnl',
+          label: '负收益',
           value: overview.analytics.settlementDistribution.negativeSharePercent,
           width: Math.max(8, overview.analytics.settlementDistribution.negativeSharePercent),
         },
@@ -1987,21 +1987,21 @@ function ResultsPage() {
   const livePerformancePulseItems: SparkItem[] = overview
     ? [
         {
-          label: 'Positive settled share',
+          label: '正收益结算占比',
           value: `${overview.analytics.settlementDistribution.positiveSharePercent}%`,
-          detail: `${overview.analytics.settlementDistribution.positiveCount} entries`,
+          detail: `${overview.analytics.settlementDistribution.positiveCount} 条`,
           series: [12, 18, 24, 30, 36, 42, overview.analytics.settlementDistribution.positiveSharePercent || 0],
         },
         {
-          label: 'Open position share',
+          label: '开仓占比',
           value: `${overview.summary.openPositionSharePercent}%`,
-          detail: `${overview.openPositions.totalCount} live positions`,
+          detail: `${overview.openPositions.totalCount} 个进行中仓位`,
           series: [6, 10, 14, 18, 22, 26, overview.summary.openPositionSharePercent || 0],
         },
         {
-          label: 'Reward tracked',
+          label: '奖励追踪',
           value: `${overview.analytics.assetBreakdown.rewardAmount} USDC`,
-          detail: `${overview.analytics.assetBreakdown.pendingRewardAmount} pending`,
+          detail: `${overview.analytics.assetBreakdown.pendingRewardAmount} 待结算`,
           series: [4, 8, 12, 16, 20, 24, overview.analytics.assetBreakdown.rewardSharePercent || 0],
         },
       ]
@@ -2010,26 +2010,26 @@ function ResultsPage() {
   if (isAuthenticated && !overview) {
     const loadingMetrics: SummaryItem[] = [
       {
-        label: 'Account overview',
-        value: isOverviewLoading ? 'Loading' : 'Unavailable',
+        label: '账户总览',
+        value: isOverviewLoading ? '加载中' : '不可用',
         detail: isOverviewLoading
-          ? 'Reading the real respondent overview from Arena'
-          : 'Real account data could not be loaded',
+          ? '正在从 Arena 读取真实应答者总览'
+          : '无法加载真实账户数据',
       },
       {
-        label: 'Result history',
+        label: '结果历史',
         value: '--',
-        detail: 'Requires the result overview surface',
+        detail: '需要结果总览层',
       },
       {
-        label: 'Open positions',
+        label: '开放仓位',
         value: '--',
-        detail: 'Requires the validation/read-model surface',
+        detail: '需要验证/读模型层',
       },
       {
-        label: 'Rewards',
+        label: '奖励',
         value: '--',
-        detail: 'Requires the reward ledger surface',
+        detail: '需要奖励账本层',
       },
     ]
 
@@ -2046,13 +2046,13 @@ function ResultsPage() {
 
           <article className="results-card results-panel">
             <div className="panel-head">
-              <h2>{isOverviewLoading ? 'Loading account overview' : 'Account overview unavailable'}</h2>
-              {!isOverviewLoading ? <span className="panel-head-note">Real data only</span> : null}
+              <h2>{isOverviewLoading ? '加载账户总览中' : '账户总览不可用'}</h2>
+              {!isOverviewLoading ? <span className="panel-head-note">仅真实数据</span> : null}
             </div>
             <p className="boundary-note">
               {isOverviewLoading
-                ? 'Arena is loading your real respondent results, positions, and reward summary.'
-                : overviewErrorMessage ?? 'Arena could not load the real account overview.'}
+                ? 'Arena 正在加载你的真实应答者结果、仓位和奖励汇总。'
+                : overviewErrorMessage ?? 'Arena 无法加载真实账户总览。'}
             </p>
             {!isOverviewLoading ? (
               <button
@@ -2062,7 +2062,7 @@ function ResultsPage() {
                   void refreshOverview()
                 }}
               >
-                Retry loading overview
+                重试加载总览
               </button>
             ) : null}
           </article>

@@ -567,7 +567,7 @@ Arena/
 │  ├─ validation/             # ArenaValidationMarket contract
 │  └─ Arena.sol               # legacy Arena / PK contract path
 ├─ docs/
-│  ├─ arena-project-understanding.md
+│  ├─ PRODUCT_SCOPE.md
 │  └─ contracts/              # phase specs, runbooks, runtime integration docs
 ├─ scripts/                   # deploy / env-check / validation helper scripts
 ├─ test/                      # root Hardhat / contract tests
@@ -612,7 +612,7 @@ If you want to go deeper, this is a good reading order:
 
 ### Project understanding
 
-- [docs/arena-project-understanding.md](./docs/arena-project-understanding.md)
+- [docs/PRODUCT_SCOPE.md](./docs/PRODUCT_SCOPE.md)
 - [AGENTS.md](./AGENTS.md)
 
 ### Validation-chain spec and integration

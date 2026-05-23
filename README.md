@@ -566,7 +566,7 @@ Arena/
 │  ├─ validation/             # ArenaValidationMarket 合约
 │  └─ Arena.sol               # legacy Arena / PK 合约路径
 ├─ docs/
-│  ├─ arena-project-understanding.md
+│  ├─ PRODUCT_SCOPE.md
 │  └─ contracts/              # phase spec, runbook, runtime integration docs
 ├─ scripts/                   # deploy / env check / validation helpers
 ├─ test/                      # root Hardhat / contract tests
@@ -611,7 +611,7 @@ Arena 当前已经过了“只有想法或页面草图”的阶段，但还没�
 
 ### 项目理解
 
-- [docs/arena-project-understanding.md](./docs/arena-project-understanding.md)
+- [docs/PRODUCT_SCOPE.md](./docs/PRODUCT_SCOPE.md)
 - [AGENTS.md](./AGENTS.md)
 
 ### Validation-chain 规格与集成

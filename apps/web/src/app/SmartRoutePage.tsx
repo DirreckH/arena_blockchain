@@ -1,19 +1,39 @@
-import { useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { AccuracyPage } from './AccuracyPage'
 import { AdjudicationPage } from './AdjudicationPage'
 import { BreakingPage } from './BreakingPage'
 import { CategoryDirectoryPage } from './CategoryDirectoryPage'
 import { ChallengePage } from './ChallengePage'
 import { DraftsPage } from './DraftsPage'
+import { HelpPage } from './HelpPage'
 import { LatestPage } from './LatestPage'
 import { SearchPage } from './SearchPage'
 import { WatchlistPage } from './WatchlistPage'
+import { RewardsPage } from './RewardsPage'
+import { LeaderboardPage } from './LeaderboardPage'
+import { DocsPage } from './DocsPage'
+import { MarketIntegrityPage } from './MarketIntegrityPage'
+import { ContactPage } from './ContactPage'
 import { isCategoryDirectoryPath } from '../mocks/category-directory.mock'
 import { filters, footerTopics, knownPageTitles } from '../mocks/arena-market.mock'
 import { AccountActivityPage } from '../components/shared/AccountActivityPage'
-import { BuildingPage } from '../components/shared/BuildingPage'
 import { DirectoryPage } from '../components/shared/DirectoryPage'
 import { NotFoundPage } from '../components/shared/NotFoundPage'
+import { useQuickMenu } from '../components/shared/QuickMenuContext'
 import { UtilityPage } from '../components/shared/UtilityPage'
+
+function QuickMenuAliasPage() {
+  const navigate = useNavigate()
+  const { openQuickMenuFromRoute } = useQuickMenu()
+
+  useEffect(() => {
+    openQuickMenuFromRoute()
+    navigate('/zh', { replace: true, state: { openQuickMenuFromAlias: true } })
+  }, [navigate, openQuickMenuFromRoute])
+
+  return null
+}
 
 export function SmartRoutePage() {
   const { pathname } = useLocation()
@@ -35,27 +55,27 @@ export function SmartRoutePage() {
   }
 
   if (pathname === '/zh/menu') {
-    return <UtilityPage title="Menu and account" description="Browse language, account entry points, and product support pages." variant="menu" />
+    return <QuickMenuAliasPage />
   }
 
   if (pathname === '/zh/pages') {
-    return <UtilityPage title="More pages" description="Browse account, tools, support, and additional product entry points." variant="pages" />
+    return <UtilityPage title="全部页面" description="Arena 产品所有入口一览，覆盖发现、市场、账户、支持等功能模块。" variant="pages" />
   }
 
   if (pathname === '/zh/categories') {
-    return <UtilityPage title="More markets" description="Browse more market category entry points." variant="categories" />
+    return <UtilityPage title="分类浏览" description="按主题分类浏览 Arena 公开命题，覆盖政策、金融、科技、体育等多个领域。" variant="categories" />
   }
 
   if (pathname === '/zh/language') {
-    return <UtilityPage title="Language" description="The current localized product shell is Chinese-first." variant="language" />
+    return <UtilityPage title="语言设置" description="切换产品界面显示语言，当前产品以中文为主界面语言。" variant="language" />
   }
 
   if (pathname === '/zh/share') {
-    return <UtilityPage title="Share" description="Links stay inside the current internal shell and do not call external system integrations." variant="share" />
+    return <UtilityPage title="分享命题" description="分享链接仅在当前产品界面内流转，不调用外部集成或第三方系统。" variant="share" />
   }
 
   if (pathname === '/zh/help') {
-    return <BuildingPage title="Help center" description="The help center route stays reserved while the rest of the product shell is being closed out." />
+    return <HelpPage />
   }
 
   if (pathname === '/zh/adjudication') {
@@ -64,6 +84,30 @@ export function SmartRoutePage() {
 
   if (pathname === '/zh/challenges') {
     return <ChallengePage />
+  }
+
+  if (pathname === '/zh/rewards') {
+    return <RewardsPage />
+  }
+
+  if (pathname === '/zh/leaderboard') {
+    return <LeaderboardPage />
+  }
+
+  if (pathname === '/zh/docs') {
+    return <DocsPage />
+  }
+
+  if (pathname === '/zh/market-integrity') {
+    return <MarketIntegrityPage />
+  }
+
+  if (pathname === '/zh/contact') {
+    return <ContactPage />
+  }
+
+  if (pathname === '/zh/accuracy') {
+    return <AccuracyPage />
   }
 
   if (pathname === '/zh/breaking') {
@@ -80,7 +124,7 @@ export function SmartRoutePage() {
       ?? footerTopics.find((item) => item.href === pathname)?.label
       ?? 'Topic'
 
-    return <DirectoryPage title={`${topic} propositions`} />
+    return <DirectoryPage title={`${topic} 命题`} />
   }
 
   if (isCategoryDirectoryPath(pathname)) {
@@ -92,7 +136,7 @@ export function SmartRoutePage() {
   }
 
   if (pathname.startsWith('/zh/news/')) {
-    return <UtilityPage title="Reference detail" description="Read the internal supporting note linked to the current proposition." variant="news" />
+    return <UtilityPage title="命题参考" description="以下为 Arena 当前公开命题列表，可在其中找到相关命题的详细信息。" variant="news" />
   }
 
   return <NotFoundPage />

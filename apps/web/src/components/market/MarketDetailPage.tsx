@@ -9,68 +9,11 @@ import { useWalletEnvironment } from '../../features/auth/wallet-environment'
 import { NotFoundPage } from '../shared/NotFoundPage'
 import { ProgressMeter } from '../shared/ProgressMeter'
 import { DataSourceBadge } from '../shared/DataSourceBadge'
+import { type DiscussionComment, DEMO_DISCUSSION_COMMENTS } from '../../features/arena/discussion'
 
 const optionCode = (displayOrder: number) => `选项 ${String.fromCharCode(64 + displayOrder)}`
 const revealLabel = (market: PublicValidationMarketCard) =>
   market.revealTargetAt ?? market.closesAt ?? '公开时间待定'
-
-type DiscussionComment = {
-  id: string
-  author: string
-  handle: string
-  tone: string
-  timeLabel: string
-  minutesAgo: number
-  optionIndex?: 0 | 1
-  body: string
-  likes: number
-  replyCount: number
-  repliesPreview?: Array<{ author: string, body: string }>
-}
-
-const DISCUSSION_SEED: DiscussionComment[] = [
-  {
-    id: 'comment-1',
-    author: 'Lena',
-    handle: '@macro_watch',
-    tone: '支持形成公开结果',
-    timeLabel: '12 分钟前',
-    minutesAgo: 12,
-    optionIndex: 0,
-    body: '从当前公开样本和窗口进度看，已经接近足够证据。关键是最后一轮公开披露能不能按时完成，只要披露时间不再后移，我倾向于结果会形成。',
-    likes: 18,
-    replyCount: 3,
-    repliesPreview: [
-      { author: 'Noah', body: '如果今晚来源同步更新，我也会转向这个判断。' },
-    ],
-  },
-  {
-    id: 'comment-2',
-    author: 'Kai',
-    handle: '@event_reader',
-    tone: '偏谨慎',
-    timeLabel: '28 分钟前',
-    minutesAgo: 28,
-    optionIndex: 1,
-    body: '样本数量虽然接近阈值，但来源一致性还不够稳。这个命题更像会拖到窗口尾部，甚至因为证据标准不齐导致暂时无法形成公开结果。',
-    likes: 11,
-    replyCount: 2,
-    repliesPreview: [
-      { author: 'Aya', body: '我同意，尤其是证据标准这一点现在还没有统一。' },
-    ],
-  },
-  {
-    id: 'comment-3',
-    author: 'Mira',
-    handle: '@signal_lane',
-    tone: '关注时间窗口',
-    timeLabel: '41 分钟前',
-    minutesAgo: 41,
-    body: '我更想看后续有没有新的公开确认源。如果今晚之前出现第二个高可信来源，这个市场的讨论方向可能会明显倾向 A 选项。',
-    likes: 7,
-    replyCount: 0,
-  },
-]
 
 function isValidStakeAmount(value: string) {
   return /^[0-9]+$/.test(value)
@@ -93,7 +36,7 @@ export function MarketDetailPage() {
   const [isSubmittingBet, setIsSubmittingBet] = useState(false)
   const [betFeedback, setBetFeedback] = useState<string | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
-  const [comments, setComments] = useState(DISCUSSION_SEED)
+  const [comments, setComments] = useState<DiscussionComment[]>(() => sourceMode === 'demo' ? DEMO_DISCUSSION_COMMENTS : [])
   const [discussionSort, setDiscussionSort] = useState<'top' | 'new'>('top')
   const [discussionFilter, setDiscussionFilter] = useState<'all' | 'neutral' | 'option-0' | 'option-1'>('all')
   const [likedCommentIds, setLikedCommentIds] = useState<string[]>([])
@@ -316,14 +259,14 @@ export function MarketDetailPage() {
           <section className="detail-panel detail-discussion-panel" aria-labelledby="discussion-title">
             <div className="detail-discussion-head">
               <div>
-                <span className="eyebrow">Community discussion</span>
+                <span className="eyebrow">命题讨论</span>
                 <h2 id="discussion-title">讨论区</h2>
               </div>
               <span className="detail-discussion-count">{comments.length} 条讨论</span>
             </div>
 
             <p className="boundary-note">
-              这里展示围绕命题结果的公开讨论。当前先使用 mock 讨论流，后续可接真实评论、回复与排序能力。
+              这里展示围绕命题结果的公开讨论，支持按立场筛选和热度、时间排序。
             </p>
 
             <div className="detail-discussion-toolbar">
@@ -503,6 +446,11 @@ export function MarketDetailPage() {
                       : '确认下注'}
             </button>
             {betFeedback ? <p className="market-bet-feedback">{betFeedback}</p> : null}
+            {hasExistingPosition && !betFeedback ? (
+              <p className="market-bet-feedback" style={{ color: 'var(--color-info, #1652f0)' }}>
+                你已在此命题建立持仓。前往 <Link to="/zh/results?tab=positions" style={{ color: 'inherit', textDecoration: 'underline' }}>持仓列表</Link> 查看详情。
+              </p>
+            ) : null}
             {activeExecution ? (
               <div className="market-execution-panel">
                 <strong>{activeExecution.statusLabel}</strong>
@@ -516,23 +464,27 @@ export function MarketDetailPage() {
             ) : null}
           </section>
 
-          <h2>信息边界</h2>
-          <dl>
-            <div>
-              <dt>状态</dt>
-              <dd>{market.progress.statusLabel}</dd>
+          <section className="detail-panel" style={{ display: 'grid', gap: 12 }}>
+            <h2 style={{ margin: 0, color: '#050b14', fontSize: 18, fontWeight: 800 }}>信息边界</h2>
+            <dl style={{ display: 'grid', gap: 12, margin: 0 }}>
+              <div style={{ display: 'grid', gap: 3 }}>
+                <dt style={{ color: '#94a3b8', fontSize: 12, fontWeight: 800 }}>命题状态</dt>
+                <dd style={{ margin: 0, color: '#111827', fontSize: 14, fontWeight: 700 }}>{market.progress.statusLabel}</dd>
+              </div>
+              <div style={{ display: 'grid', gap: 3 }}>
+                <dt style={{ color: '#94a3b8', fontSize: 12, fontWeight: 800 }}>开奖前公开字段</dt>
+                <dd style={{ margin: 0, color: '#111827', fontSize: 14, fontWeight: 700 }}>状态、时间进度、有效样本进度</dd>
+              </div>
+              <div style={{ display: 'grid', gap: 3 }}>
+                <dt style={{ color: '#94a3b8', fontSize: 12, fontWeight: 800 }}>安全说明</dt>
+                <dd style={{ margin: 0, color: '#111827', fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>{ARENA_INFORMATION_BOUNDARY.notes[0]}</dd>
+              </div>
+            </dl>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+              <button className="primary-action" onClick={openRulesIntro} type="button">查看边界规则</button>
+              <Link className="secondary-action" to="/zh/markets">浏览更多命题</Link>
             </div>
-            <div>
-              <dt>开奖前公开字段</dt>
-              <dd>状态、时间进度、有效样本进度</dd>
-            </div>
-            <div>
-              <dt>安全说明</dt>
-              <dd>{ARENA_INFORMATION_BOUNDARY.notes[0]}</dd>
-            </div>
-          </dl>
-          <button className="primary-action" onClick={openRulesIntro} type="button">查看边界规则</button>
-          <Link className="secondary-action" to="/zh/markets">浏览更多命题</Link>
+          </section>
         </aside>
       </div>
     </section>

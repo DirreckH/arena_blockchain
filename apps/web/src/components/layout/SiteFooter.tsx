@@ -30,7 +30,7 @@ export function SiteFooter() {
         <section>
           <h3>支持与说明</h3>
           <button type="button" onClick={openRulesIntro}>信息边界说明</button>
-          <Link to="/zh/activity">内部动态</Link>
+          <Link to="/zh/activity">账户设置</Link>
           <Link to="/zh/help">帮助中心</Link>
           <Link to="/zh/contact">联系入口</Link>
         </section>
@@ -45,9 +45,9 @@ export function SiteFooter() {
       </div>
       <div className="footer-legal">
         <div>
-          <Link to="/zh/contact"><CircleDollarSign size={18} /> Contact</Link>
-          <Link to="/zh/docs"><BarChart3 size={18} /> Docs</Link>
-          <Link to="/zh/market-integrity"><Sparkles size={18} /> Boundary</Link>
+          <Link to="/zh/contact"><CircleDollarSign size={18} /> 联系我们</Link>
+          <Link to="/zh/docs"><BarChart3 size={18} /> 开发文档</Link>
+          <Link to="/zh/market-integrity"><Sparkles size={18} /> 信息边界</Link>
         </div>
         <p>Arena © 2026 · 隐私 · 使用条款 · 帮助中心。当前演示覆盖主要浏览、登录与账户路径，部分扩展能力仍在逐步完善。</p>
       </div>

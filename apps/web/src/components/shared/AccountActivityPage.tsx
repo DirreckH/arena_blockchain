@@ -17,15 +17,19 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_RESPONDENT_ACCOUNT_PREFERENCES,
+  type RespondentAccountExportArtifactViewModel,
+  type RespondentAccountExportItemViewModel,
   type RespondentAccountPreferencesViewModel,
   type UpdateRespondentAccountPreferencesInput,
 } from '@arena/shared'
+import { DataSourceBadge } from './DataSourceBadge'
 import { useArenaAccountData } from '../../features/arena/account-data'
 import {
   formatRelativeTime,
   summarizeReputationLevel,
   summarizeTags,
 } from '../../features/arena/arena-ui-mappers'
+import { Link } from 'react-router-dom'
 import { useRulesIntro } from './RulesIntroContext'
 
 type SettingsSectionId =
@@ -150,7 +154,7 @@ const PROFILE_VISIBILITY_OPTIONS: ChoiceOption[] = [
 
 const AVATAR_STYLE_OPTIONS: ChoiceOption[] = [
   { value: 'initial', label: '字母头像' },
-  { value: 'image', label: '图片占位' },
+  { value: 'blockie', label: 'Blockie 图案' },
 ]
 
 const LANDING_VIEW_OPTIONS: ChoiceOption[] = [
@@ -258,7 +262,7 @@ function buildPreferencesDraft(
 }
 
 export function AccountActivityPage() {
-  const { isAuthenticated, logout, mockUser, openAuthModal } = useRulesIntro()
+  const { isAuthenticated, logout, user: sessionUser, openAuthModal } = useRulesIntro()
   const {
     overview,
     rewards,
@@ -274,10 +278,13 @@ export function AccountActivityPage() {
     isPreferencesSaving,
     isExportsLoading,
     isExporting,
+    sourceMode,
     updatePreferences,
+    loadExport,
     createExport,
     isLoading: isAccountLoading,
     errorMessage: accountErrorMessage,
+    refresh,
   } = useArenaAccountData()
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('profile')
   const [preferencesDraft, setPreferencesDraft] = useState<UpdateRespondentAccountPreferencesInput>(() =>
@@ -285,8 +292,12 @@ export function AccountActivityPage() {
   )
   const lastSavedPreferencesRef = useRef<string>(JSON.stringify(buildPreferencesDraft(null)))
   const saveTimerRef = useRef<number | null>(null)
+  const [selectedHistoricalExportId, setSelectedHistoricalExportId] = useState<string | null>(null)
+  const [selectedHistoricalExportDetail, setSelectedHistoricalExportDetail] =
+    useState<RespondentAccountExportArtifactViewModel | null>(null)
+  const [selectedHistoricalExportPendingId, setSelectedHistoricalExportPendingId] = useState<string | null>(null)
 
-  const user = mockUser ?? {
+  const user = sessionUser ?? {
     displayName: 'Arena 用户',
     avatarInitial: 'A',
     email: 'arena.user@example.com',
@@ -310,6 +321,59 @@ export function AccountActivityPage() {
   const latestExportCompletedAt = latestExport?.completedAt ?? latestExportItem?.completedAt ?? null
   const latestExportFileName = latestExport?.fileName ?? latestExportItem?.fileName ?? null
   const latestExportStatus = latestExport?.status ?? latestExportItem?.status ?? 'pending'
+  const latestExportDetailRows: DetailRow[] = latestExport
+    ? [
+        {
+          label: '导出文件',
+          value: latestExport.fileName,
+          hint: latestExport.walletAddress ?? '未附带钱包地址',
+          tone: 'info',
+        },
+        {
+          label: '导出周期',
+          value: latestExport.period,
+          hint: latestExport.includeSettlementAttachment ? '附带结算说明' : '未附带结算说明',
+          tone: 'neutral',
+        },
+        {
+          label: '已结算记录',
+          value: `${latestExport.overview.resultOverview.settledResults.totals.settledCount} 条已结算记录`,
+          hint: `${latestExport.overview.resultOverview.openPositions.totalCount} 个持仓`,
+          tone: 'info',
+        },
+        {
+          label: '最近活动',
+          value: latestExport.settlementAttachment
+            ? `${latestExport.settlementAttachment.recentActivityCount} 条最近活动`
+            : `${latestExport.overview.resultOverview.recentActivity.length} 条最近活动`,
+          hint: latestExport.settlementAttachment
+            ? `生成于 ${formatRelativeTime(latestExport.settlementAttachment.generatedAt)}`
+            : '未附带结算附件',
+          tone: 'neutral',
+        },
+      ]
+    : latestExportItem
+      ? [
+          {
+            label: '导出文件',
+            value: latestExportItem.fileName,
+            hint: '导出详情尚未加载',
+            tone: 'pending',
+          },
+          {
+            label: '导出周期',
+            value: latestExportItem.period,
+            hint: latestExportItem.includeSettlementAttachment ? '附带结算说明' : '未附带结算说明',
+            tone: 'neutral',
+          },
+          {
+            label: '已结算记录',
+            value: `${latestExportItem.metrics.settledResultCount} 条已结算记录`,
+            hint: `${latestExportItem.metrics.openPositionCount} 个持仓`,
+            tone: 'neutral',
+          },
+        ]
+      : []
   const notificationPreferences = preferencesDraft.notificationPreferences
   const avatarStyle = preferencesDraft.profile.avatarStyle
   const landingView = preferencesDraft.profile.landingView
@@ -320,6 +384,12 @@ export function AccountActivityPage() {
   const walletSettings = preferencesDraft.wallet
   const exportSettings = preferencesDraft.exports
   const developerSettings = preferencesDraft.developer
+  const accountSurfaceUnavailable =
+    !isAccountLoading
+    && sourceMode === 'unavailable'
+    && !overview
+    && !preferences
+    && !exports
 
   useEffect(() => {
     const nextDraft = buildPreferencesDraft(preferences)
@@ -363,6 +433,23 @@ export function AccountActivityPage() {
     preferencesDraft,
     updatePreferences,
   ])
+
+  useEffect(() => {
+    if (!exports || exports.items.length < 2) {
+      setSelectedHistoricalExportId(null)
+      setSelectedHistoricalExportDetail(null)
+      setSelectedHistoricalExportPendingId(null)
+      return
+    }
+
+    const historicalItems = exports.items.slice(1)
+    const stillExists = historicalItems.some((item) => item.exportId === selectedHistoricalExportId)
+    if (!stillExists) {
+      setSelectedHistoricalExportId(historicalItems[0]?.exportId ?? null)
+      setSelectedHistoricalExportDetail(null)
+      setSelectedHistoricalExportPendingId(null)
+    }
+  }, [exports, selectedHistoricalExportId])
 
   const toggleNotificationPreference = (key: NotificationPreferenceKey) => {
     setPreferencesDraft((current) => ({
@@ -445,6 +532,85 @@ export function AccountActivityPage() {
     </section>
   )
 
+  const buildHistoricalExportDetailRows = (
+    item: RespondentAccountExportItemViewModel | null,
+    detail: RespondentAccountExportArtifactViewModel | null,
+  ): DetailRow[] => {
+    if (detail) {
+      return [
+        {
+          label: '导出文件',
+          value: detail.fileName,
+          hint: detail.walletAddress ?? '未附带钱包地址',
+          tone: 'info',
+        },
+        {
+          label: '导出周期',
+          value: detail.period,
+          hint: detail.includeSettlementAttachment ? '附带结算说明' : '未附带结算说明',
+          tone: 'neutral',
+        },
+        {
+          label: '已结算记录',
+          value: `${detail.overview.resultOverview.settledResults.totals.settledCount} 条已结算记录`,
+          hint: `${detail.overview.resultOverview.openPositions.totalCount} 个持仓`,
+          tone: 'info',
+        },
+        {
+          label: '最近活动',
+          value: detail.settlementAttachment
+            ? `${detail.settlementAttachment.recentActivityCount} 条最近活动`
+            : `${detail.overview.resultOverview.recentActivity.length} 条最近活动`,
+          hint: detail.settlementAttachment
+            ? `生成于 ${formatRelativeTime(detail.settlementAttachment.generatedAt)}`
+            : '未附带结算附件',
+          tone: 'neutral',
+        },
+      ]
+    }
+
+    if (!item) {
+      return []
+    }
+
+    return [
+      {
+        label: '导出文件',
+        value: item.fileName,
+        hint: '导出详情尚未加载',
+        tone: 'pending',
+      },
+      {
+        label: '导出周期',
+        value: item.period,
+        hint: item.includeSettlementAttachment ? '附带结算说明' : '未附带结算说明',
+        tone: 'neutral',
+      },
+      {
+        label: '已结算记录',
+        value: `${item.metrics.settledResultCount} 条已结算记录`,
+        hint: `${item.metrics.openPositionCount} 个持仓`,
+        tone: 'neutral',
+      },
+    ]
+  }
+
+  const handleSelectHistoricalExport = (item: RespondentAccountExportItemViewModel) => {
+    setSelectedHistoricalExportId(item.exportId)
+    setSelectedHistoricalExportPendingId(item.exportId)
+
+    void loadExport(item.exportId)
+      .then((artifact) => {
+        setSelectedHistoricalExportDetail(artifact)
+      })
+      .catch(() => {
+        setSelectedHistoricalExportDetail(null)
+      })
+      .finally(() => {
+        setSelectedHistoricalExportPendingId((current) => (current === item.exportId ? null : current))
+      })
+  }
+
   const renderInteractiveSection = () => {
     if (activeSection === 'profile') {
       const profileBlocks: DetailBlock[] = [
@@ -459,7 +625,7 @@ export function AccountActivityPage() {
         },
         {
           title: '账户身份',
-          description: '基于现有读模型显示声誉与账户阶段，其余资料编辑能力仍保持占位。',
+          description: '基于现有读模型显示声誉与账户阶段，资料编辑功能将在后续版本中开放。',
           rows: [
             { label: '账户类型', value: '标准用户', tone: 'neutral' },
             { label: '当前状态', value: '真实已登录会话', tone: 'info' },
@@ -553,7 +719,7 @@ export function AccountActivityPage() {
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>头像样式</strong>
-                  <p>当前保留字母头像与图片占位两种展示方式。</p>
+                  <p>选择账户头像的显示样式：字母头像取钱包地址首字符，Blockie 生成与地址绑定的唯一图案。</p>
                 </div>
                 <ChoiceGroup
                   options={AVATAR_STYLE_OPTIONS}
@@ -592,12 +758,14 @@ export function AccountActivityPage() {
 
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
-                  <strong>显示名称</strong>
-                  <p>当前仅保留占位入口，后续接入真实资料编辑能力。</p>
+                  <strong>账户标识</strong>
+                  <p>账户标识由已连接的钱包地址自动生成，不可单独编辑。</p>
                 </div>
-                <button className="account-settings-inline-button" type="button">
-                  编辑占位入口
-                </button>
+                <em className="account-settings-detail-value neutral" style={{ fontStyle: 'normal' }}>
+                  {user.walletAddress !== '未连接'
+                    ? `${user.walletAddress.slice(0, 6)}…${user.walletAddress.slice(-4)}`
+                    : '未连接'}
+                </em>
               </div>
             </div>
           </article>
@@ -609,7 +777,7 @@ export function AccountActivityPage() {
       const securityBlocks: DetailBlock[] = [
         {
           title: '安全状态',
-          description: '认证链路已接入钱包签名登录；更深的风控与二次验证仍保留前端占位。',
+          description: '认证链路已接入钱包签名登录；邮箱验证与二次验证功能正在接入中。',
           rows: [
             { label: '登录方式', value: '钱包签名登录', tone: 'info' },
             { label: '当前会话', value: user.walletAddress, tone: 'neutral' },
@@ -625,20 +793,19 @@ export function AccountActivityPage() {
           <article className="account-settings-detail-card">
             <div className="account-settings-detail-head">
               <strong>验证与风控</strong>
-              <p>保留邮箱验证、两步确认与敏感操作校验的设置结构。</p>
+              <p>钱包签名是当前唯一认证方式；邮箱绑定功能将在后续版本接入。</p>
             </div>
 
             <div className="account-settings-control-stack">
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>邮箱验证</strong>
-                  <p>后续接入真实认证后，这里会展示完整验证流程与状态。</p>
+                  <p>绑定邮箱后可在钱包签名不可用时作为备用登录方式。后端接入后将开放此功能。</p>
                 </div>
                 <div className="account-settings-inline-actions">
-                  <span className="account-settings-pill pending">待接入</span>
-                  <button className="account-settings-inline-button" type="button">
-                    查看流程
-                  </button>
+                  <em className="account-settings-detail-value neutral" style={{ fontStyle: 'normal', fontSize: '0.82rem' }}>
+                    未绑定
+                  </em>
                 </div>
               </div>
 
@@ -758,7 +925,7 @@ export function AccountActivityPage() {
           <article className="account-settings-detail-card">
             <div className="account-settings-detail-head">
               <strong>钱包连接与签名</strong>
-              <p>先保留连接、签名前提醒与资金承接位，后续再接入真实钱包能力。</p>
+              <p>当前已从 Arena 会话读取钱包地址；链上网络与资产状态将在后续版本中接入。</p>
             </div>
 
             <div className="account-settings-control-stack">
@@ -780,7 +947,7 @@ export function AccountActivityPage() {
                   }
                   type="button"
                 >
-                  {walletSettings.walletConnected ? '切回占位状态' : '仅切换前端占位'}
+                  {walletSettings.walletConnected ? '断开连接' : '连接钱包'}
                 </button>
               </div>
 
@@ -965,7 +1132,7 @@ export function AccountActivityPage() {
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>允许活动被索引</strong>
-                  <p>决定公开活动记录是否进入发现与搜索的占位列表。</p>
+                  <p>允许后，你的公开活动记录将出现在发现与搜索结果中。</p>
                 </div>
                 {renderSwitchControl(privacySettings.allowActivityIndexing, '允许活动被索引', () =>
                   setPreferencesDraft((current) => ({
@@ -1050,12 +1217,14 @@ export function AccountActivityPage() {
 
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
-                  <strong>退出其他会话</strong>
-                  <p>保留操作位，后续接入真实的会话管理接口。</p>
+                  <strong>退出其他设备</strong>
+                  <p>强制终止其他设备上的活跃会话需要后端会话管理接口支持，该功能待后端接入后开放。</p>
                 </div>
-                <button className="account-settings-inline-button" type="button">
-                  执行占位操作
-                </button>
+                <div className="account-settings-inline-actions">
+                  <em className="account-settings-detail-value neutral" style={{ fontStyle: 'normal', fontSize: '0.82rem' }}>
+                    暂不支持
+                  </em>
+                </div>
               </div>
 
               <div className="account-settings-control-row">
@@ -1077,11 +1246,11 @@ export function AccountActivityPage() {
       const exportBlocks: DetailBlock[] = [
         {
           title: '可导出内容',
-          description: '当前只读层已能获取奖励、声誉、标签；真正的导出任务和文件流仍保持占位。',
+          description: '基于当前账户读模型生成快照文件，点击「导出账户快照」可触发真实导出任务。',
           rows: [
             { label: '奖励记录', value: `${currentRewards.length} 条真实记录`, tone: 'info' },
             { label: '声誉摘要', value: reputation ? '可读取' : '等待生成', tone: reputation ? 'info' : 'pending' },
-            { label: '税务与对账单', value: '后续补齐', tone: 'pending' },
+            { label: '税务与对账单', value: settledCount > 0 ? `${settledCount} 条已结算记录可导出` : '暂无已结算记录', tone: settledCount > 0 ? 'neutral' : 'neutral' },
           ],
         },
       ]
@@ -1133,7 +1302,7 @@ export function AccountActivityPage() {
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>附带结算说明</strong>
-                  <p>导出收益报告时，同时附带公开结果与结算批次的说明占位。</p>
+                  <p>导出收益报告时，同时附带对应的公开结果与结算批次详情。</p>
                 </div>
                 {renderSwitchControl(exportSettings.includeSettlementAttachment, '附带结算说明', () =>
                   setPreferencesDraft((current) => ({
@@ -1188,6 +1357,104 @@ export function AccountActivityPage() {
                   {isExportsLoading ? '加载中...' : latestExportStatus}
                 </span>
               </div>
+              {latestExportDetailRows.length > 0 ? (
+                <div className="account-settings-control-row">
+                  <div className="account-settings-control-copy">
+                    <strong>最近导出详情</strong>
+                    <p>
+                      {latestExport
+                        ? '当前展示的是最近一次真实导出工件中的快照细节。'
+                        : '当前只有导出列表元数据，详细工件尚未同步回当前会话。'}
+                    </p>
+                  </div>
+                  <div className="account-settings-inline-actions" style={{ alignItems: 'stretch', minWidth: '16rem' }}>
+                    <div className="account-settings-detail-list" style={{ width: '100%' }}>
+                      {latestExportDetailRows.map((row) => (
+                        <div className="account-settings-detail-row" key={`latest-export-${row.label}`}>
+                          <div className="account-settings-detail-meta">
+                            <span>{row.label}</span>
+                            {row.hint ? <small>{row.hint}</small> : null}
+                          </div>
+                          <em className={row.tone ? `account-settings-detail-value ${row.tone}` : 'account-settings-detail-value'}>
+                            {row.value}
+                          </em>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {exports && exports.items.length > 1 ? (
+                <div className="account-settings-control-row">
+                  <div className="account-settings-control-copy">
+                    <strong>历史导出</strong>
+                    <p>在已存储的导出记录之间切换，使用同一个详情面板查看真实快照或元数据回退。</p>
+                  </div>
+                  <div className="account-settings-inline-actions" style={{ alignItems: 'stretch', minWidth: '18rem' }}>
+                    <div className="account-settings-detail-list" style={{ width: '100%' }}>
+                      {exports.items.slice(1).map((item) => {
+                        const isSelected = item.exportId === selectedHistoricalExportId
+                        const historicalDetail =
+                          isSelected && selectedHistoricalExportDetail?.exportId === item.exportId
+                            ? selectedHistoricalExportDetail
+                            : null
+                        const detailRows = isSelected
+                          ? buildHistoricalExportDetailRows(item, historicalDetail)
+                          : null
+
+                        return (
+                          <div key={item.exportId} data-testid={`account-export-history-item-${item.exportId}`}>
+                            <button
+                              type="button"
+                              className={isSelected ? 'account-settings-detail-row active' : 'account-settings-detail-row'}
+                              onClick={() => handleSelectHistoricalExport(item)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                width: '100%',
+                              }}
+                            >
+                              <div className="account-settings-detail-meta">
+                                <span>{item.fileName}</span>
+                                <small>
+                                  {item.period} 路 {item.metrics.settledResultCount} 鏉″凡缁撶畻璁板綍
+                                </small>
+                              </div>
+                              <em className={isSelected ? 'account-settings-detail-value info' : 'account-settings-detail-value neutral'}>
+                                {selectedHistoricalExportPendingId === item.exportId ? '加载中...' : item.status}
+                              </em>
+                            </button>
+                            {isSelected && detailRows ? (
+                              <div
+                                className="account-settings-detail-list"
+                                data-testid="account-export-history-detail-panel"
+                                style={{ width: '100%', marginTop: '0.65rem' }}
+                              >
+                                {detailRows.map((row) => (
+                                  <div
+                                    className="account-settings-detail-row"
+                                    key={`historical-export-${item.exportId}-${row.label}`}
+                                  >
+                                    <div className="account-settings-detail-meta">
+                                      <span>{row.label}</span>
+                                      {row.hint ? <small>{row.hint}</small> : null}
+                                    </div>
+                                    <em className={row.tone ? `account-settings-detail-value ${row.tone}` : 'account-settings-detail-value'}>
+                                      {row.value}
+                                    </em>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               {exportsErrorMessage ? (
                 <div className="account-settings-control-row">
                   <div className="account-settings-control-copy">
@@ -1206,11 +1473,11 @@ export function AccountActivityPage() {
       const developerBlocks: DetailBlock[] = [
         {
           title: '开发者接入状态',
-          description: '把原先分散的 Relayer API、开发者码和技术入口统一归档到这里。',
+          description: 'Relayer API 密钥与开发者码将在开发者接入功能上线后开放申请。',
           rows: [
-            { label: 'Relayer API 密钥', value: developerSettings.keyCreated ? '已生成示例密钥' : '未生成', tone: developerSettings.keyCreated ? 'info' : 'pending' },
-            { label: '开发者码', value: developerSettings.codeEnabled ? '已启用示例码' : '未启用', tone: developerSettings.codeEnabled ? 'info' : 'pending' },
-            { label: '环境范围', value: developerSettings.environment === 'sandbox' ? '沙盒' : '生产', tone: 'neutral' },
+            { label: 'Relayer API 密钥', value: '未开放申请', tone: 'neutral' },
+            { label: '开发者码', value: '未开放申请', tone: 'neutral' },
+            { label: '访问环境', value: developerSettings.environment === 'sandbox' ? '沙盒' : '生产', tone: 'neutral' },
           ],
         },
       ]
@@ -1222,41 +1489,26 @@ export function AccountActivityPage() {
           <article className="account-settings-detail-card">
             <div className="account-settings-detail-head">
               <strong>API 与访问控制</strong>
-              <p>这里保留密钥、来源限制与环境切换的前端产品壳，不接真实后端。</p>
+              <p>Relayer API 密钥由后端签发，开发者接入功能上线后可在此申请与管理。</p>
             </div>
 
             <div className="account-settings-control-stack">
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>当前密钥</strong>
-                  <p>仅生成本地示例字符串，不可用于真实请求调用。</p>
+                  <p>Relayer API 请求认证所需的 Bearer Token。密钥由后端生成，接入功能上线后将在此展示。</p>
                 </div>
                 <div className="account-settings-inline-actions">
-                  <span className="account-settings-code">
-                    {developerSettings.keyCreated ? 'sk_relayer_••••••••7Q2M' : '尚未生成'}
-                  </span>
-                  <button
-                    className="account-settings-inline-button"
-                    onClick={() =>
-                      setPreferencesDraft((current) => ({
-                        ...current,
-                        developer: {
-                          ...current.developer,
-                          keyCreated: !current.developer.keyCreated,
-                        },
-                      }))
-                    }
-                    type="button"
-                  >
-                    {developerSettings.keyCreated ? '重置示例密钥' : '生成示例密钥'}
-                  </button>
+                  <em className="account-settings-detail-value neutral" style={{ fontStyle: 'normal', fontSize: '0.82rem' }}>
+                    未生成
+                  </em>
                 </div>
               </div>
 
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>IP 白名单</strong>
-                  <p>预留访问控制入口，后续接入真实来源限制。</p>
+                  <p>限制密钥只能从指定来源 IP 发起请求，接入功能上线后可配置。</p>
                 </div>
                 {renderSwitchControl(developerSettings.whitelistEnabled, 'IP 白名单', () =>
                   setPreferencesDraft((current) => ({
@@ -1272,7 +1524,7 @@ export function AccountActivityPage() {
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>访问环境</strong>
-                  <p>未来可在沙盒与正式网络之间切换。</p>
+                  <p>在沙盒与正式网络之间切换，沙盒流量不计入生产数据。</p>
                 </div>
                 <ChoiceGroup
                   options={DEVELOPER_ENVIRONMENT_OPTIONS}
@@ -1294,34 +1546,19 @@ export function AccountActivityPage() {
           <article className="account-settings-detail-card">
             <div className="account-settings-detail-head">
               <strong>开发者码与协作</strong>
-              <p>把邀请码、测试标识和团队适用范围放到同一分区，避免再拆成独立技术页。</p>
+              <p>开发者码用于标识测试流量，与正式账户数据严格隔离。接入功能上线后可在此申请。</p>
             </div>
 
             <div className="account-settings-control-stack">
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>当前开发者码</strong>
-                  <p>本地静态字符串，仅用于视觉占位与流程预留。</p>
+                  <p>沙盒环境测试标识符，后端接入后将由平台自动分配。</p>
                 </div>
                 <div className="account-settings-inline-actions">
-                  <span className="account-settings-code">
-                    {developerSettings.codeEnabled ? 'ARENA-DEV-7Q2M' : '未启用'}
-                  </span>
-                  <button
-                    className="account-settings-inline-button"
-                    onClick={() =>
-                      setPreferencesDraft((current) => ({
-                        ...current,
-                        developer: {
-                          ...current.developer,
-                          codeEnabled: !current.developer.codeEnabled,
-                        },
-                      }))
-                    }
-                    type="button"
-                  >
-                    {developerSettings.codeEnabled ? '停用示例码' : '启用示例码'}
-                  </button>
+                  <em className="account-settings-detail-value neutral" style={{ fontStyle: 'normal', fontSize: '0.82rem' }}>
+                    未分配
+                  </em>
                 </div>
               </div>
 
@@ -1348,11 +1585,11 @@ export function AccountActivityPage() {
               <div className="account-settings-control-row">
                 <div className="account-settings-control-copy">
                   <strong>开发文档入口</strong>
-                  <p>当前只保留说明入口位，后续接产品与接口文档。</p>
+                  <p>查看 Relayer API 参考、数据结构说明与集成最佳实践。</p>
                 </div>
-                <button className="account-settings-inline-button" type="button">
-                  查看占位文档
-                </button>
+                <Link className="account-settings-inline-button" to="/zh/docs">
+                  查看文档
+                </Link>
               </div>
             </div>
           </article>
@@ -1383,8 +1620,31 @@ export function AccountActivityPage() {
     )
   }
 
+  if (accountSurfaceUnavailable) {
+    return (
+      <section className="route-page account-activity-page">
+        <DataSourceBadge mode={sourceMode} />
+        <section className="account-empty-card">
+          <div className="account-empty-icon" aria-hidden="true">
+            <CircleAlert size={28} />
+          </div>
+          <strong>账户设置暂不可用</strong>
+          <p>
+            {accountErrorMessage ?? 'Arena 暂时无法读取当前会话下的真实账户设置、导出与活动聚合，请稍后重试。'}
+          </p>
+          <div className="account-summary-actions">
+            <button className="primary-action" onClick={() => { void refresh() }} type="button">
+              重试加载账户数据
+            </button>
+          </div>
+        </section>
+      </section>
+    )
+  }
+
   return (
     <section className="route-page account-activity-page">
+      <DataSourceBadge mode={sourceMode} />
       <div className="account-settings-layout">
         <aside className="account-settings-sidebar" aria-label="账户设置导航">
           <div className="account-settings-sidebar-list">

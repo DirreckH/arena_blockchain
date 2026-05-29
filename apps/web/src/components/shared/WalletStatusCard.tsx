@@ -22,10 +22,10 @@ export function WalletStatusCard() {
       value: !isAuthenticated
         ? '匿名'
         : sessionMode === 'demo'
-          ? '演示会话'
-          : '已签名会话',
+          ? '已激活'
+          : '已签名',
       detail: !isAuthenticated
-        ? '未创建 Arena 认证会话'
+        ? '未连接钱包'
         : identity
           ? `钱包 ${identity.walletAddress}`
           : '认证会话已激活',
@@ -47,10 +47,10 @@ export function WalletStatusCard() {
           ? '网络不匹配'
           : '未知',
       detail: networkStatus === 'unsupported'
-        ? `${describeNetwork(currentChainId)}，Arena 需要 Chain ID ${configuredChainId}。`
+        ? `${describeNetwork(currentChainId)}，需要 Chain ID ${configuredChainId}。`
         : networkStatus === 'supported'
-          ? `已就绪，Arena Chain ID ${configuredChainId}`
-          : '真实钱包签名时 Arena 会验证链就绪状态',
+          ? `已就绪，Chain ID ${configuredChainId}`
+          : '签名时将自动校验链',
     },
   ]
 
@@ -58,7 +58,6 @@ export function WalletStatusCard() {
     <section className="account-menu-panel wallet-status-card">
       <div className="account-menu-panel-head">
         <h2>钱包就绪状态</h2>
-        <span>在任何认证账户写入之前，真实签名、演示会话和网络就绪状态始终可见。</span>
       </div>
       <div className="account-menu-status-list">
         {rows.map((row) => (

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Bookmark, ChevronRight, Search, SlidersHorizontal } from 'lucide-react'
+import { Bookmark, ChevronRight, SlidersHorizontal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { PublicValidationMarketCard } from '../../features/validation/validation-market.types'
 import { FilterStrip } from '../navigation/FilterStrip'
@@ -9,7 +9,7 @@ export function MarketWorkspace({
   compact = false,
   markets,
   showFilterStrip = true,
-  title = 'All propositions',
+  title = '全部命题',
   showMoreLabel = '查看热门排行',
   showMoreHref = '/zh/markets',
   footer,
@@ -27,13 +27,10 @@ export function MarketWorkspace({
       <div className="market-heading-row">
         <h2>{title}</h2>
         <div className="market-toolbar">
-          <Link to="/zh/search" aria-label="Search propositions">
-            <Search size={21} />
-          </Link>
-          <Link to="/zh/markets?panel=filters" aria-label="Filter propositions">
+          <Link to="/zh/markets?panel=filters" aria-label="筛选命题">
             <SlidersHorizontal size={21} />
           </Link>
-          <Link to="/zh/watchlist" aria-label="Saved propositions">
+          <Link to="/zh/watchlist" aria-label="已保存命题">
             <Bookmark size={21} />
           </Link>
         </div>

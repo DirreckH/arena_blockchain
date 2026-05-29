@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -21,6 +22,11 @@ export type SessionUser = {
   walletAddress: string
 }
 
+type OpenAuthModalOptions = {
+  closeRedirectTo?: string
+  postAuthRedirectTo?: string
+}
+
 type RulesIntroContextValue = {
   isRulesIntroOpen: boolean
   openRulesIntro: () => void
@@ -28,9 +34,9 @@ type RulesIntroContextValue = {
   isAuthModalOpen: boolean
   authMode: 'login' | 'signup'
   isAuthenticated: boolean
+  lastVisitedRoute: string | null
   user: SessionUser | null
-  mockUser: SessionUser | null
-  openAuthModal: (mode: 'login' | 'signup') => void
+  openAuthModal: (mode: 'login' | 'signup', options?: OpenAuthModalOptions) => void
   closeAuthModal: () => void
   switchAuthMode: (mode: 'login' | 'signup') => void
   logout: () => void
@@ -61,11 +67,26 @@ export function RulesIntroProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { identity, isAuthenticated, loginWithWallet, logout: logoutSession } = useAuthSession()
+  const currentRoute = `${location.pathname}${location.search}${location.hash}`
   const [isRulesIntroOpen, setIsRulesIntroOpen] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [postAuthRedirectTo, setPostAuthRedirectTo] = useState('/zh/activity')
+  const [closeAuthRedirectTo, setCloseAuthRedirectTo] = useState<string | null>(null)
+  const routeHistoryRef = useRef<{ currentRoute: string; previousRoute: string | null }>({
+    currentRoute,
+    previousRoute: null,
+  })
+
+  if (routeHistoryRef.current.currentRoute !== currentRoute) {
+    routeHistoryRef.current = {
+      currentRoute,
+      previousRoute: routeHistoryRef.current.currentRoute,
+    }
+  }
+
+  const lastVisitedRoute = routeHistoryRef.current.previousRoute
 
   const openRulesIntro = useCallback(() => {
     setStepIndex(0)
@@ -77,15 +98,26 @@ export function RulesIntroProvider({ children }: { children: ReactNode }) {
     setStepIndex(0)
   }, [])
 
-  const openAuthModal = useCallback((mode: 'login' | 'signup') => {
+  const openAuthModal = useCallback((mode: 'login' | 'signup', options?: OpenAuthModalOptions) => {
     setAuthMode(mode)
-    setPostAuthRedirectTo(`${location.pathname}${location.search}${location.hash}`)
+    setPostAuthRedirectTo(
+      options?.postAuthRedirectTo ?? currentRoute,
+    )
+    setCloseAuthRedirectTo(options?.closeRedirectTo ?? null)
     setIsAuthModalOpen(true)
-  }, [location.hash, location.pathname, location.search])
+  }, [currentRoute])
 
   const closeAuthModal = useCallback(() => {
     setIsAuthModalOpen(false)
-  }, [])
+    setCloseAuthRedirectTo((current) => {
+      if (!current) {
+        return null
+      }
+
+      navigate(current, { replace: true })
+      return null
+    })
+  }, [navigate])
 
   const switchAuthMode = useCallback((mode: 'login' | 'signup') => {
     setAuthMode(mode)
@@ -94,6 +126,7 @@ export function RulesIntroProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     logoutSession()
     setIsAuthModalOpen(false)
+    setCloseAuthRedirectTo(null)
   }, [logoutSession])
 
   const handleAuthenticate = useCallback(
@@ -101,6 +134,7 @@ export function RulesIntroProvider({ children }: { children: ReactNode }) {
       setAuthMode(mode)
       await loginWithWallet(walletAddress)
       setIsAuthModalOpen(false)
+      setCloseAuthRedirectTo(null)
       navigate(isDemoWalletAddress(walletAddress) ? '/zh/activity' : (postAuthRedirectTo || '/zh/activity'))
     },
     [loginWithWallet, navigate, postAuthRedirectTo],
@@ -158,8 +192,8 @@ export function RulesIntroProvider({ children }: { children: ReactNode }) {
       isAuthModalOpen,
       authMode,
       isAuthenticated,
+      lastVisitedRoute,
       user: identity ? buildSessionUser(identity.walletAddress) : null,
-      mockUser: identity ? buildSessionUser(identity.walletAddress) : null,
       openAuthModal,
       closeAuthModal,
       switchAuthMode,
@@ -173,6 +207,7 @@ export function RulesIntroProvider({ children }: { children: ReactNode }) {
       isAuthModalOpen,
       isAuthenticated,
       isRulesIntroOpen,
+      lastVisitedRoute,
       logout,
       openAuthModal,
       openRulesIntro,

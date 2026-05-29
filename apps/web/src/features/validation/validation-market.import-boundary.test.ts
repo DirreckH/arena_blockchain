@@ -11,12 +11,20 @@ const displayEntrypoints = [
   'components/market/MarketWorkspace.tsx',
   'components/market/FeaturedCarousel.tsx',
   'components/market/RightRail.tsx',
+  'components/market/MarketRankingPage.tsx',
+  'components/navigation/FilterStrip.tsx',
+  'components/navigation/TopNavigation.tsx',
+  'components/layout/SiteFooter.tsx',
+  'components/shared/AuthModal.tsx',
   'app/HomePage.tsx',
+  'app/SmartRoutePage.tsx',
 ]
 
 const forbiddenSnippets = [
   '../mocks/arena-market.mock',
   '../../mocks/arena-market.mock',
+  '../mocks/ranked-market-page.mock',
+  '../../mocks/ranked-market-page.mock',
   'marketCards',
   'featuredMarkets',
 ]

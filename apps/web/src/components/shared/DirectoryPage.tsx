@@ -9,7 +9,7 @@ export function DirectoryPage({ title }: { title: string }) {
       <div className="route-header compact">
         <span>Arena</span>
         <h1>{title}</h1>
-        <p>Public market directory backed by the Arena validation market feed.</p>
+        <p>由 Arena 验证层市场数据驱动的公开命题目录。</p>
       </div>
       <MarketWorkspace compact markets={markets} title={title} />
     </section>

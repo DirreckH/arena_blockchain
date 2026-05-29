@@ -1,8 +1,10 @@
 import type {
+  PublicCategoryDirectoryIndexItemViewModel,
   PublicCategoryDirectoryViewModel,
   PublicDiscoverPageViewModel,
   PublicDiscoveryRankingViewModel,
   PublicLatestTopicsViewModel,
+  PublicRespondentLeaderboardViewModel,
 } from '@arena/shared'
 import {
   createContext,
@@ -22,29 +24,18 @@ type DiscoveryDataContextValue = {
   hot: PublicDiscoveryRankingViewModel | null
   breaking: PublicDiscoveryRankingViewModel | null
   latestTopics: PublicLatestTopicsViewModel | null
+  respondentLeaderboard: PublicRespondentLeaderboardViewModel | null
+  categoryIndex: Map<string, PublicCategoryDirectoryIndexItemViewModel>
   categories: Map<string, PublicCategoryDirectoryViewModel>
-  sourceMode: 'live' | 'demo'
+  sourceMode: 'live' | 'demo' | 'mixed'
   isLoading: boolean
   errorMessage: string | null
   refresh: () => Promise<void>
+  hasCategoryPath: (pathname: string) => boolean
   getCategory: (pathname: string) => PublicCategoryDirectoryViewModel | null
 }
 
 const DiscoveryDataContext = createContext<DiscoveryDataContextValue | undefined>(undefined)
-
-const categorySlugByPathname = new Map<string, string>([
-  ['/zh/politics', 'politics'],
-  ['/zh/sports/live', 'sports-live'],
-  ['/zh/crypto', 'crypto'],
-  ['/zh/tech', 'tech'],
-  ['/zh/geopolitics', 'geopolitics'],
-  ['/zh/finance', 'finance'],
-  ['/zh/pop-culture', 'pop-culture'],
-  ['/zh/economy', 'economy'],
-  ['/zh/weather', 'weather'],
-  ['/zh/surveys', 'surveys'],
-  ['/zh/rolling', 'rolling'],
-])
 
 function isCategoryEntry(
   entry: readonly [string, PublicCategoryDirectoryViewModel] | null,
@@ -58,8 +49,10 @@ export function DiscoveryDataProvider({ children }: { children: ReactNode }) {
   const [hot, setHot] = useState<PublicDiscoveryRankingViewModel | null>(null)
   const [breaking, setBreaking] = useState<PublicDiscoveryRankingViewModel | null>(null)
   const [latestTopics, setLatestTopics] = useState<PublicLatestTopicsViewModel | null>(null)
+  const [respondentLeaderboard, setRespondentLeaderboard] = useState<PublicRespondentLeaderboardViewModel | null>(null)
+  const [categoryIndex, setCategoryIndex] = useState<Map<string, PublicCategoryDirectoryIndexItemViewModel>>(new Map())
   const [categories, setCategories] = useState<Map<string, PublicCategoryDirectoryViewModel>>(new Map())
-  const [sourceMode, setSourceMode] = useState<'live' | 'demo'>('live')
+  const [sourceMode, setSourceMode] = useState<'live' | 'demo' | 'mixed'>('live')
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -69,45 +62,79 @@ export function DiscoveryDataProvider({ children }: { children: ReactNode }) {
 
     try {
       if (isDemoSession && demoBackend.isDemoToken(token)) {
+        const nextCategoryIndex = demoBackend.getCategoryDirectoryIndex()
         setHome(demoBackend.getDiscoveryHome())
         setHot(demoBackend.getDiscoveryRanking('hot'))
         setBreaking(demoBackend.getDiscoveryRanking('breaking'))
         setLatestTopics(demoBackend.getLatestTopics())
+        setRespondentLeaderboard(demoBackend.getPublicRespondentLeaderboard())
         setSourceMode('demo')
+        setCategoryIndex(new Map(
+          nextCategoryIndex.items.map((item) => [item.pathname, item] as const),
+        ))
         setCategories(new Map(
-          Array.from(categorySlugByPathname.entries())
-            .map(([pathname, slug]) => {
-              const config = demoBackend.getCategoryDirectory(slug)
-              return config ? ([pathname, config] as const) : null
+          nextCategoryIndex.items
+            .map((item) => {
+              const config = demoBackend.getCategoryDirectory(item.slug)
+              return config ? ([item.pathname, config] as const) : null
             })
             .filter(isCategoryEntry),
         ))
         return
       }
 
-      const [nextHome, nextHot, nextBreaking, nextLatestTopics, categoryEntries] = await Promise.all([
+      const [nextHome, nextHot, nextBreaking, nextLatestTopics, nextRespondentLeaderboard, nextCategoryIndex] = await Promise.all([
         arenaApi.getDiscoveryHomeFeed(),
         arenaApi.getDiscoveryRankingFeed('hot'),
         arenaApi.getDiscoveryRankingFeed('breaking'),
         arenaApi.getLatestTopicsFeed(),
-        Promise.all(
-          Array.from(categorySlugByPathname.entries()).map(async ([pathname, slug]) => {
-            const config = await arenaApi.getCategoryDirectoryFeed(slug)
-            return config.data ? ([pathname, config.data] as const) : null
-          }),
-        ),
+        arenaApi.getPublicRespondentLeaderboardFeed(),
+        arenaApi.getCategoryDirectoryIndexFeed(),
       ])
+
+      const categoryFeeds = await Promise.all(
+        nextCategoryIndex.data.items.map(async (item) => ({
+          pathname: item.pathname,
+          feed: await arenaApi.getCategoryDirectoryFeed(item.slug),
+        })),
+      )
 
       setHome(nextHome.data)
       setHot(nextHot.data)
       setBreaking(nextBreaking.data)
       setLatestTopics(nextLatestTopics.data)
+      setRespondentLeaderboard(nextRespondentLeaderboard.data)
+      setCategoryIndex(new Map(
+        nextCategoryIndex.data.items.map((item) => [item.pathname, item] as const),
+      ))
       setSourceMode(
-        [nextHome.sourceMode, nextHot.sourceMode, nextBreaking.sourceMode, nextLatestTopics.sourceMode].every((entry) => entry === 'live')
+        [
+          nextHome.sourceMode,
+          nextHot.sourceMode,
+          nextBreaking.sourceMode,
+          nextLatestTopics.sourceMode,
+          nextRespondentLeaderboard.sourceMode,
+          nextCategoryIndex.sourceMode,
+          ...categoryFeeds.map((entry) => entry.feed.sourceMode),
+        ].every((entry) => entry === 'live')
           ? 'live'
-          : 'demo',
+          : [
+              nextHome.sourceMode,
+              nextHot.sourceMode,
+              nextBreaking.sourceMode,
+              nextLatestTopics.sourceMode,
+              nextRespondentLeaderboard.sourceMode,
+              nextCategoryIndex.sourceMode,
+              ...categoryFeeds.map((entry) => entry.feed.sourceMode),
+            ].every((entry) => entry === 'demo')
+            ? 'demo'
+            : 'mixed',
       )
-      setCategories(new Map(categoryEntries.filter(isCategoryEntry)))
+      setCategories(new Map(
+        categoryFeeds
+          .map(({ pathname, feed }) => (feed.data ? ([pathname, feed.data] as const) : null))
+          .filter(isCategoryEntry),
+      ))
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load discovery data')
     } finally {
@@ -124,13 +151,16 @@ export function DiscoveryDataProvider({ children }: { children: ReactNode }) {
     hot,
     breaking,
     latestTopics,
+    respondentLeaderboard,
+    categoryIndex,
     categories,
     sourceMode,
     isLoading,
     errorMessage,
     refresh,
+    hasCategoryPath: (pathname: string) => categoryIndex.has(pathname),
     getCategory: (pathname: string) => categories.get(pathname) ?? null,
-  }), [breaking, categories, errorMessage, home, hot, isLoading, latestTopics, refresh, sourceMode])
+  }), [breaking, categories, categoryIndex, errorMessage, home, hot, isLoading, latestTopics, refresh, respondentLeaderboard, sourceMode])
 
   return (
     <DiscoveryDataContext.Provider value={value}>
@@ -147,4 +177,8 @@ export function useDiscoveryData() {
   }
 
   return context
+}
+
+export function useOptionalDiscoveryData() {
+  return useContext(DiscoveryDataContext)
 }

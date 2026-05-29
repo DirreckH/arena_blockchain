@@ -19,6 +19,9 @@ import {
 } from 'react'
 import { arenaApi } from '../api/arena-api'
 import { useAuthSession } from '../auth/auth-session'
+import { isDemoToken } from '../demo/demo-auth'
+
+type ArenaAccountSourceMode = 'live' | 'demo' | 'unavailable'
 
 type RewardSummary = {
   currentCount: number
@@ -41,12 +44,16 @@ type ArenaAccountDataContextValue = {
   isPreferencesSaving: boolean
   isExportsLoading: boolean
   isExporting: boolean
+  sourceMode: ArenaAccountSourceMode
   isLoading: boolean
   errorMessage: string | null
   refresh: () => Promise<void>
   updatePreferences: (
     input: UpdateRespondentAccountPreferencesInput,
   ) => Promise<RespondentAccountPreferencesViewModel>
+  loadExport: (
+    exportId: string,
+  ) => Promise<RespondentAccountExportArtifactViewModel>
   createExport: () => Promise<RespondentAccountExportArtifactViewModel>
 }
 
@@ -130,7 +137,19 @@ export function ArenaAccountDataProvider({ children }: { children: ReactNode }) 
       setTags(nextOverview.tags)
       setPreferences(nextPreferences)
       setExports(nextExports)
-      setLatestExport(null)
+      if (nextExports.items.length > 0) {
+        try {
+          const latestArtifact = await arenaApi.getAccountExport(
+            nextExports.items[0].exportId,
+            token,
+          )
+          setLatestExport(latestArtifact)
+        } catch {
+          setLatestExport(null)
+        }
+      } else {
+        setLatestExport(null)
+      }
     } catch (error) {
       setOverview(null)
       setRewards([])
@@ -171,6 +190,30 @@ export function ArenaAccountDataProvider({ children }: { children: ReactNode }) 
     }
   }, [token])
 
+  const loadExport = useCallback(async (exportId: string) => {
+    if (!token) {
+      throw new Error('Authentication required')
+    }
+
+    setExportsErrorMessage(null)
+
+    try {
+      if (latestExport?.exportId === exportId) {
+        return latestExport
+      }
+
+      const artifact = await arenaApi.getAccountExport(exportId, token)
+      if (exports?.items[0]?.exportId === exportId) {
+        setLatestExport(artifact)
+      }
+      return artifact
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load account export'
+      setExportsErrorMessage(message)
+      throw error
+    }
+  }, [exports?.items, latestExport, token])
+
   const createExport = useCallback(async () => {
     if (!token) {
       throw new Error('Authentication required')
@@ -198,11 +241,21 @@ export function ArenaAccountDataProvider({ children }: { children: ReactNode }) 
     void refresh()
   }, [refresh])
 
+  const sourceMode: ArenaAccountSourceMode = !isAuthenticated
+    ? 'unavailable'
+    : isDemoToken(token)
+      ? 'demo'
+      : overview
+        ? 'live'
+        : 'unavailable'
+
   const value = useMemo<ArenaAccountDataContextValue>(() => ({
     overview,
     rewards,
     reputation,
     tags,
+    // Prefer the server-computed summary from overview; fall back to a local derivation
+    // from the rewards ledger when overview has not yet loaded or failed to load.
     rewardSummary: overview?.rewardSummary ?? buildRewardSummary(rewards),
     preferences,
     exports,
@@ -213,10 +266,12 @@ export function ArenaAccountDataProvider({ children }: { children: ReactNode }) 
     isPreferencesSaving,
     isExportsLoading,
     isExporting,
+    sourceMode,
     isLoading,
     errorMessage,
     refresh,
     updatePreferences,
+    loadExport,
     createExport,
   }), [
     errorMessage,
@@ -228,12 +283,14 @@ export function ArenaAccountDataProvider({ children }: { children: ReactNode }) 
     isPreferencesLoading,
     isPreferencesSaving,
     latestExport,
+    loadExport,
     overview,
     preferences,
     preferencesErrorMessage,
     refresh,
     reputation,
     rewards,
+    sourceMode,
     tags,
     createExport,
     updatePreferences,

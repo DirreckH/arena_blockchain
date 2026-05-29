@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { MarketSearchBar } from '../components/market/MarketSearchBar'
 import { MarketWorkspace } from '../components/market/MarketWorkspace'
 import { FilterStrip } from '../components/navigation/FilterStrip'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
@@ -15,6 +16,7 @@ export function LatestPage() {
   const topicItems = latestTopics?.items ?? []
   const [activeTopicId, setActiveTopicId] = useState(topicItems[0]?.id ?? '')
   const [activePage, setActivePage] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
   const railRef = useRef<HTMLDivElement | null>(null)
   const { markets: allMarkets } = useValidationMarketData()
   const marketMap = useMemo(
@@ -30,14 +32,19 @@ export function LatestPage() {
 
   const activeTopic = topicItems.find((topic) => topic.id === activeTopicId) ?? topicItems[0]
   const allTopicMarkets = useMemo(() => {
-    if (!activeTopic) {
-      return Array.from(marketMap.values())
+    const baseMarkets = !activeTopic
+      ? Array.from(marketMap.values())
+      : Array.from(new Set(activeTopic.marketIds))
+          .map((marketId) => marketMap.get(marketId))
+          .filter((market) => market !== undefined)
+
+    const normalizedQuery = searchQuery.trim().toLowerCase()
+    if (normalizedQuery.length === 0) {
+      return baseMarkets
     }
 
-    return Array.from(new Set(activeTopic.marketIds))
-      .map((marketId) => marketMap.get(marketId))
-      .filter((market) => market !== undefined)
-  }, [activeTopic, marketMap])
+    return baseMarkets.filter((market) => market.title.toLowerCase().includes(normalizedQuery))
+  }, [activeTopic, marketMap, searchQuery])
   const totalPages = Math.max(1, Math.ceil(allTopicMarkets.length / LATEST_TOPIC_PAGE_SIZE))
   const currentPage = Math.min(activePage, totalPages - 1)
   const markets = useMemo(() => {
@@ -45,6 +52,10 @@ export function LatestPage() {
 
     return allTopicMarkets.slice(start, start + LATEST_TOPIC_PAGE_SIZE)
   }, [allTopicMarkets, currentPage])
+
+  useEffect(() => {
+    setActivePage(0)
+  }, [searchQuery])
 
   const scrollRail = (direction: 'left' | 'right') => {
     railRef.current?.scrollBy({
@@ -55,7 +66,7 @@ export function LatestPage() {
 
   const pagination =
     totalPages > 1 ? (
-      <div className="latest-topic-pagination" aria-label="Latest topic pagination">
+      <div className="latest-topic-pagination" aria-label="最新话题翻页">
         <button
           type="button"
           className="latest-page-button"
@@ -64,7 +75,7 @@ export function LatestPage() {
         >
           上一页
         </button>
-        <div className="latest-page-dots" aria-label="Latest topic pages">
+        <div className="latest-page-dots" aria-label="最新话题页码">
           {Array.from({ length: totalPages }, (_, pageIndex) => (
             <button
               type="button"
@@ -89,22 +100,14 @@ export function LatestPage() {
 
   return (
     <section className="route-page market-page latest-page">
-      <DataSourceBadge
-        mode={sessionMode === 'demo' ? 'demo' : sourceMode}
-        detail={
-          sessionMode === 'demo'
-            ? 'Latest topics use the authenticated demo session.'
-            : sourceMode === 'demo'
-              ? 'Latest topics fell back to the seeded demo discovery feed.'
-              : 'Latest topics and cards are read from the public discovery and market feeds.'
-        }
-      />
+      <DataSourceBadge mode={sessionMode === 'demo' ? 'demo' : sourceMode} />
+      <MarketSearchBar value={searchQuery} onChange={setSearchQuery} />
       <FilterStrip className="market-category-strip" dividerBeforeHref="/zh/politics" />
 
       {errorMessage ? (
         <section className="account-menu-panel">
           <div className="account-menu-panel-head">
-            <h2>Latest topics unavailable</h2>
+            <h2>最新话题加载失败</h2>
             <span>{errorMessage}</span>
           </div>
         </section>
@@ -113,8 +116,8 @@ export function LatestPage() {
       {isLoading ? (
         <section className="account-menu-panel">
           <div className="account-menu-panel-head">
-            <h2>Loading latest topics</h2>
-            <span>Arena is reading the current latest-topic view before rendering the market workspace.</span>
+            <h2>正在加载最新话题</h2>
+            <span>Arena 正在读取最新话题视图，稍后即可展示命题卡片。</span>
           </div>
         </section>
       ) : null}
@@ -123,13 +126,13 @@ export function LatestPage() {
         <button
           type="button"
           className="latest-topic-arrow"
-          aria-label="Scroll latest topics left"
+          aria-label="向左滚动话题列表"
           onClick={() => scrollRail('left')}
         >
           <ChevronLeft size={18} />
         </button>
 
-        <div className="latest-topic-rail" ref={railRef} role="tablist" aria-label="Latest topic categories">
+        <div className="latest-topic-rail" ref={railRef} role="tablist" aria-label="最新话题分类">
           {topicItems.map((topic) => (
             <button
               type="button"
@@ -150,7 +153,7 @@ export function LatestPage() {
         <button
           type="button"
           className="latest-topic-arrow"
-          aria-label="Scroll latest topics right"
+          aria-label="向右滚动话题列表"
           onClick={() => scrollRail('right')}
         >
           <ChevronRight size={18} />
@@ -165,6 +168,12 @@ export function LatestPage() {
         showMoreLabel={null}
         footer={pagination}
       />
+
+      {searchQuery.trim().length > 0 && allTopicMarkets.length === 0 ? (
+        <p className="market-page-search-empty" role="status">
+          没有匹配“{searchQuery.trim()}”的市场，换个关键词试试。
+        </p>
+      ) : null}
     </section>
   )
 }

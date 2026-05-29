@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react'
-import { Activity, ArrowDown, ArrowUp, ChevronRight, Flame, TrendingUp } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { FilterStrip } from '../navigation/FilterStrip'
+import { MarketSearchBar } from './MarketSearchBar'
 import {
   filterRankedMarketItems,
   type RankedMarketFilterId,
   type RankedMarketPageConfig,
-} from '../../mocks/ranked-market-page.mock'
+  type RankedMarketPageItem,
+} from '../../features/arena/ranked-market-page'
 
 const SPARKLINE_WIDTH = 132
 const SPARKLINE_HEIGHT = 46
@@ -41,74 +43,51 @@ function RankingSparkline({ points }: { points: number[] }) {
   )
 }
 
-function BreakingHeroArt() {
-  return (
-    <>
-      <span className="breaking-hero-ring breaking-hero-ring-outer" />
-      <span className="breaking-hero-ring breaking-hero-ring-inner" />
-      <span className="breaking-hero-rail breaking-hero-rail-left" />
-      <span className="breaking-hero-rail breaking-hero-rail-right" />
-      <span className="breaking-hero-token breaking-hero-token-left">
-        <ArrowDown size={28} strokeWidth={3} />
-      </span>
-      <span className="breaking-hero-token breaking-hero-token-right">
-        <ArrowUp size={28} strokeWidth={3} />
-      </span>
-    </>
-  )
-}
-
-function HotHeroArt() {
-  return (
-    <>
-      <span className="breaking-hero-ring breaking-hero-ring-outer" />
-      <span className="breaking-hero-ring breaking-hero-ring-inner" />
-      <span className="breaking-hero-rail breaking-hero-rail-left" />
-      <span className="breaking-hero-rail breaking-hero-rail-right" />
-      <span className="breaking-hero-token breaking-hero-token-left">
-        <Flame size={28} strokeWidth={2.5} />
-      </span>
-      <span className="breaking-hero-token breaking-hero-token-right">
-        <TrendingUp size={28} strokeWidth={2.5} />
-      </span>
-      <span className="hot-hero-pulse hot-hero-pulse-left" />
-      <span className="hot-hero-pulse hot-hero-pulse-right" />
-      <span className="hot-hero-orbit">
-        <Activity size={18} strokeWidth={2.4} />
-      </span>
-    </>
-  )
-}
-
 function formatChange(change: number) {
   return `${change}`
 }
 
-export function MarketRankingPage({ config }: { config: RankedMarketPageConfig }) {
+function matchesQuery(item: RankedMarketPageItem, normalizedQuery: string) {
+  if (normalizedQuery.length === 0) {
+    return true
+  }
+
+  return item.title.toLowerCase().includes(normalizedQuery)
+}
+
+interface MarketRankingPageProps {
+  config: RankedMarketPageConfig
+  showSearch?: boolean
+  searchPlaceholder?: string
+}
+
+export function MarketRankingPage({
+  config,
+  showSearch = false,
+  searchPlaceholder = '搜索市场标题',
+}: MarketRankingPageProps) {
   const [activeCategoryId, setActiveCategoryId] = useState<RankedMarketFilterId>(
     config.categories[0]?.id ?? 'all',
   )
-  const visibleItems = useMemo(
-    () => filterRankedMarketItems(config, activeCategoryId),
-    [config, activeCategoryId],
-  )
-  const isHotHero = config.heroVariant === 'hot'
+  const [query, setQuery] = useState('')
+  const visibleItems = useMemo(() => {
+    const byCategory = filterRankedMarketItems(config, activeCategoryId)
+    const normalizedQuery = query.trim().toLowerCase()
+
+    if (!showSearch || normalizedQuery.length === 0) {
+      return byCategory
+    }
+
+    return byCategory.filter((item) => matchesQuery(item, normalizedQuery))
+  }, [config, activeCategoryId, query, showSearch])
 
   return (
     <section className={`route-page market-page breaking-page ${config.pageClassName}`.trim()}>
+      {showSearch ? (
+        <MarketSearchBar value={query} onChange={setQuery} placeholder={searchPlaceholder} />
+      ) : null}
+
       <FilterStrip className="market-category-strip" dividerBeforeHref="/zh/politics" />
-
-      <header className={isHotHero ? 'breaking-hero hot-hero' : 'breaking-hero'}>
-        <div className="breaking-hero-copy">
-          <p className="breaking-hero-date">{config.dateLabel}</p>
-          <h1>{config.title}</h1>
-          <p className="breaking-hero-description">{config.description}</p>
-        </div>
-
-        <div className={isHotHero ? 'breaking-hero-art hot-hero-art' : 'breaking-hero-art'} aria-hidden="true">
-          {isHotHero ? <HotHeroArt /> : <BreakingHeroArt />}
-        </div>
-      </header>
 
       <div className="breaking-category-pills" role="tablist" aria-label={config.categoryAriaLabel}>
         {config.categories.map((category) => (
@@ -170,6 +149,12 @@ export function MarketRankingPage({ config }: { config: RankedMarketPageConfig }
           </li>
         ))}
       </ol>
+
+      {showSearch && query.trim().length > 0 && visibleItems.length === 0 ? (
+        <p className="market-page-search-empty" role="status">
+          没有匹配“{query.trim()}”的市场，换个关键词试试。
+        </p>
+      ) : null}
     </section>
   )
 }

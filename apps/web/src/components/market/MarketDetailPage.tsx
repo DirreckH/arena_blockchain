@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { ARENA_INFORMATION_BOUNDARY } from '../../features/arena-information-boundary'
 import { useValidationMarketData } from '../../features/validation/validation-market-data'
 import type { PublicValidationMarketCard } from '../../features/validation/validation-market.types'
 import { useRulesIntro } from '../shared/RulesIntroContext'
@@ -9,7 +8,12 @@ import { useWalletEnvironment } from '../../features/auth/wallet-environment'
 import { NotFoundPage } from '../shared/NotFoundPage'
 import { ProgressMeter } from '../shared/ProgressMeter'
 import { DataSourceBadge } from '../shared/DataSourceBadge'
-import { type DiscussionComment, DEMO_DISCUSSION_COMMENTS } from '../../features/arena/discussion'
+import { WatchlistToggleButton } from './WatchlistToggleButton'
+import { type DiscussionComment, toDiscussionComments } from '../../features/arena/discussion'
+import { useDiscussionData } from '../../features/arena/discussion-data'
+import {
+  describeActiveExecutionFootnote,
+} from '../../features/validation/validation-bet-execution-status'
 
 const optionCode = (displayOrder: number) => `选项 ${String.fromCharCode(64 + displayOrder)}`
 const revealLabel = (market: PublicValidationMarketCard) =>
@@ -36,10 +40,25 @@ export function MarketDetailPage() {
   const [isSubmittingBet, setIsSubmittingBet] = useState(false)
   const [betFeedback, setBetFeedback] = useState<string | null>(null)
   const [commentDraft, setCommentDraft] = useState('')
-  const [comments, setComments] = useState<DiscussionComment[]>(() => sourceMode === 'demo' ? DEMO_DISCUSSION_COMMENTS : [])
+  const [discussionFeedback, setDiscussionFeedback] = useState<string | null>(null)
+  const [isSubmittingDiscussionComment, setIsSubmittingDiscussionComment] = useState(false)
   const [discussionSort, setDiscussionSort] = useState<'top' | 'new'>('top')
-  const [discussionFilter, setDiscussionFilter] = useState<'all' | 'neutral' | 'option-0' | 'option-1'>('all')
+  const [discussionFilter, setDiscussionFilter] = useState<'all' | 'option-0' | 'option-1'>('all')
   const [likedCommentIds, setLikedCommentIds] = useState<string[]>([])
+  const {
+    thread: discussionThread,
+    isLoading: isDiscussionLoading,
+    errorMessage: discussionErrorMessage,
+    createComment,
+  } = useDiscussionData(
+    rawMarket?.marketId ?? null,
+    rawMarket?.propositionId ?? null,
+    sessionMode === 'demo' || sourceMode === 'demo' ? 'demo' : 'live',
+  )
+  const comments = useMemo<DiscussionComment[]>(
+    () => discussionThread ? toDiscussionComments(discussionThread) : [],
+    [discussionThread],
+  )
 
   const selectedOptionIndex =
     rawMarket?.options.findIndex((_, index) => `${rawMarket.marketId}-option-${index + 1}` === selectedOption) ?? -1
@@ -47,15 +66,18 @@ export function MarketDetailPage() {
   const hasExistingPosition = Boolean(rawMarket?.currentUserPosition)
   const selectedOptionLabel =
     hasSelectedOption && rawMarket ? rawMarket.options[selectedOptionIndex as 0 | 1] : null
-  const activeExecution = latestBetExecution && latestBetExecution.mode === (sessionMode === 'demo' ? 'demo_bypass' : 'wallet_authenticated_account_write')
+  const activeExecution = latestBetExecution && latestBetExecution.mode === (sessionMode === 'demo' ? 'demo_bypass' : 'wallet_direct_contract_write')
     ? latestBetExecution
     : null
+  const activeExecutionFootnote = useMemo(
+    () => activeExecution ? describeActiveExecutionFootnote(activeExecution) : null,
+    [activeExecution],
+  )
   const discussionFilters = useMemo(
     () => [
       { key: 'all' as const, label: '全部' },
       { key: 'option-0' as const, label: market?.options[0]?.label ?? '选项 A' },
       { key: 'option-1' as const, label: market?.options[1]?.label ?? '选项 B' },
-      { key: 'neutral' as const, label: '观察' },
     ],
     [market],
   )
@@ -63,10 +85,6 @@ export function MarketDetailPage() {
     const filtered = comments.filter((comment) => {
       if (discussionFilter === 'all') {
         return true
-      }
-
-      if (discussionFilter === 'neutral') {
-        return comment.optionIndex === undefined
       }
 
       return discussionFilter === `option-${comment.optionIndex}`
@@ -85,28 +103,34 @@ export function MarketDetailPage() {
     return ranked
   }, [comments, discussionFilter, discussionSort])
 
-  const handlePostComment = () => {
+  const handlePostComment = async () => {
     const normalizedDraft = commentDraft.trim()
     if (!normalizedDraft) {
       return
     }
 
-    setComments((current) => [
-      {
-        id: `comment-${current.length + 1}`,
-        author: isAuthenticated ? 'You' : 'Guest',
-        handle: isAuthenticated ? '@arena_user' : '@guest_viewer',
-        tone: selectedOptionLabel ? `倾向 ${selectedOptionLabel}` : '新评论',
-        timeLabel: '刚刚',
-        minutesAgo: 0,
-        optionIndex: hasSelectedOption ? selectedOptionIndex as 0 | 1 : undefined,
+    if (!isAuthenticated) {
+      openAuthModal('login')
+      return
+    }
+
+    setDiscussionFeedback(null)
+    setIsSubmittingDiscussionComment(true)
+
+    try {
+      await createComment({
         body: normalizedDraft,
-        likes: 0,
-        replyCount: 0,
-      },
-      ...current,
-    ])
-    setCommentDraft('')
+        optionIndex: hasSelectedOption ? selectedOptionIndex as 0 | 1 : undefined,
+      })
+      setCommentDraft('')
+      setDiscussionFeedback(sessionMode === 'demo'
+        ? '演示讨论已更新'
+        : '评论已发布到结算后的真实讨论区')
+    } catch (error) {
+      setDiscussionFeedback(error instanceof Error ? error.message : '讨论提交失败，请稍后重试')
+    } finally {
+      setIsSubmittingDiscussionComment(false)
+    }
   }
 
   const handleToggleLike = (commentId: string) => {
@@ -175,7 +199,7 @@ export function MarketDetailPage() {
       setStakeAmount('')
       setBetFeedback(sessionMode === 'demo'
         ? `演示持仓已建立：${selectedOptionLabel}`
-        : `持仓已记录：${selectedOptionLabel}`)
+        : `链上下注已提交，Arena 已记录持仓：${selectedOptionLabel}`)
     } catch (error) {
       setBetFeedback(error instanceof Error ? error.message : '下注失败，请稍后重试')
     } finally {
@@ -187,7 +211,6 @@ export function MarketDetailPage() {
     return (
       <section className="route-page detail-route">
         <div className="route-header">
-          <Link className="back-link" to="/zh">返回首页</Link>
           <h1>加载命题中</h1>
         </div>
       </section>
@@ -200,33 +223,19 @@ export function MarketDetailPage() {
 
   return (
     <section className="route-page detail-route">
-      <div className="route-header">
-        <Link className="back-link" to="/zh">返回首页</Link>
-        <span>{market.category}</span>
-        <h1>{market.title}</h1>
-        <p>当前页面展示命题公开状态、时间进度和选项标签，不展示任何方向性信息。</p>
-      </div>
-
-      <DataSourceBadge
-        mode={sessionMode === 'demo' ? 'demo' : sourceMode}
-        detail={
-          sessionMode === 'demo'
-            ? '当前演示会话无需真实钱包即可交互。'
-            : sourceMode === 'live'
-              ? '命题公开状态从真实 Arena 市场数据流读取。'
-              : '命题公开状态已回退到演示预置数据。'
-        }
-      />
+      <DataSourceBadge mode={sessionMode === 'demo' ? 'demo' : sourceMode} />
 
       <div className="detail-layout">
         <div className="detail-main-stack">
           <article className="detail-panel">
+            <div className="detail-panel-watchlist">
+              <WatchlistToggleButton marketId={market.id} />
+            </div>
+
             <div className={market.imageSrc ? 'detail-title-row' : 'detail-title-row without-media'}>
               {market.imageSrc ? <img src={market.imageSrc} alt={`${market.title} icon`} /> : null}
               <div className="detail-title-copy">
-                <Link className="eyebrow" to="/zh/markets">{market.category}</Link>
                 <h2>{market.title}</h2>
-                <p>{market.progress.statusLabel} · {market.status}</p>
               </div>
             </div>
 
@@ -259,15 +268,10 @@ export function MarketDetailPage() {
           <section className="detail-panel detail-discussion-panel" aria-labelledby="discussion-title">
             <div className="detail-discussion-head">
               <div>
-                <span className="eyebrow">命题讨论</span>
                 <h2 id="discussion-title">讨论区</h2>
               </div>
               <span className="detail-discussion-count">{comments.length} 条讨论</span>
             </div>
-
-            <p className="boundary-note">
-              这里展示围绕命题结果的公开讨论，支持按立场筛选和热度、时间排序。
-            </p>
 
             <div className="detail-discussion-toolbar">
               <div className="detail-discussion-filter-row" aria-label="评论立场筛选">
@@ -302,25 +306,59 @@ export function MarketDetailPage() {
             </div>
 
             <div className="detail-discussion-composer">
-              <textarea
-                value={commentDraft}
-                onChange={(event) => setCommentDraft(event.target.value)}
-                rows={4}
-                placeholder="写下你的判断依据、证据来源或对结果的看法…"
-              />
-              <div className="detail-discussion-composer-foot">
-                <span>{selectedOptionLabel ? `当前倾向：${selectedOptionLabel}` : '可先在上方选择一个立场再参与讨论'}</span>
-                <button className="primary-action" type="button" onClick={handlePostComment} disabled={!commentDraft.trim()}>
-                  发布评论
-                </button>
-              </div>
+              {discussionThread?.availability === 'pre_settlement_hidden' ? (
+                <div className="discussion-empty-state" data-testid="discussion-pre-settlement-hidden">
+                  <strong>开奖前隐藏讨论方向</strong>
+                  <span>真实模式下，Arena 会在结算后才开放讨论区，避免未结算阶段暴露方向性信号。</span>
+                </div>
+              ) : discussionErrorMessage ? (
+                <div className="discussion-empty-state" data-testid="discussion-load-error">
+                  <strong>讨论区暂时不可用</strong>
+                  <span>{discussionErrorMessage}</span>
+                </div>
+              ) : (
+                <>
+                  <textarea
+                    value={commentDraft}
+                    onChange={(event) => {
+                      setCommentDraft(event.target.value)
+                      if (discussionFeedback) {
+                        setDiscussionFeedback(null)
+                      }
+                    }}
+                    rows={4}
+                    placeholder="写下你对已结算结果的依据、证据来源或复盘看法…"
+                    disabled={isDiscussionLoading || isSubmittingDiscussionComment}
+                  />
+                  <div className="detail-discussion-composer-foot">
+                    <span>{selectedOptionLabel ? `当前引用立场：${selectedOptionLabel}` : '可先在上方选择一个立场再参与讨论'}</span>
+                    <button
+                      className="primary-action"
+                      type="button"
+                      onClick={() => { void handlePostComment() }}
+                      disabled={!commentDraft.trim() || isDiscussionLoading || isSubmittingDiscussionComment}
+                    >
+                      {isSubmittingDiscussionComment ? '发布中...' : '发布评论'}
+                    </button>
+                  </div>
+                  {discussionFeedback ? <p className="market-bet-feedback">{discussionFeedback}</p> : null}
+                </>
+              )}
             </div>
 
             <div className="detail-discussion-list">
-              {visibleComments.length === 0 ? (
+              {isDiscussionLoading ? (
                 <div className="discussion-empty-state">
-                  <strong>当前筛选下还没有讨论</strong>
-                  <span>可以先发布你的判断，或者切换到其他立场查看现有观点。</span>
+                  <strong>讨论区加载中</strong>
+                  <span>正在读取当前 market 的讨论线程。</span>
+                </div>
+              ) : discussionErrorMessage ? null : discussionThread?.availability === 'pre_settlement_hidden' ? null : visibleComments.length === 0 ? (
+                <div className="discussion-empty-state">
+                  <strong>{discussionFilter === 'all' ? '结算后的讨论区还没有评论' : '当前筛选下还没有讨论'}</strong>
+                  <span>{discussionFilter === 'all'
+                    ? '可以先发布你的复盘、证据来源或对最终结果的补充说明。'
+                    : '可以先发布你的判断，或者切换到其他立场查看现有观点。'}
+                  </span>
                 </div>
               ) : visibleComments.map((comment) => (
                 <article className="discussion-comment-card" key={comment.id}>
@@ -370,30 +408,7 @@ export function MarketDetailPage() {
         <aside className="detail-side-panel">
           <section className="market-bet-card">
             <h2>建立持仓</h2>
-            <p className="boundary-note">
-              {sessionMode === 'demo'
-                ? '演示路径：记录预置演示持仓，无需钱包签名。'
-                : '真实路径：通过钱包认证的 Arena 会话向验证层 API 记录持仓。'}
-            </p>
             <dl className="market-bet-facts">
-              <div>
-                <dt>钱包会话</dt>
-                <dd>{isAuthenticated ? (sessionMode === 'demo' ? '演示会话' : '已连接') : '未连接'}</dd>
-              </div>
-              <div>
-                <dt>钱包网络</dt>
-                <dd>
-                  {sessionMode === 'demo'
-                    ? '演示绕过'
-                    : networkStatus === 'supported'
-                      ? `Chain ${configuredChainId}`
-                      : networkStatus === 'unsupported'
-                        ? `网络不匹配（当前 ${currentChainId ?? '未知'}）`
-                        : availability === 'missing'
-                          ? '钱包不可用'
-                          : '检测中'}
-                </dd>
-              </div>
               <div>
                 <dt>已选选项</dt>
                 <dd>{selectedOptionLabel ?? '请在上方选择一个选项'}</dd>
@@ -403,8 +418,18 @@ export function MarketDetailPage() {
                 <dd>{rawMarket?.minBetAmount ?? '0'}</dd>
               </div>
               <div>
-                <dt>执行模式</dt>
-                <dd>{sessionMode === 'demo' ? '演示绕过' : '钱包认证账户写入'}</dd>
+                <dt>钱包网络</dt>
+                <dd>
+                  {sessionMode === 'demo'
+                    ? '已就绪'
+                    : networkStatus === 'supported'
+                      ? `Chain ${configuredChainId}`
+                      : networkStatus === 'unsupported'
+                        ? `网络不匹配（当前 ${currentChainId ?? '未知'}）`
+                        : availability === 'missing'
+                          ? '钱包不可用'
+                          : '检测中'}
+                </dd>
               </div>
               <div>
                 <dt>当前持仓</dt>
@@ -439,11 +464,11 @@ export function MarketDetailPage() {
                   ? '需要钱包'
                   : sessionMode !== 'demo' && networkStatus === 'unsupported'
                     ? '切换网络'
-                  : hasExistingPosition
-                    ? '已有持仓'
-                    : isSubmittingBet
-                      ? '提交中...'
-                      : '确认下注'}
+                    : hasExistingPosition
+                      ? '已有持仓'
+                      : isSubmittingBet
+                        ? '提交中...'
+                        : '确认下注'}
             </button>
             {betFeedback ? <p className="market-bet-feedback">{betFeedback}</p> : null}
             {hasExistingPosition && !betFeedback ? (
@@ -455,11 +480,7 @@ export function MarketDetailPage() {
               <div className="market-execution-panel">
                 <strong>{activeExecution.statusLabel}</strong>
                 <span>{activeExecution.detail}</span>
-                <small>
-                  {activeExecution.usesDemoFlow
-                    ? '演示模式：无需钱包签名或链上交易。'
-                    : '钱包认证已完成，持仓记录为 Arena 账户写入，而非链上下注交易。'}
-                </small>
+                {activeExecutionFootnote ? <small>{activeExecutionFootnote}</small> : null}
               </div>
             ) : null}
           </section>
@@ -474,10 +495,6 @@ export function MarketDetailPage() {
               <div style={{ display: 'grid', gap: 3 }}>
                 <dt style={{ color: '#94a3b8', fontSize: 12, fontWeight: 800 }}>开奖前公开字段</dt>
                 <dd style={{ margin: 0, color: '#111827', fontSize: 14, fontWeight: 700 }}>状态、时间进度、有效样本进度</dd>
-              </div>
-              <div style={{ display: 'grid', gap: 3 }}>
-                <dt style={{ color: '#94a3b8', fontSize: 12, fontWeight: 800 }}>安全说明</dt>
-                <dd style={{ margin: 0, color: '#111827', fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>{ARENA_INFORMATION_BOUNDARY.notes[0]}</dd>
               </div>
             </dl>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>

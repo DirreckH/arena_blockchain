@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { AccountShellHeader } from '../components/shared/AccountShellHeader'
+import { AuthRequiredBlankGate } from '../components/shared/AuthRequiredBlankGate'
+import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { useRulesIntro } from '../components/shared/RulesIntroContext'
 import { useResultOverviewData } from '../features/arena/result-overview-data'
 import {
@@ -381,15 +383,19 @@ function getHeatmapDayLabel(isoTimestamp: string) {
   return ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][day] ?? '周一'
 }
 
-function buildPerformanceChartData(overview: RespondentResultOverviewViewModel | null): PerformanceChartData | null {
+function buildPerformanceChartData(
+  overview: RespondentResultOverviewViewModel | null,
+  rangeLimit: number = 8,
+): PerformanceChartData | null {
   if (!overview) {
     return null
   }
 
+  const limit = Math.max(2, rangeLimit)
   const sourceItems = overview.settledResults.items
     .slice()
     .sort((left, right) => left.settledAt.localeCompare(right.settledAt))
-    .slice(-8)
+    .slice(-limit)
 
   if (sourceItems.length === 0) {
     return null
@@ -529,7 +535,15 @@ function getInitialResultsTab(tab: string | null): ResultsTabId {
   return 'overview'
 }
 
-const chartRanges = ['1小时', '1天', '3天', '7天', '全部']
+type ChartRangeId = '1h' | '1d' | '3d' | '7d' | 'all'
+
+const chartRanges: Array<{ id: ChartRangeId; label: string; limit: number }> = [
+  { id: '1h', label: '1小时', limit: 2 },
+  { id: '1d', label: '1天', limit: 4 },
+  { id: '3d', label: '3天', limit: 6 },
+  { id: '7d', label: '7天', limit: 8 },
+  { id: 'all', label: '全部', limit: 9999 },
+]
 
 const summaryStats: SummaryStat[] = ACCOUNT_SUMMARY_STATS
 
@@ -697,6 +711,10 @@ function getToneClassName(tone?: SummaryStatTone, value?: string) {
   }
 
   return ''
+}
+
+function buildResultsSourceDetail(_sourceMode: 'live' | 'demo' | 'unavailable') {
+  return undefined
 }
 
 function buildLinePath(series: number[], width: number, height: number, paddingX: number, paddingY: number) {
@@ -1051,7 +1069,13 @@ function RecentPositionsCard({
   )
 }
 
-function PerformancePulseCard({ items = overviewBubbles }: { items?: SparkItem[] }) {
+function PerformancePulseCard({
+  items = overviewBubbles,
+  onViewAnalysis,
+}: {
+  items?: SparkItem[]
+  onViewAnalysis?: () => void
+}) {
   return (
     <article className="results-card results-panel">
       <div className="panel-head">
@@ -1066,7 +1090,7 @@ function PerformancePulseCard({ items = overviewBubbles }: { items?: SparkItem[]
       </div>
 
       <div className="position-footer">
-        <button type="button" className="panel-link">
+        <button type="button" className="panel-link" onClick={onViewAnalysis}>
           查看资金与成交分析
           <ChevronRight size={14} strokeWidth={2.2} />
         </button>
@@ -1103,7 +1127,13 @@ function SettlementSummaryCard({
   )
 }
 
-function PositionsTableCard({ rows = positions }: { rows?: PositionRow[] }) {
+function PositionsTableCard({
+  rows = positions,
+  onViewMore,
+}: {
+  rows?: PositionRow[]
+  onViewMore?: () => void
+}) {
   return (
     <article className="results-card results-panel">
       <div className="panel-head">
@@ -1151,7 +1181,7 @@ function PositionsTableCard({ rows = positions }: { rows?: PositionRow[] }) {
       </div>
 
       <div className="position-footer">
-        <button type="button" className="panel-link">
+        <button type="button" className="panel-link" onClick={onViewMore}>
           查看更多仓位
           <ChevronRight size={14} strokeWidth={2.2} />
         </button>
@@ -1311,13 +1341,15 @@ function DataGapCard({
   title,
   note,
   message,
+  testId,
 }: {
   title: string
   note?: string
   message: string
+  testId?: string
 }) {
   return (
-    <article className="results-card results-panel">
+    <article className="results-card results-panel" data-testid={testId}>
       <div className="panel-head">
         <h2>{title}</h2>
         {note ? <span className="panel-head-note">{note}</span> : null}
@@ -1454,24 +1486,33 @@ function HeatmapCard({ cells }: { cells?: HeatmapCell[] }) {
 }
 
 function ResultsPage() {
-  const { isAuthenticated, mockUser, openAuthModal } = useRulesIntro()
+  const { isAuthenticated, user, openAuthModal } = useRulesIntro()
   const {
     overview,
+    sourceMode,
     isLoading: isOverviewLoading,
     errorMessage: overviewErrorMessage,
     refresh: refreshOverview,
   } = useResultOverviewData()
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState<ResultsTabId>(() => getInitialResultsTab(searchParams.get('tab')))
+  const [activeChartRangeId, setActiveChartRangeId] = useState<ChartRangeId>('7d')
+
+  if (!isAuthenticated) {
+    return <AuthRequiredBlankGate className="route-page results-page" ariaLabel="结果页" />
+  }
 
   const handleTabChange = (tabId: ResultsTabId) => {
     setActiveTab(tabId)
     setSearchParams(tabId === 'overview' ? {} : { tab: tabId }, { replace: true })
   }
 
-  const performanceChartData = buildPerformanceChartData(overview)
+  const activeChartRange = chartRanges.find((range) => range.id === activeChartRangeId) ?? chartRanges[3]
+  const performanceChartData = buildPerformanceChartData(overview, activeChartRange.limit)
   const activityHeatmapCells = buildActivityHeatmapCells(overview?.recentActivity ?? [])
   const activityFlowData = buildActivityFlowData(overview)
+  const showLivePerformanceChartGap = sourceMode === 'live' && overview !== null && performanceChartData === null
+  const showLiveFundFlowGap = sourceMode === 'live' && overview !== null && activityFlowData === null
 
   const liveHeaderMetrics = overview
     ? [
@@ -1505,7 +1546,7 @@ function ResultsPage() {
   const liveHeroValue: OverviewHeroValue = overview
     ? {
         total: `${overview.analytics.assetBreakdown.trackedAmount} USDC`,
-        delta: `${overview.settledResults.totals.totalPnl.startsWith('-') ? '' : '+'}${overview.settledResults.totals.totalPnl} USDC net settled pnl`,
+        delta: `${overview.settledResults.totals.totalPnl.startsWith('-') ? '' : '+'}${overview.settledResults.totals.totalPnl} USDC 已结算净收益`,
         stats: [
           {
             label: '已结算派彩',
@@ -1990,82 +2031,94 @@ function ResultsPage() {
           label: '正收益结算占比',
           value: `${overview.analytics.settlementDistribution.positiveSharePercent}%`,
           detail: `${overview.analytics.settlementDistribution.positiveCount} 条`,
-          series: [12, 18, 24, 30, 36, 42, overview.analytics.settlementDistribution.positiveSharePercent || 0],
+          series:
+            performanceChartData?.positiveRateSeries
+            ?? ensureChartSeries([overview.analytics.settlementDistribution.positiveSharePercent || 0]),
         },
         {
           label: '开仓占比',
           value: `${overview.summary.openPositionSharePercent}%`,
           detail: `${overview.openPositions.totalCount} 个进行中仓位`,
-          series: [6, 10, 14, 18, 22, 26, overview.summary.openPositionSharePercent || 0],
+          series: ensureChartSeries([overview.summary.openPositionSharePercent || 0]),
         },
         {
           label: '奖励追踪',
           value: `${overview.analytics.assetBreakdown.rewardAmount} USDC`,
           detail: `${overview.analytics.assetBreakdown.pendingRewardAmount} 待结算`,
-          series: [4, 8, 12, 16, 20, 24, overview.analytics.assetBreakdown.rewardSharePercent || 0],
+          series: ensureChartSeries([overview.analytics.assetBreakdown.rewardSharePercent || 0]),
         },
       ]
     : overviewBubbles
 
   if (isAuthenticated && !overview) {
-    const loadingMetrics: SummaryItem[] = [
-      {
-        label: '账户总览',
-        value: isOverviewLoading ? '加载中' : '不可用',
-        detail: isOverviewLoading
-          ? '正在从 Arena 读取真实应答者总览'
-          : '无法加载真实账户数据',
-      },
-      {
-        label: '结果历史',
-        value: '--',
-        detail: '需要结果总览层',
-      },
-      {
-        label: '开放仓位',
-        value: '--',
-        detail: '需要验证/读模型层',
-      },
-      {
-        label: '奖励',
-        value: '--',
-        detail: '需要奖励账本层',
-      },
+    const skeletonMetrics: SummaryItem[] = [
+      { label: '已结算结果', value: '--', detail: isOverviewLoading ? '读取中…' : '加载失败' },
+      { label: '已结算净收益', value: '--', detail: isOverviewLoading ? '读取中…' : '加载失败' },
+      { label: '进行中仓位', value: '--', detail: isOverviewLoading ? '读取中…' : '加载失败' },
+      { label: '已结算奖励', value: '--', detail: isOverviewLoading ? '读取中…' : '加载失败' },
     ]
 
     return (
       <section className="route-page results-page">
         <div className="results-layout">
+          <DataSourceBadge mode={sourceMode} detail={buildResultsSourceDetail(sourceMode)} />
           <AccountShellHeader
-            user={mockUser}
-            title={mockUser?.displayName ?? 'Arena 用户'}
+            user={user}
+            title={user?.displayName ?? 'Arena 用户'}
             description=""
-            metrics={loadingMetrics}
+            metrics={skeletonMetrics}
             compactIdentity
           />
 
-          <article className="results-card results-panel">
-            <div className="panel-head">
-              <h2>{isOverviewLoading ? '加载账户总览中' : '账户总览不可用'}</h2>
-              {!isOverviewLoading ? <span className="panel-head-note">仅真实数据</span> : null}
-            </div>
-            <p className="boundary-note">
-              {isOverviewLoading
-                ? 'Arena 正在加载你的真实应答者结果、仓位和奖励汇总。'
-                : overviewErrorMessage ?? 'Arena 无法加载真实账户总览。'}
-            </p>
-            {!isOverviewLoading ? (
+          {isOverviewLoading ? (
+            <article className="results-card results-loading-panel" aria-busy="true" aria-label="加载账户总览">
+              <span className="skeleton-line hero" style={{ marginBottom: 8 }} />
+              <div className="skeleton-row">
+                <div className="skeleton-stat">
+                  <span className="skeleton-line short" />
+                  <span className="skeleton-line tall" />
+                  <span className="skeleton-line medium" />
+                </div>
+                <div className="skeleton-stat">
+                  <span className="skeleton-line short" />
+                  <span className="skeleton-line tall" />
+                  <span className="skeleton-line medium" />
+                </div>
+              </div>
+              <div className="skeleton-row">
+                <div className="skeleton-stat">
+                  <span className="skeleton-line short" />
+                  <span className="skeleton-line tall" />
+                  <span className="skeleton-line full" />
+                </div>
+                <div className="skeleton-stat">
+                  <span className="skeleton-line short" />
+                  <span className="skeleton-line tall" />
+                  <span className="skeleton-line medium" />
+                </div>
+              </div>
+              <span className="skeleton-line full" style={{ marginTop: 4 }} />
+              <span className="skeleton-line medium" />
+            </article>
+          ) : (
+            <article className="results-card results-panel">
+              <div className="panel-head">
+                <h2>账户总览不可用</h2>
+                <span className="panel-head-note">仅真实数据</span>
+              </div>
+              <p className="boundary-note">
+                {overviewErrorMessage ?? 'Arena 无法加载真实账户总览，请检查网络连接后重试。'}
+              </p>
               <button
                 type="button"
                 className="primary-action"
-                onClick={() => {
-                  void refreshOverview()
-                }}
+                style={{ marginTop: 8 }}
+                onClick={() => { void refreshOverview() }}
               >
                 重试加载总览
               </button>
-            ) : null}
-          </article>
+            </article>
+          )}
         </div>
       </section>
     )
@@ -2095,9 +2148,10 @@ function ResultsPage() {
     return (
     <section className="route-page results-page">
       <div className="results-layout">
+        <DataSourceBadge mode={sourceMode} detail={buildResultsSourceDetail(sourceMode)} />
         <AccountShellHeader
-          user={mockUser}
-          title={mockUser?.displayName ?? 'Arena 用户'}
+          user={user}
+          title={user?.displayName ?? 'Arena 用户'}
           description=""
           metrics={liveHeaderMetrics}
           compactIdentity={isAuthenticated}
@@ -2130,7 +2184,7 @@ function ResultsPage() {
               <AssetDistributionCard
                 segments={assetDistributionSegments}
                 total={liveHeroValue.total}
-                footnote={overview ? `${overview.analytics.assetBreakdown.pendingRewardAmount} USDC pending rewards included in tracked rewards` : '含已结算与进行中仓位'}
+                footnote={overview ? `含 ${overview.analytics.assetBreakdown.pendingRewardAmount} USDC 待结算奖励` : '含已结算与进行中仓位'}
               />
             </div>
             <div className="results-slot results-slot-4">
@@ -2154,57 +2208,77 @@ function ResultsPage() {
         {activeTab === 'performance' ? (
           <section className="results-workspace main-grid">
             <div className="results-slot results-slot-8">
-              <section className="results-card chart-card">
-                <div className="chart-header">
-                  <div className="chart-title">
-                    <span>累计收益曲线</span>
-                    <Info size={14} strokeWidth={2.2} />
-                  </div>
+              {showLivePerformanceChartGap ? (
+                <DataGapCard
+                  title="累计收益曲线"
+                  note="仅真实数据"
+                  message="真实结算历史不足，Arena 暂无法生成累计收益与结算收益图表。"
+                  testId="results-performance-chart-empty"
+                />
+              ) : (
+                <section className="results-card chart-card">
+                  <div className="chart-header">
+                    <div className="chart-title">
+                      <span>累计收益曲线</span>
+                      <Info size={14} strokeWidth={2.2} />
+                    </div>
 
-                  <div className="chart-controls" aria-label="图表时间范围">
-                    {chartRanges.map((range) => (
-                      <button key={range} type="button" className={range === '7天' ? 'range-chip active' : 'range-chip'}>
-                        {range}
+                    <div className="chart-controls" aria-label="图表时间范围">
+                      {chartRanges.map((range) => (
+                        <button
+                          key={range.id}
+                          type="button"
+                          className={range.id === activeChartRangeId ? 'range-chip active' : 'range-chip'}
+                          aria-pressed={range.id === activeChartRangeId}
+                          onClick={() => setActiveChartRangeId(range.id)}
+                        >
+                          {range.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="range-chip"
+                        aria-label="切换到记录视图"
+                        onClick={() => handleTabChange('records')}
+                      >
+                        <ExternalLink size={13} strokeWidth={2.2} />
                       </button>
-                    ))}
-                    <button type="button" className="range-chip" aria-label="展开图表">
-                      <ExternalLink size={13} strokeWidth={2.2} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="chart-body">
-                  <div className="chart-legend">
-                    <span className="legend-item">
-                      <span className="legend-swatch" />
-                      {overview
-                        ? `累计收益 ${performanceChartData?.cumulativePnlLabel ?? `${overview.settledResults.totals.totalPnl} USDC`}`
-                        : '累计收益 (USDC) 12,480'}
-                    </span>
-                    <span className="legend-item">
-                      <span className="legend-swatch green" />
-                      {overview
-                        ? `正收益结算占比 ${performanceChartData?.positiveRateLabel ?? `${overview.performance.positiveSettledPnlRate}%`}`
-                        : '累计回撤率 +24.81%'}
-                    </span>
+                    </div>
                   </div>
 
-                  <ResultsLineChart data={performanceChartData} />
+                  <div className="chart-body">
+                    <div className="chart-legend">
+                      <span className="legend-item">
+                        <span className="legend-swatch" />
+                        {overview
+                          ? `累计收益 ${performanceChartData?.cumulativePnlLabel ?? `${overview.settledResults.totals.totalPnl} USDC`}`
+                          : '累计收益 (USDC) 12,480'}
+                      </span>
+                      <span className="legend-item">
+                        <span className="legend-swatch green" />
+                        {overview
+                          ? `正收益结算占比 ${performanceChartData?.positiveRateLabel ?? `${overview.performance.positiveSettledPnlRate}%`}`
+                          : '累计回撤率 +24.81%'}
+                      </span>
+                    </div>
 
-                  <div className="chart-note">
-                    <span className="chart-bar-title">结算收益 (USDC)</span>
-                    <span>{performanceChartData?.rangeLabel ?? '05-12 20:00 至 05-18 20:00'}</span>
+                    <ResultsLineChart data={performanceChartData} />
+
+                    <div className="chart-note">
+                      <span className="chart-bar-title">结算收益 (USDC)</span>
+                      <span>{performanceChartData?.rangeLabel ?? '05-12 20:00 至 05-18 20:00'}</span>
+                    </div>
+
+                    <ResultsBarChart values={performanceChartData?.settlementPnlSeries} />
                   </div>
-
-                  <ResultsBarChart values={performanceChartData?.settlementPnlSeries} />
-                </div>
-              </section>
+                </section>
+              )}
             </div>
             <div className="results-slot results-slot-4">
               <HeatmapCard cells={overview ? activityHeatmapCells : undefined} />
             </div>
             <div className="results-slot results-slot-4">
-              <PerformancePulseCard items={livePerformancePulseItems} />
+              <PerformancePulseCard items={livePerformancePulseItems} onViewAnalysis={() => handleTabChange('records')} />
             </div>
             <div className="results-slot results-slot-4">
               <SummaryGridCard title="收益拆解" items={performanceBreakdownItems} note="近 7 天表现拆解" />
@@ -2230,7 +2304,7 @@ function ResultsPage() {
               <StatusRailCard title="仓位状态" items={positionStatusItems} note="当前可追踪仓位分层" />
             </div>
             <div className="results-slot results-slot-8">
-              <PositionsTableCard rows={livePositions} />
+              <PositionsTableCard rows={livePositions} onViewMore={() => handleTabChange('records')} />
             </div>
             <div className="results-slot results-slot-4">
               <HoldingStructureCard
@@ -2262,7 +2336,16 @@ function ResultsPage() {
               <AccountRecordsCard title="账户流水明细" rows={accountRecords} note="近 30 天" />
             </div>
             <div className="results-slot results-slot-4">
-              <FundFlowCard data={overview ? activityFlowData : undefined} />
+              {showLiveFundFlowGap ? (
+                <DataGapCard
+                  title="资金流向 (USDC)"
+                  note="仅真实数据"
+                  message="真实账户活动不足，Arena 暂无法生成资金流向图。"
+                  testId="results-fund-flow-empty"
+                />
+              ) : (
+                <FundFlowCard data={overview ? activityFlowData : undefined} />
+              )}
             </div>
           </section>
         ) : null}

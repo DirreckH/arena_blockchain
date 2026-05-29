@@ -5,7 +5,7 @@ import type {
   RankedMarketCategory,
   RankedMarketPageConfig,
   RankedMarketPageItem,
-} from '../../mocks/ranked-market-page.mock'
+} from './ranked-market-page'
 
 export function toRankedMarketPageConfig(
   view: PublicDiscoveryRankingViewModel,

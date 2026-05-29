@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom'
 import type { PublicValidationMarketCard } from '../../features/validation/validation-market.types'
 import { ProgressMeter } from '../shared/ProgressMeter'
-import { WatchlistToggleButton } from './WatchlistToggleButton'
 
 const marketHref = (marketId: string) => `/zh/event/${marketId}`
-const optionCode = (displayOrder: number) => `Option ${String.fromCharCode(64 + displayOrder)}`
+
+const TIME_PROGRESS_LABEL = '\u65f6\u95f4\u8fdb\u5ea6'
+const EFFECTIVE_SAMPLE_LABEL = '\u6709\u6548\u6837\u672c'
 
 const revealLabel = (market: PublicValidationMarketCard) =>
   market.revealTargetAt ?? market.closesAt ?? 'Reveal target pending'
@@ -29,14 +30,18 @@ export function CategoryFeaturedMarketCard({ market }: { market: PublicValidatio
         </div>
 
         <div className="category-featured-media">
-          {market.imageSrc ? <img src={market.imageSrc} alt={`${market.title} cover`} /> : <div className="category-featured-placeholder" />}
+          {market.imageSrc ? (
+            <img src={market.imageSrc} alt={`${market.title} cover`} />
+          ) : (
+            <div className="category-featured-placeholder" />
+          )}
         </div>
       </Link>
 
       <div className="category-card-progress">
-        <ProgressMeter label="时间进度" detail={revealLabel(market)} value={market.progress.timeProgressPercent} />
+        <ProgressMeter label={TIME_PROGRESS_LABEL} detail={revealLabel(market)} value={market.progress.timeProgressPercent} />
         <ProgressMeter
-          label="有效样本"
+          label={EFFECTIVE_SAMPLE_LABEL}
           detail={effectiveSampleLabel(market)}
           value={market.progress.effectiveSampleProgressPercent}
         />
@@ -52,7 +57,6 @@ export function CategoryFeaturedMarketCard({ market }: { market: PublicValidatio
 
       <div className="category-card-footer">
         <span className="category-card-caption">{revealLabel(market)}</span>
-        <WatchlistToggleButton marketId={market.id} />
       </div>
     </article>
   )
@@ -60,42 +64,52 @@ export function CategoryFeaturedMarketCard({ market }: { market: PublicValidatio
 
 export function CategoryCompactMarketCard({ market }: { market: PublicValidationMarketCard }) {
   const href = marketHref(market.id)
-  const primaryOptions = market.options.slice(0, 2)
+  const compactOptions = market.options.slice(0, 2)
+  const reveal = revealLabel(market)
+  const effectiveSample = effectiveSampleLabel(market)
 
   return (
-    <article className="category-card category-card-compact discover-featured-card">
-      <Link className={market.imageSrc ? 'category-compact-title discover-featured-title' : 'category-compact-title without-media discover-featured-title'} to={href}>
-        {market.imageSrc ? <img src={market.imageSrc} alt={`${market.title} card icon`} /> : null}
-        <span className="category-compact-copy discover-featured-copy">
-          <strong>{market.title}</strong>
-        </span>
-      </Link>
+    <article className={`category-card category-compact-card${market.imageSrc ? '' : ' category-compact-card-no-media'}`}>
+      <div className="category-compact-top">
+        <Link className="category-compact-media" to={href} aria-label={`${market.title} details`}>
+          {market.imageSrc ? (
+            <img src={market.imageSrc} alt={`${market.title} cover`} />
+          ) : (
+            <div className="category-compact-media-placeholder" aria-hidden="true" />
+          )}
+        </Link>
 
-      <div className="category-card-progress discover-featured-progress">
-        <ProgressMeter label="时间进度" detail={revealLabel(market)} value={market.progress.timeProgressPercent} />
-        <ProgressMeter
-          label="有效样本"
-          detail={effectiveSampleLabel(market)}
-          value={market.progress.effectiveSampleProgressPercent}
-        />
+        <div className="category-compact-title-shell">
+          <Link className="category-compact-title-link" to={href}>
+            <strong>{market.title}</strong>
+          </Link>
+        </div>
       </div>
 
-      {market.publicResult ? <p className="category-card-note discover-featured-note">{market.publicResult}</p> : null}
+      <div className="category-compact-metrics" aria-label="Market summary">
+        <div className="category-compact-metric">
+          <ProgressMeter label={TIME_PROGRESS_LABEL} detail={reveal} value={market.progress.timeProgressPercent} />
+        </div>
+        <div className="category-compact-metric">
+          <ProgressMeter
+            label={EFFECTIVE_SAMPLE_LABEL}
+            detail={effectiveSample}
+            value={market.progress.effectiveSampleProgressPercent}
+          />
+        </div>
+      </div>
 
-      <div className="category-card-options discover-featured-options">
-        {primaryOptions.map((option) => (
-          <div className="category-option-row" key={option.id}>
-            <span className="category-option-label">{option.label}</span>
-            <Link className="category-option-code" to={`${href}?option=${encodeURIComponent(option.id)}`}>
-              {optionCode(option.displayOrder)}
-            </Link>
-          </div>
+      <div className="category-compact-options" role="list" aria-label="Market options">
+        {compactOptions.map((option) => (
+          <Link
+            key={option.id}
+            className={`category-compact-option ${option.displayOrder === 1 ? 'option-tone-a' : 'option-tone-b'}`}
+            role="listitem"
+            to={`${href}?option=${encodeURIComponent(option.id)}`}
+          >
+            <span className="category-compact-option-label">{option.label}</span>
+          </Link>
         ))}
-      </div>
-
-      <div className="category-card-footer discover-featured-footer">
-        <span className="category-card-caption">{revealLabel(market)}</span>
-        <WatchlistToggleButton marketId={market.id} />
       </div>
     </article>
   )

@@ -5,23 +5,29 @@ import { AdjudicationPage } from './AdjudicationPage'
 import { BreakingPage } from './BreakingPage'
 import { CategoryDirectoryPage } from './CategoryDirectoryPage'
 import { ChallengePage } from './ChallengePage'
+import { ClosingSoonPage } from './ClosingSoonPage'
 import { DraftsPage } from './DraftsPage'
 import { HelpPage } from './HelpPage'
 import { LatestPage } from './LatestPage'
-import { SearchPage } from './SearchPage'
+import { PublicResultsPage } from './PublicResultsPage'
+import { SubmissionsPage } from './SubmissionsPage'
 import { WatchlistPage } from './WatchlistPage'
 import { RewardsPage } from './RewardsPage'
 import { LeaderboardPage } from './LeaderboardPage'
 import { DocsPage } from './DocsPage'
 import { MarketIntegrityPage } from './MarketIntegrityPage'
 import { ContactPage } from './ContactPage'
-import { isCategoryDirectoryPath } from '../mocks/category-directory.mock'
-import { filters, footerTopics, knownPageTitles } from '../mocks/arena-market.mock'
+import { filters, footerTopics, knownPageTitles } from '../features/app-shell/navigation-contract'
 import { AccountActivityPage } from '../components/shared/AccountActivityPage'
 import { DirectoryPage } from '../components/shared/DirectoryPage'
 import { NotFoundPage } from '../components/shared/NotFoundPage'
 import { useQuickMenu } from '../components/shared/QuickMenuContext'
 import { UtilityPage } from '../components/shared/UtilityPage'
+import { useDiscoveryData } from '../features/arena/discovery-data'
+
+const staticDirectoryPageTitles: Record<string, string> = {
+  '/zh/brand': knownPageTitles['/zh/brand'],
+}
 
 function QuickMenuAliasPage() {
   const navigate = useNavigate()
@@ -37,10 +43,16 @@ function QuickMenuAliasPage() {
 
 export function SmartRoutePage() {
   const { pathname } = useLocation()
-
-  if (pathname === '/zh/search') {
-    return <SearchPage />
-  }
+  const { hasCategoryPath, isLoading: discoveryIsLoading } = useDiscoveryData()
+  const removedPredictionRoutes = new Set([
+    '/zh/predictions/rolling',
+    '/zh/predictions/public-policy',
+    '/zh/predictions/geopolitics',
+    '/zh/predictions/ai',
+    '/zh/predictions/finance',
+    '/zh/predictions/sports',
+    '/zh/predictions/effective-sample',
+  ])
 
   if (pathname === '/zh/watchlist') {
     return <WatchlistPage />
@@ -48,6 +60,10 @@ export function SmartRoutePage() {
 
   if (pathname === '/zh/drafts') {
     return <DraftsPage />
+  }
+
+  if (pathname === '/zh/submissions') {
+    return <SubmissionsPage />
   }
 
   if (pathname === '/zh/activity') {
@@ -118,6 +134,18 @@ export function SmartRoutePage() {
     return <LatestPage />
   }
 
+  if (removedPredictionRoutes.has(pathname)) {
+    return <NotFoundPage />
+  }
+
+  if (pathname === '/zh/predictions/public-results') {
+    return <PublicResultsPage />
+  }
+
+  if (pathname === '/zh/predictions/closing-soon') {
+    return <ClosingSoonPage />
+  }
+
   if (pathname.startsWith('/zh/predictions/')) {
     const topic =
       filters.find((item) => item.href === pathname)?.label
@@ -127,16 +155,20 @@ export function SmartRoutePage() {
     return <DirectoryPage title={`${topic} 命题`} />
   }
 
-  if (isCategoryDirectoryPath(pathname)) {
+  if (hasCategoryPath(pathname)) {
     return <CategoryDirectoryPage key={pathname} pathname={pathname} />
   }
 
-  if (knownPageTitles[pathname]) {
-    return <DirectoryPage title={knownPageTitles[pathname]} />
+  if (staticDirectoryPageTitles[pathname]) {
+    return <DirectoryPage title={staticDirectoryPageTitles[pathname]} />
   }
 
   if (pathname.startsWith('/zh/news/')) {
     return <UtilityPage title="命题参考" description="以下为 Arena 当前公开命题列表，可在其中找到相关命题的详细信息。" variant="news" />
+  }
+
+  if (discoveryIsLoading) {
+    return null
   }
 
   return <NotFoundPage />

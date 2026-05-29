@@ -10,6 +10,9 @@ import { WalletEnvironmentProvider } from './features/auth/wallet-environment'
 import { ValidationMarketDataProvider } from './features/validation/validation-market-data'
 import './styles/index.css'
 
+// Data layer: all server-state and session providers live here, outside the router.
+// These providers fetch/manage data independently of navigation and have no UI concerns.
+// UI providers (routing, modals, quick-menu, language) live in App.tsx instead.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <WalletEnvironmentProvider>

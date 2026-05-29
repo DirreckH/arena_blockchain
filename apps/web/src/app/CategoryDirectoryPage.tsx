@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bookmark, Search, SlidersHorizontal } from 'lucide-react'
+import { Bookmark, SlidersHorizontal } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { CategoryCompactMarketCard } from '../components/market/CategoryDirectoryCards'
+import { MarketSearchBar } from '../components/market/MarketSearchBar'
 import { FilterStrip } from '../components/navigation/FilterStrip'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { useDiscoveryData } from '../features/arena/discovery-data'
@@ -21,6 +22,7 @@ export function CategoryDirectoryPage({ pathname }: CategoryDirectoryPageProps) 
   const { sessionMode } = useAuthSession()
   const config = getCategory(pathname)
   const [activeSidebarItem, setActiveSidebarItem] = useState(config?.sidebarItems[0]?.label ?? '')
+  const [searchQuery, setSearchQuery] = useState('')
   const { markets } = useValidationMarketData()
 
   const marketMap = useMemo(
@@ -42,24 +44,22 @@ export function CategoryDirectoryPage({ pathname }: CategoryDirectoryPageProps) 
     .map((marketId) => marketMap.get(marketId))
     .filter(isDefined)
 
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const visibleMarkets =
+    normalizedQuery.length === 0
+      ? orderedMarkets
+      : orderedMarkets.filter((market) => market.title.toLowerCase().includes(normalizedQuery))
+
   return (
     <section className="route-page market-page category-directory-page">
-      <DataSourceBadge
-        mode={sessionMode === 'demo' ? 'demo' : sourceMode}
-        detail={
-          sessionMode === 'demo'
-            ? 'Category directory uses the authenticated demo session.'
-            : sourceMode === 'demo'
-              ? 'Category directory fell back to the seeded demo discovery directory.'
-              : 'Category directory uses the public discovery directory with the public market feed.'
-        }
-      />
+      <DataSourceBadge mode={sessionMode === 'demo' ? 'demo' : sourceMode} />
+      <MarketSearchBar value={searchQuery} onChange={setSearchQuery} />
       <FilterStrip className="market-category-strip" dividerBeforeHref="/zh/politics" />
 
       {errorMessage ? (
         <section className="account-menu-panel">
           <div className="account-menu-panel-head">
-            <h2>Category directory unavailable</h2>
+            <h2>分类目录加载失败</h2>
             <span>{errorMessage}</span>
           </div>
         </section>
@@ -68,14 +68,14 @@ export function CategoryDirectoryPage({ pathname }: CategoryDirectoryPageProps) 
       {isLoading ? (
         <section className="account-menu-panel">
           <div className="account-menu-panel-head">
-            <h2>Loading category directory</h2>
-            <span>Arena is assembling the current directory and linked market cards.</span>
+            <h2>正在加载分类目录</h2>
+            <span>Arena 正在组装当前分类目录与关联命题卡片。</span>
           </div>
         </section>
       ) : null}
 
       <div className="category-directory-shell main-grid">
-        <aside className="category-directory-sidebar" aria-label={`${config.title} sections`}>
+        <aside className="category-directory-sidebar" aria-label={`${config.title} 分区`}>
           <div className="category-sidebar-list">
             {config.sidebarItems.map((item) => (
               <button
@@ -96,23 +96,26 @@ export function CategoryDirectoryPage({ pathname }: CategoryDirectoryPageProps) 
           <div className="category-directory-header">
             <h1>{config.title}</h1>
             <div className="market-toolbar category-directory-tools">
-              <Link to="/zh/search" aria-label="Search propositions">
-                <Search size={21} />
-              </Link>
-              <Link to="/zh/markets?panel=filters" aria-label="Filter propositions">
+              <Link to="/zh/markets?panel=filters" aria-label="筛选命题">
                 <SlidersHorizontal size={21} />
               </Link>
-              <Link to="/zh/watchlist" aria-label="Saved propositions">
+              <Link to="/zh/watchlist" aria-label="已保存命题">
                 <Bookmark size={21} />
               </Link>
             </div>
           </div>
 
           <div className="category-directory-grid">
-            {orderedMarkets.map((market) => (
+            {visibleMarkets.map((market) => (
               <CategoryCompactMarketCard key={`${config.title}-${market.id}`} market={market} />
             ))}
           </div>
+
+          {searchQuery.trim().length > 0 && visibleMarkets.length === 0 ? (
+            <p className="market-page-search-empty" role="status">
+              没有匹配“{searchQuery.trim()}”的市场，换个关键词试试。
+            </p>
+          ) : null}
         </div>
       </div>
     </section>

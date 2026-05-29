@@ -1,12 +1,43 @@
 import type {
   AdjudicationTaskViewModel,
+  ArenaDiscussionThreadViewModel,
   AuthChallengeResponse,
+  CreateRequesterComparisonSetDeliveryPolicyInputViewModel,
+  DeleteOwnedComparisonSetExportResultViewModel,
+  DeleteRequesterComparisonSetDeliveryPolicyResultViewModel,
   JwtIdentity,
+  CreateArenaDiscussionCommentInput,
+  PrepareValidationBetResult,
   PlaceValidationBetResult,
+  PropositionCategory,
+  PropositionStatus,
+  RequesterComparisonSetDeliveryPolicyHealthViewModel,
+  RequesterComparisonSetDeliveryPolicyListViewModel,
+  RequesterComparisonSetDeliveryRunListViewModel,
+  RequesterComparisonSetDeliveryRunRetryResultViewModel,
+  RequesterComparisonSetDeliveryPolicyRunResultViewModel,
+  RequesterComparisonSetListViewModel,
+  RequesterOwnedComparisonSetExportArtifactViewModel,
+  RequesterOwnedComparisonSetExportListViewModel,
+  RequesterOwnedPropositionAnalyticsComparisonViewModel,
+  RequesterPropositionSubmissionStatus,
+  RequesterReportPresetListViewModel,
+  RequesterOwnedPropositionDetailViewModel,
+  RequesterOwnedPropositionExportArtifactViewModel,
+  RequesterOwnedPropositionExportListViewModel,
+  RequesterOwnedPropositionOverviewViewModel,
+  RequesterOwnedPropositionRecentItemViewModel,
+  RequesterOwnedSettledPropositionReportViewModel,
+  UpdateRequesterComparisonSetDeliveryPolicyInputViewModel,
+  PublicCategoryDirectoryIndexViewModel,
   PublicCategoryDirectoryViewModel,
+  PublicClosingSoonViewModel,
   PublicDiscoverPageViewModel,
   PublicDiscoveryRankingViewModel,
+  PublicIntegrityOverviewViewModel,
   PublicLatestTopicsViewModel,
+  PublicRespondentLeaderboardViewModel,
+  PublicSettledResultsViewModel,
   PublicProgressSnapshot,
   RespondentAccountOverviewViewModel,
   RespondentAccountPreferencesViewModel,
@@ -25,6 +56,8 @@ import type {
 } from '@arena/shared'
 import { demoBackend } from '../demo/demo-backend'
 import { DEMO_SESSION_TOKEN, isDemoToken, isDemoWalletAddress } from '../demo/demo-auth'
+import { toPublicValidationMarket } from '../validation/validation-market-adapter'
+import type { PublicValidationMarketCard } from '../validation/validation-market.types'
 
 export type ArenaApiErrorPayload = {
   statusCode?: number
@@ -32,11 +65,15 @@ export type ArenaApiErrorPayload = {
   message?: string
 }
 
-export type ArenaApiSourceMode = 'live' | 'demo'
+export type ArenaApiSourceMode = 'live' | 'demo' | 'mixed'
 
 export type ArenaApiFeedResult<T> = {
   data: T
   sourceMode: ArenaApiSourceMode
+}
+
+export type PublicMarketSearchResult = {
+  items: PublicValidationMarketCard[]
 }
 
 export class ArenaApiError extends Error {
@@ -65,6 +102,14 @@ function normalizeValidationBetError(error: unknown): never {
       throw new Error('This market is not accepting new positions right now')
     case 'bet.market_mismatch':
       throw new Error('The selected market no longer matches this proposition')
+    case 'bet.chain_market_not_ready':
+      throw new Error('This market is not ready for live on-chain betting yet')
+    case 'bet.transaction_not_confirmed':
+      throw new Error('The submitted transaction is not confirmed on chain yet')
+    case 'bet.transaction_mismatch':
+      throw new Error('The submitted transaction did not match this market position')
+    case 'bet.chain_id_mismatch':
+      throw new Error('Switch your wallet to the configured Arena network and retry')
     default:
       throw error
   }
@@ -81,7 +126,7 @@ export type PropositionDraftRecord = {
   summary: string
   optionA: string
   optionB: string
-  category: string
+  category: PropositionCategory
   sampleConstraints: string[]
   minEffectiveSample: number
   minBetAmount: string
@@ -90,12 +135,45 @@ export type PropositionDraftRecord = {
   rewardBudget: string
   baseResponseReward: string
   marketEnabled: boolean
-  status: string
-  submissionStatus: string
+  status: PropositionStatus
+  submissionStatus: RequesterPropositionSubmissionStatus
   createdAt: string
   updatedAt: string
   submittedAt: string | null
 }
+
+export type RequesterOwnedPropositionRecentRecord = RequesterOwnedPropositionRecentItemViewModel
+export type RequesterOwnedPropositionOverviewRecord = RequesterOwnedPropositionOverviewViewModel
+export type RequesterOwnedPropositionDetailRecord = RequesterOwnedPropositionDetailViewModel
+export type RequesterOwnedSettledPropositionReportRecord = RequesterOwnedSettledPropositionReportViewModel
+export type RequesterOwnedPropositionExportRecord = RequesterOwnedPropositionExportArtifactViewModel
+export type RequesterOwnedPropositionExportListRecord = RequesterOwnedPropositionExportListViewModel
+export type RequesterReportPresetListRecord = RequesterReportPresetListViewModel
+export type RequesterComparisonSetListRecord = RequesterComparisonSetListViewModel
+export type RequesterComparisonSetAnalyticsRecord = RequesterOwnedPropositionAnalyticsComparisonViewModel
+export type RequesterComparisonSetExportRecord = RequesterOwnedComparisonSetExportArtifactViewModel
+export type RequesterComparisonSetExportListRecord = RequesterOwnedComparisonSetExportListViewModel
+export type RequesterComparisonSetDeliveryPolicyListRecord = RequesterComparisonSetDeliveryPolicyListViewModel
+export type RequesterComparisonSetDeliveryPolicyHealthRecord = RequesterComparisonSetDeliveryPolicyHealthViewModel
+export type RequesterComparisonSetDeliveryPolicyRunRecord = RequesterComparisonSetDeliveryPolicyRunResultViewModel
+export type RequesterComparisonSetDeliveryRunListRecord = RequesterComparisonSetDeliveryRunListViewModel
+export type RequesterComparisonSetDeliveryRunRetryRecord = RequesterComparisonSetDeliveryRunRetryResultViewModel
+export type CreateRequesterComparisonSetDeliveryPolicyInputRecord = CreateRequesterComparisonSetDeliveryPolicyInputViewModel
+export type UpdateRequesterComparisonSetDeliveryPolicyInputRecord = UpdateRequesterComparisonSetDeliveryPolicyInputViewModel
+export type DeleteRequesterComparisonSetDeliveryPolicyResultRecord = DeleteRequesterComparisonSetDeliveryPolicyResultViewModel
+export type DeleteRequesterComparisonSetExportResultRecord = DeleteOwnedComparisonSetExportResultViewModel
+export type RequesterComparisonSetExportOriginFilterRecord =
+  | 'manual'
+  | 'delivery_policy_manual'
+  | 'delivery_policy_automation'
+export type RequesterComparisonSetDeliveryRunStatusFilterRecord = 'completed' | 'failed'
+export type RequesterComparisonSetDeliveryRunTriggerTypeFilterRecord =
+  | 'manual'
+  | 'automation'
+export type RequesterComparisonSetDeliveryRunReplayFilterRecord =
+  | 'all'
+  | 'fresh_only'
+  | 'replayed_only'
 
 export type ArchiveDraftResult = {
   propositionId: string
@@ -178,7 +256,7 @@ async function requestWithDemoFallback<T>(request: () => Promise<T>, demoFallbac
   } catch {
     return {
       data: await demoFallback(),
-      sourceMode: 'demo',
+      sourceMode: 'mixed',
     }
   }
 }
@@ -203,6 +281,30 @@ export const arenaApi = {
   getPublicMarket(marketId: string) {
     return requestJson<ValidationMarketViewModel>(`/arena/public/markets/${marketId}`)
       .catch(() => demoBackend.getValidationMarket(marketId))
+  },
+  searchPublicMarkets(query: string) {
+    return requestJson<ValidationMarketViewModel[]>(
+      `/arena/public/markets/search?q=${encodeURIComponent(query)}`,
+    )
+      .then((markets) => ({
+        items: markets.map(toPublicValidationMarket),
+      }))
+      .catch(() => ({
+        items: demoBackend.searchValidationMarkets(query).map(toPublicValidationMarket),
+      }))
+  },
+  searchPublicMarketsFeed(query: string) {
+    return requestWithDemoFallback(
+      () =>
+        requestJson<ValidationMarketViewModel[]>(
+          `/arena/public/markets/search?q=${encodeURIComponent(query)}`,
+        ).then((markets) => ({
+          items: markets.map(toPublicValidationMarket),
+        })),
+      () => ({
+        items: demoBackend.searchValidationMarkets(query).map(toPublicValidationMarket),
+      }),
+    )
   },
   getPublicProgress(propositionId: string) {
     return requestJson<PublicProgressSnapshot>(`/arena/public/propositions/${propositionId}/progress`)
@@ -245,6 +347,36 @@ export const arenaApi = {
       () => demoBackend.getLatestTopics(),
     )
   },
+  getDiscoveryClosingSoon() {
+    return requestJson<PublicClosingSoonViewModel>('/arena/public/discovery/closing-soon')
+      .catch(() => demoBackend.getDiscoveryClosingSoon())
+  },
+  getDiscoveryClosingSoonFeed() {
+    return requestWithDemoFallback(
+      () => requestJson<PublicClosingSoonViewModel>('/arena/public/discovery/closing-soon'),
+      () => demoBackend.getDiscoveryClosingSoon(),
+    )
+  },
+  getPublicRespondentLeaderboard() {
+    return requestJson<PublicRespondentLeaderboardViewModel>('/arena/public/discovery/respondent-leaderboard')
+      .catch(() => demoBackend.getPublicRespondentLeaderboard())
+  },
+  getPublicRespondentLeaderboardFeed() {
+    return requestWithDemoFallback(
+      () => requestJson<PublicRespondentLeaderboardViewModel>('/arena/public/discovery/respondent-leaderboard'),
+      () => demoBackend.getPublicRespondentLeaderboard(),
+    )
+  },
+  getCategoryDirectoryIndex() {
+    return requestJson<PublicCategoryDirectoryIndexViewModel>('/arena/public/discovery/categories')
+      .catch(() => demoBackend.getCategoryDirectoryIndex())
+  },
+  getCategoryDirectoryIndexFeed() {
+    return requestWithDemoFallback(
+      () => requestJson<PublicCategoryDirectoryIndexViewModel>('/arena/public/discovery/categories'),
+      () => demoBackend.getCategoryDirectoryIndex(),
+    )
+  },
   getCategoryDirectory(slug: string) {
     return requestJson<PublicCategoryDirectoryViewModel | null>(`/arena/public/discovery/categories/${slug}`)
       .catch(() => demoBackend.getCategoryDirectory(slug))
@@ -253,6 +385,26 @@ export const arenaApi = {
     return requestWithDemoFallback(
       () => requestJson<PublicCategoryDirectoryViewModel | null>(`/arena/public/discovery/categories/${slug}`),
       () => demoBackend.getCategoryDirectory(slug),
+    )
+  },
+  getPublicSettledResults() {
+    return requestJson<PublicSettledResultsViewModel>('/arena/public/results/settled')
+      .catch(() => demoBackend.getPublicSettledResults())
+  },
+  getPublicSettledResultsFeed() {
+    return requestWithDemoFallback(
+      () => requestJson<PublicSettledResultsViewModel>('/arena/public/results/settled'),
+      () => demoBackend.getPublicSettledResults(),
+    )
+  },
+  getPublicIntegrityOverview() {
+    return requestJson<PublicIntegrityOverviewViewModel>('/arena/public/integrity/overview')
+      .catch(() => demoBackend.getPublicIntegrityOverview())
+  },
+  getPublicIntegrityOverviewFeed() {
+    return requestWithDemoFallback(
+      () => requestJson<PublicIntegrityOverviewViewModel>('/arena/public/integrity/overview'),
+      () => demoBackend.getPublicIntegrityOverview(),
     )
   },
   getValidationMarkets(token: string) {
@@ -266,6 +418,28 @@ export const arenaApi = {
       return Promise.resolve(demoBackend.getValidationMarket(marketId))
     }
     return requestJson<ValidationMarketViewModel>(`/arena/validation/markets/${marketId}`, { token })
+  },
+  getMarketDiscussionThread(marketId: string, token?: string) {
+    if (token && maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getMarketDiscussionThread(marketId))
+    }
+    return requestJson<ArenaDiscussionThreadViewModel>(`/arena/discussion/markets/${marketId}`, token ? { token } : {})
+  },
+  createMarketDiscussionComment(
+    marketId: string,
+    body: Omit<CreateArenaDiscussionCommentInput, 'marketId' | 'userId' | 'createdAt'> & {
+      createdAt: string
+    },
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.createMarketDiscussionComment(marketId, body))
+    }
+    return requestJson<ArenaDiscussionThreadViewModel>(`/arena/discussion/markets/${marketId}/comments`, {
+      method: 'POST',
+      body,
+      token,
+    })
   },
   placeValidationBet(
     marketId: string,
@@ -284,7 +458,36 @@ export const arenaApi = {
         ...body,
       }))
     }
-    return requestJson<PlaceValidationBetResult>(`/arena/validation/markets/${marketId}/bets`, {
+    throw new Error('Direct live bet placement has been replaced by prepare/confirm wallet execution')
+  },
+  prepareValidationBet(
+    marketId: string,
+    body: {
+      propositionId: string
+      selectedOption: 0 | 1
+      stakeAmount: string
+      placedAt: string
+    },
+    token: string,
+  ) {
+    return requestJson<PrepareValidationBetResult>(`/arena/validation/markets/${marketId}/bets/prepare`, {
+      method: 'POST',
+      body,
+      token,
+    }).catch((error) => normalizeValidationBetError(error))
+  },
+  confirmValidationBet(
+    marketId: string,
+    body: {
+      propositionId: string
+      selectedOption: 0 | 1
+      stakeAmount: string
+      placedAt: string
+      txHash: string
+    },
+    token: string,
+  ) {
+    return requestJson<PlaceValidationBetResult>(`/arena/validation/markets/${marketId}/bets/confirm`, {
       method: 'POST',
       body,
       token,
@@ -327,6 +530,361 @@ export const arenaApi = {
     }
     return requestJson<PropositionDraftRecord[]>('/arena/propositions/drafts', { token })
   },
+  listSubmissions(token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listSubmissions())
+    }
+    return requestJson<PropositionDraftRecord[]>('/arena/propositions/submissions', { token })
+  },
+  getRequesterOverview(token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getRequesterOverview())
+    }
+    return requestJson<RequesterOwnedPropositionOverviewRecord>('/arena/propositions/mine/overview', { token })
+  },
+  getOwnedPropositionDetail(propositionId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getOwnedPropositionDetail(propositionId))
+    }
+    return requestJson<RequesterOwnedPropositionDetailRecord>(
+      `/arena/propositions/mine/${propositionId}`,
+      { token },
+    )
+  },
+  getOwnedPropositionReport(propositionId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getOwnedPropositionReport(propositionId))
+    }
+    return requestJson<RequesterOwnedSettledPropositionReportRecord>(
+      `/arena/propositions/mine/${propositionId}/report`,
+      { token },
+    )
+  },
+  getOwnedPropositionExport(exportId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getOwnedPropositionExport(exportId))
+    }
+    return requestJson<RequesterOwnedPropositionExportRecord>(
+      `/arena/propositions/mine/exports/${exportId}`,
+      { token },
+    )
+  },
+  listOwnedPropositionExports(token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listOwnedPropositionExports())
+    }
+    return requestJson<RequesterOwnedPropositionExportListRecord>(
+      '/arena/propositions/mine/exports',
+      { token },
+    )
+  },
+  listRequesterReportPresets(token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listRequesterReportPresets())
+    }
+    return requestJson<RequesterReportPresetListRecord>(
+      '/arena/propositions/mine/report-presets',
+      { token },
+    )
+  },
+  listRequesterComparisonSets(token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listRequesterComparisonSets())
+    }
+    return requestJson<RequesterComparisonSetListRecord>(
+      '/arena/propositions/mine/comparison-sets',
+      { token },
+    )
+  },
+  getRequesterComparisonSetAnalytics(comparisonSetId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getRequesterComparisonSetAnalytics(comparisonSetId))
+    }
+    return requestJson<RequesterComparisonSetAnalyticsRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/analytics`,
+      { token },
+    )
+  },
+  createRequesterComparisonSetExport(comparisonSetId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.createRequesterComparisonSetExport(comparisonSetId))
+    }
+    return requestJson<RequesterComparisonSetExportRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/exports`,
+      {
+        method: 'POST',
+        body: {},
+        token,
+      },
+    )
+  },
+  listRequesterComparisonSetExports(
+    comparisonSetId: string,
+    token: string,
+    filters?: {
+      origin?: RequesterComparisonSetExportOriginFilterRecord
+      policyId?: string
+      limit?: number
+    },
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listRequesterComparisonSetExports(comparisonSetId, filters))
+    }
+    const params = new URLSearchParams()
+    if (filters?.origin) {
+      params.set('origin', filters.origin)
+    }
+    if (filters?.policyId) {
+      params.set('policyId', filters.policyId)
+    }
+    if (typeof filters?.limit === 'number') {
+      params.set('limit', String(filters.limit))
+    }
+    return requestJson<RequesterComparisonSetExportListRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/exports${params.size > 0 ? `?${params.toString()}` : ''}`,
+      { token },
+    )
+  },
+  getRequesterComparisonSetExport(
+    comparisonSetId: string,
+    exportId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.getRequesterComparisonSetExport(comparisonSetId, exportId),
+      )
+    }
+    return requestJson<RequesterComparisonSetExportRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/exports/${exportId}`,
+      { token },
+    )
+  },
+  deleteRequesterComparisonSetExport(
+    comparisonSetId: string,
+    exportId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.deleteRequesterComparisonSetExport(comparisonSetId, exportId),
+      )
+    }
+    return requestJson<DeleteRequesterComparisonSetExportResultRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/exports/${exportId}`,
+      {
+        method: 'DELETE',
+        token,
+      },
+    )
+  },
+  listRequesterComparisonSetDeliveryPolicies(comparisonSetId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listRequesterComparisonSetDeliveryPolicies(comparisonSetId))
+    }
+    return requestJson<RequesterComparisonSetDeliveryPolicyListRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies`,
+      { token },
+    )
+  },
+  createRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    body: CreateRequesterComparisonSetDeliveryPolicyInputRecord,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.createRequesterComparisonSetDeliveryPolicy(comparisonSetId, body),
+      )
+    }
+    return requestJson<RequesterComparisonSetDeliveryPolicyListRecord['items'][number]>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies`,
+      {
+        method: 'POST',
+        body,
+        token,
+      },
+    )
+  },
+  updateRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+    body: UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.updateRequesterComparisonSetDeliveryPolicy(comparisonSetId, policyId, body),
+      )
+    }
+    return requestJson<RequesterComparisonSetDeliveryPolicyListRecord['items'][number]>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}`,
+      {
+        method: 'PATCH',
+        body,
+        token,
+      },
+    )
+  },
+  deleteRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.deleteRequesterComparisonSetDeliveryPolicy(comparisonSetId, policyId),
+      )
+    }
+    return requestJson<DeleteRequesterComparisonSetDeliveryPolicyResultRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}`,
+      {
+        method: 'DELETE',
+        token,
+      },
+    )
+  },
+  getRequesterComparisonSetDeliveryPolicyHealth(
+    comparisonSetId: string,
+    policyId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.getRequesterComparisonSetDeliveryPolicyHealth(comparisonSetId, policyId),
+      )
+    }
+    return requestJson<RequesterComparisonSetDeliveryPolicyHealthRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}/health`,
+      { token },
+    )
+  },
+  runRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.runRequesterComparisonSetDeliveryPolicy(comparisonSetId, policyId),
+      )
+    }
+    return requestJson<RequesterComparisonSetDeliveryPolicyRunRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}/run`,
+      {
+        method: 'POST',
+        body: {},
+        token,
+      },
+    )
+  },
+  listRequesterComparisonSetDeliveryRuns(
+    comparisonSetId: string,
+    policyId: string,
+    token: string,
+    filters?: {
+      status?: RequesterComparisonSetDeliveryRunStatusFilterRecord
+      triggerType?: RequesterComparisonSetDeliveryRunTriggerTypeFilterRecord
+      replay?: RequesterComparisonSetDeliveryRunReplayFilterRecord
+      limit?: number
+    },
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.listRequesterComparisonSetDeliveryRuns(comparisonSetId, policyId, filters),
+      )
+    }
+    const params = new URLSearchParams()
+    if (filters?.status) {
+      params.set('status', filters.status)
+    }
+    if (filters?.triggerType) {
+      params.set('triggerType', filters.triggerType)
+    }
+    if (filters?.replay && filters.replay !== 'all') {
+      params.set('replay', filters.replay)
+    }
+    if (typeof filters?.limit === 'number') {
+      params.set('limit', String(filters.limit))
+    }
+    return requestJson<RequesterComparisonSetDeliveryRunListRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}/runs${params.size > 0 ? `?${params.toString()}` : ''}`,
+      { token },
+    )
+  },
+  retryRequesterComparisonSetDeliveryRun(
+    comparisonSetId: string,
+    policyId: string,
+    runId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.retryRequesterComparisonSetDeliveryRun(comparisonSetId, policyId, runId),
+      )
+    }
+    return requestJson<RequesterComparisonSetDeliveryRunRetryRecord>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}/runs/${runId}/retry`,
+      {
+        method: 'POST',
+        body: {},
+        token,
+      },
+    )
+  },
+  pauseRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.pauseRequesterComparisonSetDeliveryPolicy(comparisonSetId, policyId),
+      )
+    }
+    return requestJson<RequesterComparisonSetDeliveryPolicyListRecord['items'][number]>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}/pause`,
+      {
+        method: 'POST',
+        body: {},
+        token,
+      },
+    )
+  },
+  resumeRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(
+        demoBackend.resumeRequesterComparisonSetDeliveryPolicy(comparisonSetId, policyId),
+      )
+    }
+    return requestJson<RequesterComparisonSetDeliveryPolicyListRecord['items'][number]>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}/delivery-policies/${policyId}/resume`,
+      {
+        method: 'POST',
+        body: {},
+        token,
+      },
+    )
+  },
+  createOwnedPropositionExport(
+    body: {
+      presetId?: string
+    },
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.createOwnedPropositionExport(body))
+    }
+    return requestJson<RequesterOwnedPropositionExportRecord>('/arena/propositions/mine/exports', {
+      method: 'POST',
+      body,
+      token,
+    })
+  },
   getDraft(propositionId: string, token: string) {
     if (maybeUseDemoToken(token)) {
       return Promise.resolve(demoBackend.getDraft(propositionId))
@@ -337,7 +895,7 @@ export const arenaApi = {
   },
   createDraft(
     body: {
-      category: string
+      category: PropositionCategory
       title: string
       summary: string
       optionA: string
@@ -365,7 +923,7 @@ export const arenaApi = {
   updateDraft(
     propositionId: string,
     body: Partial<{
-      category: string
+      category: PropositionCategory
       title: string
       summary: string
       optionA: string
@@ -395,6 +953,16 @@ export const arenaApi = {
       return Promise.resolve(demoBackend.submitDraft(propositionId))
     }
     return requestJson<PropositionDraftRecord>(`/arena/propositions/drafts/${propositionId}/submit`, {
+      method: 'POST',
+      body: note ? { note } : {},
+      token,
+    })
+  },
+  withdrawSubmission(propositionId: string, note: string | undefined, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.withdrawSubmission(propositionId))
+    }
+    return requestJson<PropositionDraftRecord>(`/arena/propositions/submissions/${propositionId}/withdraw`, {
       method: 'POST',
       body: note ? { note } : {},
       token,
@@ -476,6 +1044,15 @@ export const arenaApi = {
       return Promise.resolve(demoBackend.getAccountExports())
     }
     return requestJson<RespondentAccountExportListViewModel>('/arena/adjudication/account/exports', { token })
+  },
+  getAccountExport(exportId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getAccountExport(exportId))
+    }
+    return requestJson<RespondentAccountExportArtifactViewModel>(
+      `/arena/adjudication/account/exports/${exportId}`,
+      { token },
+    )
   },
   createAccountExport(token: string) {
     if (maybeUseDemoToken(token)) {

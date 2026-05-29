@@ -1,6 +1,6 @@
 import { BarChart3, CircleDollarSign, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { ARENA_LOGO_SRC, footerTopics } from '../../mocks/arena-market.mock'
+import { ARENA_LOGO_SRC, footerTopics } from '../../features/app-shell/navigation-contract'
 import { useRulesIntro } from '../shared/RulesIntroContext'
 
 export function SiteFooter() {
@@ -49,7 +49,12 @@ export function SiteFooter() {
           <Link to="/zh/docs"><BarChart3 size={18} /> 开发文档</Link>
           <Link to="/zh/market-integrity"><Sparkles size={18} /> 信息边界</Link>
         </div>
-        <p>Arena © 2026 · 隐私 · 使用条款 · 帮助中心。当前演示覆盖主要浏览、登录与账户路径，部分扩展能力仍在逐步完善。</p>
+        <div className="footer-legal-meta">
+          <span>Arena © 2026</span>
+          <Link to="/zh/market-integrity">隐私与信息边界</Link>
+          <Link to="/zh/help">使用条款</Link>
+          <Link to="/zh/help">帮助中心</Link>
+        </div>
       </div>
     </footer>
   )

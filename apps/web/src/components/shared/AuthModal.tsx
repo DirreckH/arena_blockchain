@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { useAuthSession } from '../../features/auth/auth-session'
 import { useWalletEnvironment } from '../../features/auth/wallet-environment'
-import { ARENA_LOGO_SRC } from '../../mocks/arena-market.mock'
+import { ARENA_LOGO_SRC } from '../../features/app-shell/navigation-contract'
 
 export function AuthModal({
   mode,
@@ -33,7 +33,7 @@ export function AuthModal({
     const normalizedWalletAddress = walletAddress.trim()
 
     if (!normalizedWalletAddress) {
-      setErrorMessage('请输入钱包地址或演示快捷码')
+      setErrorMessage('请输入钱包地址')
       return
     }
 
@@ -82,8 +82,8 @@ export function AuthModal({
 
           <p className="auth-modal-description">
             {isSignup
-              ? 'Arena 通过发起挑战、收集签名并换取访问令牌来创建钱包绑定的会话。'
-              : 'Arena 使用你的钱包签名挑战，并将签名换取认证会话令牌。'}
+              ? '使用钱包签名 Arena 的认证挑战，建立绑定该地址的会话。'
+              : '使用钱包签名 Arena 的认证挑战，恢复绑定该地址的会话。'}
           </p>
 
           <div className="auth-modal-fields">
@@ -95,7 +95,6 @@ export function AuthModal({
                 value={walletAddress}
               />
             </label>
-            <p className="boundary-note">输入 `demo` 可跳过钱包签名，直接进入完整预置演示会话。</p>
             <div className="auth-modal-environment">
               <div className="auth-modal-environment-row">
                 <strong>钱包插件</strong>
@@ -108,7 +107,7 @@ export function AuthModal({
                     ? `Chain ${configuredChainId} 就绪`
                     : networkStatus === 'unsupported'
                       ? `网络不匹配（当前 ${currentChainId ?? '未知'}，需要 ${configuredChainId}）`
-                      : '真实钱包签名时 Arena 会自动验证链'}
+                      : '签名时将自动校验链'}
                 </span>
               </div>
             </div>

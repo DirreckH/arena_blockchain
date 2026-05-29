@@ -15,9 +15,10 @@ const DISCOVER_DEFAULT_HREF = '/zh'
 export function HomePage() {
   const [activeSectionHref, setActiveSectionHref] = useState(DISCOVER_DEFAULT_HREF)
   const [activeFeaturedIndex, setActiveFeaturedIndex] = useState(0)
-  const { markets, sourceMode: marketSourceMode } = useValidationMarketData()
-  const { home, sourceMode: discoverySourceMode } = useDiscoveryData()
+  const { markets, isLoading: marketsLoading, sourceMode: marketSourceMode } = useValidationMarketData()
+  const { home, isLoading: discoveryLoading, sourceMode: discoverySourceMode } = useDiscoveryData()
   const { sessionMode } = useAuthSession()
+  const isLoading = marketsLoading || discoveryLoading
   const marketMap = useMemo(() => new Map(markets.map((market) => [market.id, market])), [markets])
   const heroMarkets = useMemo(
     () =>
@@ -30,6 +31,20 @@ export function HomePage() {
   const featuredMarket = heroMarkets[featuredIndex]
   const sections = home?.sections ?? []
   const activeSection = sections.find((section) => section.href === activeSectionHref) ?? sections[0] ?? null
+  const featuredPager = heroMarkets.length > 1 ? (
+    <div className="discover-hero-pager" aria-label="Featured discover card pagination">
+      {heroMarkets.map((market, index) => (
+        <button
+          type="button"
+          key={market.id}
+          className={index === featuredIndex ? 'discover-hero-dot active' : 'discover-hero-dot'}
+          aria-label={`切换精选命题 ${index + 1}：${market.title}`}
+          aria-pressed={index === featuredIndex}
+          onClick={() => setActiveFeaturedIndex(index)}
+        />
+      ))}
+    </div>
+  ) : null
   const previewMarkets = useMemo(
     () =>
       (activeSection?.marketIds ?? markets.map((market) => market.id))
@@ -41,38 +56,30 @@ export function HomePage() {
 
   return (
     <section className="route-page market-page discover-page">
-      <h1 className="sr-only">Arena | Verifiable consensus and research network</h1>
+      <h1 className="sr-only">Arena | 可验证共识与调研网络</h1>
       <MobileSearchBar />
       <DataSourceBadge
-        mode={sessionMode === 'demo' || marketSourceMode === 'demo' || discoverySourceMode === 'demo' ? 'demo' : 'live'}
-        detail={
-          sessionMode === 'demo'
-            ? 'Home is running inside the authenticated demo session.'
-            : marketSourceMode === 'demo' || discoverySourceMode === 'demo'
-              ? 'One or more home feeds fell back to the seeded demo dataset.'
-              : 'Home combines the current public market feed with the public discovery read model.'
-        }
+        mode={sessionMode === 'demo'
+          ? 'demo'
+          : marketSourceMode === 'live' && discoverySourceMode === 'live'
+            ? 'live'
+            : marketSourceMode === 'demo' && discoverySourceMode === 'demo'
+              ? 'demo'
+              : 'mixed'}
       />
       <section className="hero-grid" aria-label="Featured propositions and public progress">
-        {featuredMarket ? <FeaturedCarousel market={featuredMarket} /> : null}
+        {featuredMarket ? (
+          <FeaturedCarousel market={featuredMarket} pager={featuredPager} />
+        ) : isLoading ? (
+          <div className="featured-carousel-skeleton" aria-busy="true" aria-label="加载精选命题">
+            <span className="skeleton-line medium" style={{ marginBottom: 10 }} />
+            <span className="skeleton-line hero" style={{ marginBottom: 6 }} />
+            <span className="skeleton-line full" />
+            <span className="skeleton-line medium" style={{ marginTop: 14 }} />
+          </div>
+        ) : null}
         <UserBetRail />
       </section>
-      {heroMarkets.length > 1 ? (
-        <div className="discover-hero-controls" aria-label="Featured discover card pagination">
-          <div className="discover-hero-pager">
-            {heroMarkets.map((market, index) => (
-              <button
-                type="button"
-                key={market.id}
-                className={index === featuredIndex ? 'discover-hero-dot active' : 'discover-hero-dot'}
-                aria-label={`Show featured card ${index + 1}: ${market.title}`}
-                aria-pressed={index === featuredIndex}
-                onClick={() => setActiveFeaturedIndex(index)}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
       <FilterStrip
         className="market-category-strip discover-category-strip"
         dividerBeforeHref="/zh/politics"
@@ -80,13 +87,13 @@ export function HomePage() {
         activeHref={activeSectionHref}
         onSelect={setActiveSectionHref}
       />
-        <MarketWorkspace
-          markets={previewMarkets}
-          showFilterStrip={false}
-          title={`${activeSection?.label ?? 'Discover'} propositions`}
-          showMoreLabel="更多"
-          showMoreHref={activeSection?.moreHref ?? '/zh/markets'}
-        />
+      <MarketWorkspace
+        markets={previewMarkets}
+        showFilterStrip={false}
+        title={`${activeSection?.label ?? '发现'} 命题`}
+        showMoreLabel="更多"
+        showMoreHref={activeSection?.moreHref ?? '/zh/markets'}
+      />
     </section>
   )
 }

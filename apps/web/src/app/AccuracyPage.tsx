@@ -1,55 +1,25 @@
 import { CheckCircle2, ChevronRight, ExternalLink, Hash, Shield } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import type { PublicSettledResultItemViewModel } from '@arena/shared'
 import { Link } from 'react-router-dom'
+import { DataSourceBadge } from '../components/shared/DataSourceBadge'
+import { formatCategoryLabel } from '../features/arena/arena-ui-mappers'
+import { arenaApi } from '../features/api/arena-api'
+import { useAuthSession } from '../features/auth/auth-session'
 
-type ResultTone = 'positive' | 'neutral' | 'info'
+type ResultTone = 'positive' | 'neutral'
 
-interface HistoricalResult {
+type HistoricalResult = {
   id: string
   title: string
-  closedAt: string
-  category: string
-  winningOption: string
+  closedAtLabel: string
+  categoryLabel: string
+  winningOptionLabel: string
   validSampleCount: number
-  winMarginPercent: string
-  settlementTxHash: string
+  winMarginLabel: string
+  settlementTxHash: string | null
   onChain: boolean
 }
-
-const DEMO_RESULTS: HistoricalResult[] = [
-  {
-    id: 'public-trust-q1',
-    title: '公众是否认为本季度公共服务响应速度有所改善？',
-    closedAt: '2026-04-18',
-    category: '公共政策',
-    winningOption: '改善明显',
-    validSampleCount: 612,
-    winMarginPercent: '58.3%',
-    settlementTxHash: '0x3a8f...e291',
-    onChain: true,
-  },
-  {
-    id: 'ai-regulation-march',
-    title: '多数受访者是否支持对生成式 AI 实施行业自律规范？',
-    closedAt: '2026-03-31',
-    category: 'AI 调研',
-    winningOption: '支持自律规范',
-    validSampleCount: 480,
-    winMarginPercent: '61.7%',
-    settlementTxHash: '0xb12c...7f04',
-    onChain: true,
-  },
-  {
-    id: 'defi-adoption-feb',
-    title: '链上用户是否认为 DeFi 协议在 2026 Q1 安全性有所提升？',
-    closedAt: '2026-02-28',
-    category: '加密',
-    winningOption: '安全性有所提升',
-    validSampleCount: 344,
-    winMarginPercent: '54.1%',
-    settlementTxHash: '0x9d44...a812',
-    onChain: true,
-  },
-]
 
 const verificationSteps = [
   {
@@ -69,6 +39,48 @@ const verificationSteps = [
   },
 ]
 
+function formatClosedAtLabel(isoTimestamp: string) {
+  const date = new Date(isoTimestamp)
+  if (Number.isNaN(date.getTime())) {
+    return isoTimestamp
+  }
+
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+}
+
+function formatWinningOptionLabel(result: PublicSettledResultItemViewModel) {
+  if (result.resultKind === 'void') {
+    return result.voidReason ? `作废：${result.voidReason}` : '作废结算'
+  }
+
+  return result.winningOptionLabel ?? '已公开结果'
+}
+
+function toHistoricalResult(result: PublicSettledResultItemViewModel): HistoricalResult {
+  return {
+    id: result.propositionId,
+    title: result.title,
+    closedAtLabel: formatClosedAtLabel(result.settledAt),
+    categoryLabel: formatCategoryLabel(result.category),
+    winningOptionLabel: formatWinningOptionLabel(result),
+    validSampleCount: result.validSampleCount,
+    winMarginLabel:
+      typeof result.winMarginPercent === 'number'
+        ? `${result.winMarginPercent.toFixed(1)}%`
+        : '不适用',
+    settlementTxHash: result.settlementTxHash,
+    onChain: result.onChain,
+  }
+}
+
+function buildSourceDetail(_sourceMode: 'live' | 'demo' | 'mixed') {
+  return undefined
+}
+
 function ResultRow({ result }: { result: HistoricalResult }) {
   const tone: ResultTone = result.onChain ? 'positive' : 'neutral'
 
@@ -77,14 +89,15 @@ function ResultRow({ result }: { result: HistoricalResult }) {
       <div className="account-settings-detail-meta">
         <span style={{ fontSize: '0.92rem', fontWeight: 500 }}>{result.title}</span>
         <small style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginTop: 2 }}>
-          <span className={`account-settings-pill ${tone}`}>{result.category}</span>
-          <span style={{ opacity: 0.55 }}>{result.closedAt} 开奖</span>
+          <span className={`account-settings-pill ${tone}`}>{result.categoryLabel}</span>
+          <span style={{ opacity: 0.55 }}>{result.closedAtLabel} 结算</span>
           <span style={{ opacity: 0.55 }}>有效样本 {result.validSampleCount}</span>
         </small>
       </div>
       <em className="account-settings-detail-value" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
-        <span style={{ fontWeight: 600 }}>{result.winningOption}</span>
-        <small style={{ opacity: 0.6 }}>胜出占比 {result.winMarginPercent}</small>
+        <span style={{ fontWeight: 600 }}>{result.winningOptionLabel}</span>
+        <small style={{ opacity: 0.6 }}>胜出占比 {result.winMarginLabel}</small>
+        <small style={{ opacity: 0.55 }}>{result.settlementTxHash ?? '未附链上证据'}</small>
         {result.onChain && (
           <small style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--color-positive)' }}>
             <CheckCircle2 size={11} />
@@ -97,15 +110,64 @@ function ResultRow({ result }: { result: HistoricalResult }) {
 }
 
 export function AccuracyPage() {
+  const { sessionMode } = useAuthSession()
+  const [results, setResults] = useState<HistoricalResult[]>([])
+  const [sourceMode, setSourceMode] = useState<'live' | 'demo' | 'mixed'>('live')
+  const [isLoading, setIsLoading] = useState(true)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    let disposed = false
+
+    void (async () => {
+      setIsLoading(true)
+      setErrorMessage(null)
+
+      try {
+        const nextResults = await arenaApi.getPublicSettledResultsFeed()
+        if (disposed) {
+          return
+        }
+
+        setResults(nextResults.data.items.map(toHistoricalResult))
+        setSourceMode(nextResults.sourceMode)
+      } catch (error) {
+        if (disposed) {
+          return
+        }
+
+        setErrorMessage(error instanceof Error ? error.message : '加载公开结果失败')
+      } finally {
+        if (!disposed) {
+          setIsLoading(false)
+        }
+      }
+    })()
+
+    return () => {
+      disposed = true
+    }
+  }, [])
+
+  const displayedSourceMode = sessionMode === 'demo'
+    ? 'demo'
+    : sourceMode
+
+  const settledResultHeading = useMemo(() => {
+    return '近期已结算命题'
+  }, [])
+
   return (
     <section className="route-page utility-page">
       <div className="route-header compact">
         <span>Arena</span>
         <h1>公开结果复核</h1>
-        <p>Arena 所有已结算命题的共识结论均写入链上，任何人可独立核验有效样本数量、开奖依据与奖励分配记录。</p>
+        <p>所有已结算命题的共识结论均写入链上，可独立核验有效样本数量、开奖依据与奖励分配记录。</p>
       </div>
 
       <div className="utility-stack">
+        <DataSourceBadge mode={displayedSourceMode} detail={buildSourceDetail(displayedSourceMode)} />
+
         <div className="help-grid">
           <div className="help-card">
             <div className="help-card-icon" aria-hidden="true">
@@ -166,13 +228,40 @@ export function AccuracyPage() {
 
         <article className="account-settings-detail-card">
           <div className="account-settings-detail-head">
-            <strong>近期已结算命题（演示数据）</strong>
-            <p>以下为平台近期完成开奖的命题结果摘要，链上哈希可在区块浏览器中独立验证。</p>
+            <strong>{settledResultHeading}</strong>
+            <p>以下为平台近期完成结算的命题结果摘要，链上哈希可在区块浏览器中独立验证。</p>
           </div>
           <div className="account-settings-detail-list">
-            {DEMO_RESULTS.map((result) => (
-              <ResultRow key={result.id} result={result} />
-            ))}
+            {isLoading ? (
+              <div className="account-settings-detail-row">
+                <div className="account-settings-detail-meta">
+                  <span>正在读取公开结果归档</span>
+                  <small>同步真实结算记录、有效样本与链上交易哈希。</small>
+                </div>
+              </div>
+            ) : null}
+
+            {!isLoading && errorMessage ? (
+              <div className="account-settings-detail-row">
+                <div className="account-settings-detail-meta">
+                  <span>公开结果加载失败</span>
+                  <small>{errorMessage}</small>
+                </div>
+              </div>
+            ) : null}
+
+            {!isLoading && !errorMessage && results.length === 0 ? (
+              <div className="account-settings-detail-row">
+                <div className="account-settings-detail-meta">
+                  <span>暂无已结算公开结果</span>
+                  <small>当首批非滚动命题完成 reveal 与 settlement 后，会在这里自动归档。</small>
+                </div>
+              </div>
+            ) : null}
+
+            {!isLoading && !errorMessage
+              ? results.map((result) => <ResultRow key={result.id} result={result} />)
+              : null}
           </div>
         </article>
 
@@ -206,7 +295,7 @@ export function AccuracyPage() {
             <div className="account-settings-detail-row">
               <div className="account-settings-detail-meta">
                 <span>closedAt</span>
-                <small>命题进入开奖流程的时间戳（UTC）</small>
+                <small>命题进入开奖流程并完成结算的时间（UTC）</small>
               </div>
               <em className="account-settings-detail-value neutral">时间戳</em>
             </div>

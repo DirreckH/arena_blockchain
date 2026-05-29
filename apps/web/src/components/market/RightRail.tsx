@@ -6,7 +6,7 @@ import { useValidationMarketData } from '../../features/validation/validation-ma
 export function RightRail({ className = 'right-rail' }: { className?: string }) {
   const { markets } = useValidationMarketData()
   const breakingNews = markets.slice(0, 3)
-  const hotTopics = markets.slice(0, 5)
+  const hotTopics = markets.slice(0, 3)
 
   return (
     <aside className={className} aria-label="突发新闻和热点事件">
@@ -15,7 +15,6 @@ export function RightRail({ className = 'right-rail' }: { className?: string }) 
           <Link className="ranked-row" key={market.id} to={`/zh/event/${market.id}`}>
             <span className="rank">{index + 1}</span>
             <span className="rank-title">{market.title}</span>
-            <span className="rank-status">{market.progress.statusLabel}</span>
           </Link>
         ))}
       </RailSection>
@@ -25,7 +24,6 @@ export function RightRail({ className = 'right-rail' }: { className?: string }) 
           <Link className="topic-row" key={market.id} to={`/zh/event/${market.id}`}>
             <span className="rank">{index + 1}</span>
             <span>{market.title}</span>
-            <span className="topic-meta">{market.category}</span>
             <ChevronRight size={16} />
           </Link>
         ))}

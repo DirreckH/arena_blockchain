@@ -1,4 +1,4 @@
-import { Bookmark, LogIn, Search } from 'lucide-react'
+import { LogIn, Search } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { MarketCardView } from '../components/market/MarketCardView'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
@@ -42,22 +42,11 @@ export function WatchlistPage() {
   return (
     <section className="route-page utility-page">
       <div className="route-header compact">
-        <span>Arena</span>
-        <h1>已保存的命题</h1>
-        <p>在同一个产品界面内管理你关注的命题，与发现、活动和验证层保持连贯。</p>
+        <h1>收藏命题</h1>
       </div>
 
       <div className="utility-stack">
-        <DataSourceBadge
-          mode={sourceMode}
-          detail={
-            !isAuthenticated
-              ? '登录后加载账户关注列表。'
-              : sessionMode === 'demo'
-                ? '当前会话使用预置演示关注列表。'
-                : '已保存命题从真实认证账户 API 加载。'
-          }
-        />
+        <DataSourceBadge mode={sourceMode} />
 
         {requestedMarketId && isAuthenticated ? (
           <section className="account-menu-panel watchlist-inline-action">
@@ -158,17 +147,6 @@ export function WatchlistPage() {
 
         {isAuthenticated && visibleMarkets.length > 0 ? (
           <>
-            <section className="watchlist-summary-row">
-              <div className="watchlist-summary-copy">
-                <strong>已保存 {watchlist?.totalCount ?? visibleMarkets.length} 个命题</strong>
-                <span>在任意命题卡片上点击书签图标即可更新此列表。</span>
-              </div>
-              <Link className="secondary-action" to="/zh/markets">
-                <Bookmark size={16} />
-                <span>浏览更多命题</span>
-              </Link>
-            </section>
-
             <div className="market-grid route-grid">
               {visibleMarkets.map((market) => (
                 <MarketCardView market={market} key={`watchlist-${market.id}`} />

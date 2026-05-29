@@ -86,13 +86,6 @@ export const navItems: NavigationItem[] = [
 
 export const filters: NavigationItem[] = [
   { label: '全部', href: '/zh', exact: true },
-  { label: '公共议题', href: '/zh/predictions/public-policy' },
-  { label: '地缘事件', href: '/zh/predictions/geopolitics' },
-  { label: 'AI 调研', href: '/zh/predictions/ai' },
-  { label: '金融观察', href: '/zh/predictions/finance' },
-  { label: '体育结果', href: '/zh/predictions/sports' },
-  { label: '滚动命题', href: '/zh/predictions/rolling' },
-  { label: '有效样本优先', href: '/zh/predictions/effective-sample' },
   { label: '即将开奖', href: '/zh/predictions/closing-soon' },
 ]
 
@@ -116,7 +109,7 @@ export const featuredMarkets: FeaturedMarket[] = [
       { label: '尚不能判断', caption: '选项 C' },
     ],
     topic: '公共政策',
-    topicHref: '/zh/predictions/public-policy',
+    topicHref: '/zh/politics',
     closeDate: '2026-04-30 开奖',
     news: [
       { source: 'Arena', age: '1 天前', headline: '当前演示仅展示时间与有效样本进度', href: '/zh/news/public-trust-boundary' },
@@ -142,7 +135,7 @@ export const featuredMarkets: FeaturedMarket[] = [
       { label: '满意度下降', caption: '选项 C' },
     ],
     topic: 'AI 调研',
-    topicHref: '/zh/predictions/ai',
+    topicHref: '/zh/tech',
     closeDate: '2026-05-08 开奖',
     news: [
       { source: 'Arena', age: '2 天前', headline: '滚动命题仅可展示上一期公开结果', href: '/zh/news/rolling-result-rule' },
@@ -309,11 +302,8 @@ export const breakingNews: TrendingItem[] = [
 ]
 
 export const hotTopics: TrendingItem[] = [
-  { rank: 1, href: '/zh/predictions/public-policy', title: '公共政策', metaLabel: '裁决层命题' },
-  { rank: 2, href: '/zh/predictions/ai', title: 'AI 调研', metaLabel: '样本校验' },
-  { rank: 3, href: '/zh/predictions/geopolitics', title: '地缘事件', metaLabel: '公开结果' },
-  { rank: 4, href: '/zh/predictions/rolling', title: '滚动命题', metaLabel: '上一期结果' },
-  { rank: 5, href: '/zh/predictions/effective-sample', title: '有效样本', metaLabel: '进度视图' },
+  { rank: 1, href: '/zh/predictions/public-results', title: '公开结果', metaLabel: '结果归档' },
+  { rank: 2, href: '/zh/predictions/closing-soon', title: '即将开奖', metaLabel: '即将进入窗口' },
 ]
 
 export const userOpenBets: UserBetItem[] = [
@@ -365,15 +355,14 @@ export const userSettledBets: UserBetItem[] = [
 ]
 
 export const footerTopics: NavigationItem[] = [
-  { label: '公共政策', href: '/zh/predictions/public-policy' },
-  { label: 'AI 调研', href: '/zh/predictions/ai' },
-  { label: '地缘事件', href: '/zh/predictions/geopolitics' },
-  { label: '金融观察', href: '/zh/predictions/finance' },
-  { label: '体育结果', href: '/zh/predictions/sports' },
-  { label: '滚动命题', href: '/zh/predictions/rolling' },
-  { label: '有效样本', href: '/zh/predictions/effective-sample' },
   { label: '即将开奖', href: '/zh/predictions/closing-soon' },
   { label: '公开结果', href: '/zh/predictions/public-results' },
+]
+
+export const filterMoreTopics: NavigationItem[] = [
+  { label: '公开结果', href: '/zh/predictions/public-results' },
+  { label: '即将开奖', href: '/zh/predictions/closing-soon' },
+  { label: '收藏', href: '/zh/watchlist' },
 ]
 
 export const knownPageTitles: Record<string, string> = {

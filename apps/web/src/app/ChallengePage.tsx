@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import type { PropositionCategory } from '@arena/shared'
 import {
   CheckCircle2,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { arenaApi, type PropositionDraftRecord } from '../features/api/arena-api'
+import { AuthRequiredBlankGate } from '../components/shared/AuthRequiredBlankGate'
 import {
   buildDraftReferenceLink,
   buildDraftTags,
@@ -79,7 +81,7 @@ type DraftFormState = {
   submissionStatus: 'draft' | 'submitted'
 }
 
-function mapCategoryLabelToApiValue(label: string) {
+function mapCategoryLabelToApiValue(label: string): PropositionCategory {
   switch (label) {
     case 'AI / Technology':
       return 'ai'
@@ -100,14 +102,12 @@ function mapCategoryLabelToApiValue(label: string) {
 function toDraftFormState(draft: PropositionDraftRecord | null): DraftFormState {
   return {
     propositionId: draft?.propositionId ?? null,
-    title: draft?.title ?? '哪款 AI 搜索产品在日常使用中更有帮助？',
-    summary:
-      draft?.summary
-      ?? '比较 Perplexity 与 ChatGPT Search 在日常信息检索、答案质量、易用性和效率方面的综合表现。选择你认为在真实使用场景中更有帮助的一款产品。',
-    optionA: draft?.optionA ?? 'Perplexity',
-    optionB: draft?.optionB ?? 'ChatGPT Search',
+    title: draft?.title ?? '',
+    summary: draft?.summary ?? '',
+    optionA: draft?.optionA ?? '',
+    optionB: draft?.optionB ?? '',
     category: draft ? formatCategoryLabel(draft.category) : 'AI / Technology',
-    tags: draft ? buildDraftTags(draft) : ['AI', 'Search', 'Productivity'],
+    tags: draft ? buildDraftTags(draft) : [],
     referenceLink: buildDraftReferenceLink(),
     submissionStatus: draft?.submissionStatus === 'submitted' ? 'submitted' : 'draft',
   }
@@ -159,7 +159,7 @@ function ChallengeSubmitModal({
       eyebrow: '审核须知',
       stepLabel: '步骤 2 / 3',
       title: '审核边界',
-      description: 'Arena 当前只接受候选提交，不在前端直接创建正式市场，也不提前公开方向性信息。',
+      description: '候选命题进入审核队列，前端不直接创建正式市场，也不提前公开方向性信息。',
       primaryLabel: '确认提交',
       secondaryLabel: '上一步',
     },
@@ -344,6 +344,7 @@ function ChallengeSubmitModal({
 
 export function ChallengePage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const selectedDraftId = searchParams.get('draft')
   const { token, isAuthenticated } = useAuthSession()
   const [draftRecord, setDraftRecord] = useState<PropositionDraftRecord | null>(null)
@@ -352,6 +353,23 @@ export function ChallengePage() {
   const [isLoadingDraft, setIsLoadingDraft] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<'title' | 'summary' | 'optionA' | 'optionB', string>>>({})
+
+  const validateForm = (): boolean => {
+    const errors: typeof fieldErrors = {}
+    if (!form.title.trim()) errors.title = '标题不能为空'
+    else if (form.title.trim().length < 10) errors.title = '标题至少需要 10 个字符'
+    if (!form.summary.trim()) errors.summary = '描述不能为空'
+    else if (form.summary.trim().length < 20) errors.summary = '描述至少需要 20 个字符'
+    if (!form.optionA.trim()) errors.optionA = '选项 A 不能为空'
+    if (!form.optionB.trim()) errors.optionB = '选项 B 不能为空'
+    if (form.optionA.trim() && form.optionB.trim() && form.optionA.trim() === form.optionB.trim()) {
+      errors.optionA = '两个选项不能完全相同'
+      errors.optionB = '两个选项不能完全相同'
+    }
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
 
   useEffect(() => {
     if (!selectedDraftId || !token) {
@@ -527,6 +545,9 @@ export function ChallengePage() {
   }
 
   const openSubmitModal = () => {
+    if (!validateForm()) {
+      return
+    }
     setSubmitModalStep(0)
   }
 
@@ -555,6 +576,11 @@ export function ChallengePage() {
     }
 
     closeSubmitModal()
+    navigate('/zh/submissions')
+  }
+
+  if (!isAuthenticated) {
+    return <AuthRequiredBlankGate className="challenge-route" ariaLabel="挑战页面" />
   }
 
   if (!isAuthenticated) {
@@ -573,7 +599,7 @@ export function ChallengePage() {
             <div className="challenge-gate-body">
               <div className="challenge-gate-copy">
                 <strong>登录后你可以继续当前候选流程</strong>
-                <p>挑战页现在不再只是前端占位。登录后会直接读取真实草稿、保存进度，并把提交写入审核链路。</p>
+                <p>登录后可直接读取真实草稿、保存进度，并将候选提交写入审核链路。</p>
               </div>
 
               <div className="challenge-gate-summary" aria-label="登录后可用能力">
@@ -594,6 +620,7 @@ export function ChallengePage() {
 
             <div className="challenge-actions challenge-actions--gate">
               <Link className="challenge-primary-button" to="/zh/drafts">先查看草稿箱</Link>
+              <Link className="challenge-secondary-button" to="/zh/submissions">查看已提交命题</Link>
             </div>
           </section>
 
@@ -666,6 +693,12 @@ export function ChallengePage() {
             </span>
             <strong className="challenge-progress-chip-label">草稿箱</strong>
           </Link>
+          <Link className="challenge-progress-chip" aria-label="进入已提交命题" to="/zh/submissions">
+            <span className="challenge-progress-chip-icon" aria-hidden="true">
+              <FileClock size={15} />
+            </span>
+            <strong className="challenge-progress-chip-label">已提交</strong>
+          </Link>
         </div>
       </div>
 
@@ -674,7 +707,6 @@ export function ChallengePage() {
           <div className="challenge-panel-head">
             <div>
               <h2>编辑提交稿</h2>
-              <p>候选话题现在会真实写入后端草稿与提交接口，现有前端壳层保持不变。</p>
             </div>
           </div>
 
@@ -682,61 +714,87 @@ export function ChallengePage() {
           {errorMessage ? <p className="challenge-note"><CircleAlert size={14} />{errorMessage}</p> : null}
 
           <div className="challenge-form-grid">
-            <label className="challenge-field">
+            <label className={fieldErrors.title ? 'challenge-field challenge-field--error' : 'challenge-field'}>
               <div className="challenge-label-row">
-                <span>1. 话题标题</span>
+                <span>话题标题 <span className="challenge-required" aria-label="必填">*</span></span>
                 <strong>{form.title.length} / 80</strong>
               </div>
               <input
+                aria-describedby={fieldErrors.title ? 'title-error' : undefined}
+                aria-invalid={Boolean(fieldErrors.title)}
                 className="challenge-input"
                 maxLength={80}
-                onChange={(event) => updateForm('title', event.target.value)}
+                onChange={(event) => {
+                  updateForm('title', event.target.value)
+                  if (fieldErrors.title) setFieldErrors((prev) => ({ ...prev, title: undefined }))
+                }}
+                placeholder="一句话说清楚判断对象，例如：用户是否认为……"
                 type="text"
                 value={form.title}
               />
+              {fieldErrors.title ? <span className="challenge-field-error" id="title-error" role="alert">{fieldErrors.title}</span> : null}
             </label>
 
-            <label className="challenge-field">
+            <label className={fieldErrors.summary ? 'challenge-field challenge-field--error' : 'challenge-field'}>
               <div className="challenge-label-row">
-                <span>2. 话题描述</span>
+                <span>话题描述 <span className="challenge-required" aria-label="必填">*</span></span>
                 <strong>{form.summary.length} / 500</strong>
               </div>
               <textarea
+                aria-describedby={fieldErrors.summary ? 'summary-error' : undefined}
+                aria-invalid={Boolean(fieldErrors.summary)}
                 className="challenge-textarea"
                 maxLength={500}
-                onChange={(event) => updateForm('summary', event.target.value)}
+                onChange={(event) => {
+                  updateForm('summary', event.target.value)
+                  if (fieldErrors.summary) setFieldErrors((prev) => ({ ...prev, summary: undefined }))
+                }}
+                placeholder="说明比较口径、时间窗口和真实场景，20 字以上"
                 rows={5}
                 value={form.summary}
               />
+              {fieldErrors.summary ? <span className="challenge-field-error" id="summary-error" role="alert">{fieldErrors.summary}</span> : null}
             </label>
 
             <div className="challenge-field">
               <div className="challenge-label-row">
-                <span>3. 选项设置</span>
-                <small>当前只支持二选一</small>
+                <span>选项设置 <span className="challenge-required" aria-label="必填">*</span></span>
+                <small>当前只支持二选一，两个选项必须互斥</small>
               </div>
 
               <div className="challenge-options-layout">
-                <label className="challenge-option-field">
+                <label className={fieldErrors.optionA ? 'challenge-option-field challenge-option-field--error' : 'challenge-option-field'}>
                   <span>选项 A</span>
                   <input
+                    aria-invalid={Boolean(fieldErrors.optionA)}
                     className="challenge-input"
-                    onChange={(event) => updateForm('optionA', event.target.value)}
+                    onChange={(event) => {
+                      updateForm('optionA', event.target.value)
+                      if (fieldErrors.optionA) setFieldErrors((prev) => ({ ...prev, optionA: undefined }))
+                    }}
+                    placeholder="例如：是 / 改善明显"
                     type="text"
                     value={form.optionA}
                   />
+                  {fieldErrors.optionA ? <span className="challenge-field-error" role="alert">{fieldErrors.optionA}</span> : null}
                 </label>
 
                 <div className="challenge-vs-badge" aria-hidden="true">VS</div>
 
-                <label className="challenge-option-field">
+                <label className={fieldErrors.optionB ? 'challenge-option-field challenge-option-field--error' : 'challenge-option-field'}>
                   <span>选项 B</span>
                   <input
+                    aria-invalid={Boolean(fieldErrors.optionB)}
                     className="challenge-input"
-                    onChange={(event) => updateForm('optionB', event.target.value)}
+                    onChange={(event) => {
+                      updateForm('optionB', event.target.value)
+                      if (fieldErrors.optionB) setFieldErrors((prev) => ({ ...prev, optionB: undefined }))
+                    }}
+                    placeholder="例如：否 / 变化不明显"
                     type="text"
                     value={form.optionB}
                   />
+                  {fieldErrors.optionB ? <span className="challenge-field-error" role="alert">{fieldErrors.optionB}</span> : null}
                 </label>
               </div>
             </div>
@@ -816,7 +874,6 @@ export function ChallengePage() {
             <div className="challenge-panel-head">
               <div>
                 <h2>提交预览</h2>
-                <p>这是审核侧会先看到的摘要层，不代表最终市场卡片。</p>
               </div>
             </div>
 
@@ -825,16 +882,24 @@ export function ChallengePage() {
                 <span>{form.category}</span>
                 <span>{form.tags.length} 个标签</span>
               </div>
-              <strong>{form.title}</strong>
-              <p>{form.summary}</p>
+              <strong style={{ color: form.title ? undefined : 'var(--arena-text-secondary, #6b7280)', fontStyle: form.title ? 'normal' : 'italic' }}>
+                {form.title || '（话题标题将在此显示）'}
+              </strong>
+              <p style={{ color: form.summary ? undefined : 'var(--arena-text-secondary, #6b7280)', fontStyle: form.summary ? 'normal' : 'italic' }}>
+                {form.summary || '（话题描述将在此显示）'}
+              </p>
               <div className="challenge-preview-options">
                 <div className="challenge-preview-option">
                   <span>选项 A</span>
-                  <strong>{form.optionA}</strong>
+                  <strong style={{ color: form.optionA ? undefined : 'var(--arena-text-secondary, #6b7280)' }}>
+                    {form.optionA || '待填写'}
+                  </strong>
                 </div>
                 <div className="challenge-preview-option">
                   <span>选项 B</span>
-                  <strong>{form.optionB}</strong>
+                  <strong style={{ color: form.optionB ? undefined : 'var(--arena-text-secondary, #6b7280)' }}>
+                    {form.optionB || '待填写'}
+                  </strong>
                 </div>
               </div>
               <div className="challenge-preview-footer">

@@ -13,8 +13,8 @@ export function HotPage() {
       <section className="route-page">
         <div className="route-header compact">
           <span>Arena</span>
-          <h1>Markets</h1>
-          <p>Loading the current public ranking surface.</p>
+          <h1>市场</h1>
+          <p>正在加载当前公开市场排行。</p>
         </div>
       </section>
     )
@@ -25,7 +25,7 @@ export function HotPage() {
       <section className="route-page">
         <div className="route-header compact">
           <span>Arena</span>
-          <h1>Markets</h1>
+          <h1>市场</h1>
           <p>{errorMessage}</p>
         </div>
       </section>
@@ -37,8 +37,8 @@ export function HotPage() {
       <section className="route-page">
         <div className="route-header compact">
           <span>Arena</span>
-          <h1>Markets</h1>
-          <p>No ranking feed is available right now.</p>
+          <h1>市场</h1>
+          <p>当前暂无市场排行数据。</p>
         </div>
       </section>
     )
@@ -46,17 +46,12 @@ export function HotPage() {
 
   return (
     <>
-      <DataSourceBadge
-        mode={sessionMode === 'demo' ? 'demo' : sourceMode}
-        detail={
-          sessionMode === 'demo'
-            ? 'Market rankings use the authenticated demo session.'
-            : sourceMode === 'demo'
-              ? 'Market rankings fell back to the seeded demo ranking.'
-              : 'Market rankings are read from the public discovery read model.'
-        }
+      <DataSourceBadge mode={sessionMode === 'demo' ? 'demo' : sourceMode} />
+      <MarketRankingPage
+        config={toRankedMarketPageConfig(hot)}
+        showSearch
+        searchPlaceholder="搜索市场标题"
       />
-      <MarketRankingPage config={toRankedMarketPageConfig(hot)} />
     </>
   )
 }

@@ -1,16 +1,29 @@
 import type {
   AdjudicationTaskViewModel,
+  ArenaDiscussionThreadViewModel,
   AuthChallengeResponse,
   CurrentUserPositionViewModel,
   JwtIdentity,
   PlaceValidationBetResult,
   PropositionCategory,
   PropositionStatus,
+  PublicCategoryDirectoryIndexViewModel,
   PublicCategoryDirectoryViewModel,
+  PublicClosingSoonViewModel,
   PublicDiscoverPageViewModel,
   PublicDiscoveryRankingViewModel,
+  PublicIntegrityOverviewViewModel,
   PublicLatestTopicsViewModel,
   PublicProgressViewModel,
+  PublicRespondentLeaderboardViewModel,
+  PublicSettledResultsViewModel,
+  RequesterComparisonSetDeliveryPolicyHealthViewModel,
+  RequesterComparisonSetDeliveryPolicyListViewModel,
+  RequesterComparisonSetDeliveryRunListViewModel,
+  RequesterComparisonSetDeliveryRunRetryResultViewModel,
+  RequesterComparisonSetDeliveryRunViewModel,
+  RequesterComparisonSetDeliveryPolicyRunResultViewModel,
+  RequesterComparisonSetDeliveryPolicyViewModel,
   RespondentAccountExportArtifactViewModel,
   RespondentAccountExportListViewModel,
   RespondentAccountOverviewViewModel,
@@ -20,25 +33,57 @@ import type {
   RespondentRewardLedgerViewModel,
   RespondentTagSummaryViewModel,
   RespondentWatchlistViewModel,
+  RequesterComparisonSetListViewModel,
+  RequesterOwnedComparisonSetExportListViewModel,
+  RequesterOwnedComparisonSetExportArtifactViewModel,
+  RequesterOwnedPropositionAnalyticsComparisonViewModel,
+  RequesterOwnedPropositionAnalyticsViewModel,
+  RequesterPropositionSubmissionStatus,
+  RequesterReportPresetListViewModel,
   SubmitAdjudicationResponseResult,
   UpdateRespondentAccountPreferencesInput,
   UpdateRespondentWatchlistResultViewModel,
   ValidationMarketViewModel,
 } from '@arena/shared'
 import { DEFAULT_RESPONDENT_ACCOUNT_PREFERENCES } from '@arena/shared'
-import type { AuthVerifyResponse, PropositionDraftRecord } from '../api/arena-api'
-import { getCategoryDirectoryConfig } from '../../mocks/category-directory.mock'
+import type {
+  AuthVerifyResponse,
+  CreateRequesterComparisonSetDeliveryPolicyInputRecord,
+  DeleteRequesterComparisonSetDeliveryPolicyResultRecord,
+  DeleteRequesterComparisonSetExportResultRecord,
+  PropositionDraftRecord,
+  RequesterComparisonSetAnalyticsRecord,
+  RequesterComparisonSetDeliveryRunReplayFilterRecord,
+  RequesterComparisonSetDeliveryRunStatusFilterRecord,
+  RequesterComparisonSetDeliveryRunTriggerTypeFilterRecord,
+  RequesterComparisonSetExportRecord,
+  RequesterComparisonSetExportOriginFilterRecord,
+  RequesterComparisonSetListRecord,
+  RequesterOwnedPropositionDetailRecord,
+  RequesterOwnedPropositionExportListRecord,
+  RequesterOwnedPropositionExportRecord,
+  RequesterOwnedPropositionOverviewRecord,
+  RequesterOwnedSettledPropositionReportRecord,
+  UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
+} from '../api/arena-api'
+import { CATEGORY_DIRECTORY_CONFIGS, getCategoryDirectoryConfig } from '../../mocks/category-directory.mock'
 import { DISCOVER_PAGE_SECTION_PATHS } from '../../mocks/discover-page.mock'
 import { LATEST_TOPIC_ITEMS } from '../../mocks/latest-page.mock'
 import { BREAKING_PAGE_CONFIG } from '../../mocks/breaking-page.mock'
 import { HOT_PAGE_CONFIG } from '../../mocks/hot-page.mock'
 import { marketCards, navItems } from '../../mocks/arena-market.mock'
+import { DEMO_DISCUSSION_COMMENTS } from '../arena/discussion'
 import { buildDemoIdentity, DEMO_SESSION_TOKEN, DEMO_WALLET_ADDRESS } from './demo-auth'
 
 type DemoState = {
   identity: JwtIdentity
   markets: ValidationMarketViewModel[]
   drafts: PropositionDraftRecord[]
+  requesterExports: RequesterOwnedPropositionExportRecord[]
+  requesterComparisonExports: RequesterOwnedComparisonSetExportArtifactViewModel[]
+  requesterComparisonDeliveryPolicies: RequesterComparisonSetDeliveryPolicyViewModel[]
+  requesterComparisonDeliveryRuns: RequesterComparisonSetDeliveryRunViewModel[]
+  requesterComparisonDeliveryHealthReadCount: number
   tasks: AdjudicationTaskViewModel[]
   watchlist: RespondentWatchlistViewModel
   preferences: RespondentAccountPreferencesViewModel
@@ -47,11 +92,57 @@ type DemoState = {
   tags: RespondentTagSummaryViewModel
   exports: RespondentAccountExportListViewModel
   latestExport: RespondentAccountExportArtifactViewModel | null
+  discussionThreads: Record<string, ArenaDiscussionThreadViewModel>
 }
 
 const DEMO_USER_ID = 'demo-user'
 const DEMO_CHAIN_ID = 31337
 const DEMO_NOW = '2026-05-08T09:30:00.000Z'
+const DEMO_CLOSING_SOON_URGENT_WINDOW_MS = 3 * 60 * 60 * 1000
+
+const demoCategoryDirectoryIndexItems: PublicCategoryDirectoryIndexViewModel['items'] = Object.entries(
+  CATEGORY_DIRECTORY_CONFIGS,
+).map(([pathname, config]) => ({
+  slug: pathname.replace(/^\/zh\//, '').replace(/\//g, '-'),
+  pathname,
+  label:
+    pathname === '/zh/politics' ? '公共政策'
+      : pathname === '/zh/sports/live' ? '体育'
+        : pathname === '/zh/crypto' ? '加密'
+          : pathname === '/zh/tech' ? '科技'
+            : pathname === '/zh/geopolitics' ? '地缘'
+              : pathname === '/zh/finance' ? '金融'
+                : pathname === '/zh/pop-culture' ? '文化'
+                  : pathname === '/zh/economy' ? '经济'
+                    : pathname === '/zh/weather' ? '天气'
+                      : pathname === '/zh/surveys' ? '调研'
+                      : '滚动命题',
+  title: config.title,
+  directoryLabel:
+    pathname === '/zh/politics' ? '公共政策'
+      : pathname === '/zh/sports/live' ? '体育结果'
+        : pathname === '/zh/crypto' ? '加密观察'
+          : pathname === '/zh/tech' ? '科技调研'
+            : pathname === '/zh/geopolitics' ? '地缘事件'
+              : pathname === '/zh/finance' ? '金融观察'
+                : pathname === '/zh/pop-culture' ? '文化调研'
+                  : pathname === '/zh/economy' ? '经济观察'
+                    : pathname === '/zh/weather' ? '天气滚动命题'
+                      : pathname === '/zh/surveys' ? '调研网络'
+                        : '滚动命题',
+  description:
+    pathname === '/zh/politics' ? '政府、立法与公共治理'
+      : pathname === '/zh/sports/live' ? '赛事结果与运动员表现'
+        : pathname === '/zh/crypto' ? '区块链与数字资产市场'
+          : pathname === '/zh/tech' ? '产品、开发者与科技生态'
+            : pathname === '/zh/geopolitics' ? '国际局势与区域冲突'
+              : pathname === '/zh/finance' ? '资产价格与宏观经济'
+                : pathname === '/zh/pop-culture' ? '娱乐、媒体与大众文化'
+                  : pathname === '/zh/economy' ? '就业、消费与产业数据'
+                    : pathname === '/zh/weather' ? '天气与滚动观察命题'
+                      : pathname === '/zh/surveys' ? '开发者、消费者与品牌调研'
+                        : '周期更新与上期结果归档',
+}))
 
 function plusHours(hours: number) {
   return new Date(Date.parse(DEMO_NOW) + hours * 60 * 60 * 1000).toISOString()
@@ -239,6 +330,49 @@ function buildDemoMarkets(): ValidationMarketViewModel[] {
 
 function buildDemoDrafts(): PropositionDraftRecord[] {
   return [
+    {
+      propositionId: 'draft-demo-consensus-window',
+      title: '未来四周独立开发者是否会更偏好“研究型搜索 + 代码助手”组合工作流？',
+      summary: '围绕独立开发者在高频调研、原型实现和结果复核中的真实使用路径，比较“研究型搜索 + 代码助手”组合是否会在未来四周成为更稳定的主流工作流。',
+      optionA: '会更偏好该组合',
+      optionB: '不会形成明显偏好',
+      category: 'ai',
+      sampleConstraints: ['Developers', 'Workflow', 'AI Tools'],
+      minEffectiveSample: 6,
+      minBetAmount: '10',
+      minDurationSeconds: 7200,
+      maxDurationSeconds: 604800,
+      rewardBudget: '720',
+      baseResponseReward: '24',
+      marketEnabled: true,
+      status: 'draft',
+      submissionStatus: 'submitted',
+      createdAt: minusDays(5),
+      updatedAt: minusHours(8),
+      submittedAt: minusHours(8),
+    },
+    {
+      propositionId: 'settled-demo-public-service',
+      title: 'What is the recent public service satisfaction trend?',
+      summary:
+        'Track whether respondents believe recent public service satisfaction will continue improving across the next reporting window.',
+      optionA: 'Will continue improving',
+      optionB: 'Will not continue improving',
+      category: 'politics',
+      sampleConstraints: ['Policy', 'Public Service', 'Survey'],
+      minEffectiveSample: 10,
+      minBetAmount: '10',
+      minDurationSeconds: 7200,
+      maxDurationSeconds: 604800,
+      rewardBudget: '840',
+      baseResponseReward: '28',
+      marketEnabled: true,
+      status: 'settled',
+      submissionStatus: 'approved',
+      createdAt: minusDays(14),
+      updatedAt: minusDays(2),
+      submittedAt: minusDays(13),
+    },
     {
       propositionId: 'draft-demo-search-quality',
       title: 'Perplexity 和 ChatGPT Search 哪个更适合高频研究检索？',
@@ -797,20 +931,52 @@ function buildDemoLatestTopics(): PublicLatestTopicsViewModel {
   }
 }
 
+function buildDemoClosingSoon(markets: ValidationMarketViewModel[]): PublicClosingSoonViewModel {
+  const referenceNowMs = Date.parse(DEMO_NOW)
+  const orderedItems = markets
+    .filter((market) => market.publicProgress.publicState.phase !== 'settled')
+    .map((market) => {
+      const revealAt =
+        market.publicProgress.timing.deadlineAt
+        ?? market.publicProgress.timing.minDurationEndsAt
+        ?? market.bettingClosesAt
+        ?? null
+
+      if (!revealAt) {
+        return null
+      }
+
+      const revealAtMs = Date.parse(revealAt)
+      if (Number.isNaN(revealAtMs)) {
+        return null
+      }
+
+      const differenceMs = revealAtMs - referenceNowMs
+      if (differenceMs <= 0) {
+        return null
+      }
+
+      return {
+        marketId: market.marketId,
+        revealAt,
+        differenceMs,
+      }
+    })
+    .filter((item): item is PublicClosingSoonViewModel['urgent'][number] => item !== null)
+    .sort((left, right) => left.differenceMs - right.differenceMs)
+
+  return {
+    generatedAt: DEMO_NOW,
+    urgentWindowMs: DEMO_CLOSING_SOON_URGENT_WINDOW_MS,
+    urgent: orderedItems.filter((item) => item.differenceMs <= DEMO_CLOSING_SOON_URGENT_WINDOW_MS),
+    upcoming: orderedItems
+      .filter((item) => item.differenceMs > DEMO_CLOSING_SOON_URGENT_WINDOW_MS)
+      .slice(0, 6),
+  }
+}
+
 function buildDemoCategoryDirectory(slug: string): PublicCategoryDirectoryViewModel | null {
-  const pathname = {
-    politics: '/zh/politics',
-    'sports-live': '/zh/sports/live',
-    crypto: '/zh/crypto',
-    tech: '/zh/tech',
-    geopolitics: '/zh/geopolitics',
-    finance: '/zh/finance',
-    'pop-culture': '/zh/pop-culture',
-    economy: '/zh/economy',
-    weather: '/zh/weather',
-    surveys: '/zh/surveys',
-    rolling: '/zh/rolling',
-  }[slug]
+  const pathname = demoCategoryDirectoryIndexItems.find((item) => item.slug === slug)?.pathname
 
   if (!pathname) {
     return null
@@ -832,6 +998,14 @@ function buildDemoCategoryDirectory(slug: string): PublicCategoryDirectoryViewMo
   }
 }
 
+function buildDemoCategoryDirectoryIndex(): PublicCategoryDirectoryIndexViewModel {
+  return {
+    items: demoCategoryDirectoryIndexItems.map((item) => ({
+      ...item,
+    })),
+  }
+}
+
 function createInitialState(): DemoState {
   const identity = buildDemoIdentity(DEMO_CHAIN_ID)
   const markets = buildDemoMarkets()
@@ -842,11 +1016,59 @@ function createInitialState(): DemoState {
   const exports = buildDemoExports()
   const overview = buildDemoOverview(markets, rewards)
   const latestExport = buildDemoExportArtifact(overview, preferences, exports)
+  const discussionThreads = Object.fromEntries(
+    markets.map((market) => [
+      market.marketId,
+      {
+        marketId: market.marketId,
+        propositionId: market.propositionId,
+        availability: 'demo' as const,
+        totalCount: DEMO_DISCUSSION_COMMENTS.length,
+        comments: DEMO_DISCUSSION_COMMENTS.map((comment) => ({
+          id: comment.id,
+          marketId: market.marketId,
+          propositionId: market.propositionId,
+          userId: DEMO_USER_ID,
+          author: comment.author,
+          handle: comment.handle,
+          tone: comment.tone,
+          timeLabel: comment.timeLabel,
+          minutesAgo: comment.minutesAgo,
+          optionIndex:
+            comment.optionIndex === 0 || comment.optionIndex === 1
+              ? comment.optionIndex
+              : null,
+          body: comment.body,
+          likes: comment.likes,
+          replyCount: comment.replyCount,
+          repliesPreview: comment.repliesPreview ?? [],
+          createdAt: minusHours(1),
+        })),
+      } satisfies ArenaDiscussionThreadViewModel,
+    ]),
+  )
+  const requesterComparisonExports = [
+    buildDemoRequesterComparisonExport('comparison-set-demo-core', {
+      exportId: 'comparison-export-demo-core',
+      requestedAt: minusHours(22),
+      completedAt: minusHours(22),
+      origin: {
+        type: 'delivery_policy_manual',
+        policyId: 'delivery-policy-demo-daily',
+        policyName: 'Daily settled delivery',
+      },
+    }),
+  ]
 
   return {
     identity,
     markets,
     drafts: buildDemoDrafts(),
+    requesterExports: [],
+    requesterComparisonExports,
+    requesterComparisonDeliveryPolicies: buildDemoRequesterComparisonDeliveryPolicies(),
+    requesterComparisonDeliveryRuns: buildDemoRequesterComparisonDeliveryRuns(),
+    requesterComparisonDeliveryHealthReadCount: 0,
     tasks,
     watchlist,
     preferences,
@@ -855,6 +1077,7 @@ function createInitialState(): DemoState {
     tags: buildDemoTags(),
     exports,
     latestExport,
+    discussionThreads,
   }
 }
 
@@ -862,6 +1085,1650 @@ let demoState = createInitialState()
 
 function getOverview() {
   return buildDemoOverview(demoState.markets, demoState.rewards)
+}
+
+function buildRequesterOverview(
+  drafts: PropositionDraftRecord[],
+): RequesterOwnedPropositionOverviewRecord {
+  const submittedDrafts = drafts.filter((draft) => draft.submissionStatus === 'submitted')
+  const recent = [...drafts]
+    .sort(
+      (left, right) =>
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+        || Date.parse(right.createdAt) - Date.parse(left.createdAt),
+    )
+    .slice(0, 5)
+    .map((draft) => ({
+      propositionId: draft.propositionId,
+      title: draft.title,
+      category: draft.category,
+      status: draft.status,
+      submissionStatus: draft.submissionStatus as RequesterPropositionSubmissionStatus,
+      submittedAt: draft.submittedAt,
+      marketEnabled: draft.marketEnabled,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+      publishedAt: draft.status === 'settled' ? minusDays(10) : null,
+      liveAt: draft.status === 'settled' ? minusDays(9) : null,
+      frozenAt: draft.status === 'settled' ? minusDays(3) : null,
+      settledAt: draft.status === 'settled' ? minusDays(2) : null,
+      minEffectiveSample: draft.minEffectiveSample,
+      effectiveSampleCount: draft.status === 'settled' ? 12 : 0,
+      reviewedResponseCount: draft.status === 'settled' ? 12 : 0,
+      revealSettlement: {
+        resultKind: draft.status === 'settled' ? ('resolved' as const) : null,
+        winningOption: draft.status === 'settled' ? (0 as const) : null,
+      },
+    }))
+
+  return {
+    userId: DEMO_USER_ID,
+    totals: {
+      totalCount: drafts.length,
+      draftCount: drafts.filter((draft) => draft.submissionStatus === 'draft').length,
+      scheduledCount: 0,
+      liveCount: 0,
+      revealingCount: 0,
+      settledCount: drafts.filter((draft) => draft.status === 'settled').length,
+      archivedCount: 0,
+      unresolvedCount: drafts.filter((draft) => draft.status !== 'settled').length,
+    },
+    submissionSummary: {
+      draftCount: drafts.filter((draft) => draft.submissionStatus === 'draft').length,
+      submittedCount: submittedDrafts.length,
+      approvedCount: drafts.filter((draft) => draft.submissionStatus === 'approved').length,
+      rejectedCount: 0,
+      withdrawnCount: 0,
+      archivedCount: 0,
+    },
+    sampleSummary: {
+      totalEffectiveSampleCount: drafts.reduce(
+        (total, draft) => total + (draft.status === 'settled' ? 12 : 0),
+        0,
+      ),
+      readyToFreezeCount: 0,
+      unresolvedAboveMinSampleCount: 0,
+    },
+    resultSummary: {
+      settledResolvedCount: drafts.filter((draft) => draft.status === 'settled').length,
+      settledVoidCount: 0,
+      unresolvedHiddenCount: drafts.filter((draft) => draft.status !== 'settled').length,
+      latestSettled: {
+        propositionId: 'settled-demo-public-service',
+        resultKind: 'resolved',
+        winningOption: 0,
+        settledAt: minusDays(2),
+      },
+    },
+    marketSummary: {
+      enabledCount: drafts.filter((draft) => draft.marketEnabled).length,
+      liveOrRevealingCount: 0,
+      awaitingSettlementCount: 0,
+    },
+    recent,
+  }
+}
+
+function buildDemoSubmissionDetail(
+  draft: PropositionDraftRecord,
+): RequesterOwnedPropositionDetailRecord {
+  const isSettled = draft.status === 'settled'
+
+  return {
+    proposition: {
+      id: draft.propositionId,
+      title: draft.title,
+      description: draft.summary,
+      optionA: draft.optionA,
+      optionB: draft.optionB,
+      category: draft.category,
+      status: draft.status,
+      marketEnabled: draft.marketEnabled,
+      sampleConstraints: [...draft.sampleConstraints],
+      minEffectiveSample: draft.minEffectiveSample,
+      minBetAmount: draft.minBetAmount,
+      minDurationSeconds: draft.minDurationSeconds,
+      maxDurationSeconds: draft.maxDurationSeconds,
+      rewardBudget: draft.rewardBudget,
+      baseResponseReward: draft.baseResponseReward,
+      createdByUserId: DEMO_USER_ID,
+      updatedByUserId: DEMO_USER_ID,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+      publishedAt: isSettled ? minusDays(10) : null,
+      liveAt: isSettled ? minusDays(9) : null,
+      frozenAt: isSettled ? minusDays(3) : null,
+      revealStartedAt: isSettled ? minusDays(2) : null,
+      resultComputedAt: isSettled ? minusDays(2) : null,
+      settledAt: isSettled ? minusDays(2) : null,
+      archivedAt: null,
+    },
+    submission: {
+      status: draft.submissionStatus as RequesterOwnedPropositionDetailRecord['submission']['status'],
+      submittedAt: draft.submittedAt,
+      submittedByUserId: DEMO_USER_ID,
+      submissionReason: isSettled ? 'demo_approved_and_settled' : 'demo_review_queue',
+      submissionNote: isSettled
+        ? 'Seeded demo proposition already completed requester review and settlement.'
+        : 'Seeded demo submission awaiting requester review.',
+    },
+    market: isSettled
+      ? {
+          id: 'demo-settled-market-public-service',
+          status: 'settled',
+          liveAt: minusDays(9),
+          frozenAt: minusDays(3),
+          settlingAt: minusDays(2),
+          settledAt: minusDays(2),
+          currentPublicProgress: buildPublicProgress(
+            draft.propositionId,
+            draft.title,
+            'settled',
+            12,
+            draft.minEffectiveSample,
+            100,
+            'settled',
+          ),
+          lastPublicResult: {
+            resultKind: 'resolved',
+            winningOption: 0,
+            voidReason: null,
+            publishedAt: minusDays(2),
+          },
+        }
+      : null,
+    sampleCounter: {
+      propositionId: draft.propositionId,
+      totalResponses: isSettled ? 12 : 0,
+      reviewedResponses: isSettled ? 12 : 0,
+      validCount: isSettled ? 10 : 0,
+      partialValidCount: isSettled ? 2 : 0,
+      invalidCount: 0,
+      effectiveSampleCount: isSettled ? 12 : 0,
+      currentProgress: isSettled ? 100 : 0,
+      hasReachedMinEffectiveSample: isSettled,
+      updatedAt: draft.updatedAt,
+    },
+    closureReadiness: {
+      propositionId: draft.propositionId,
+      propositionStatus: draft.status,
+      counterSnapshot: {
+        propositionId: draft.propositionId,
+        totalResponses: isSettled ? 12 : 0,
+        reviewedResponses: isSettled ? 12 : 0,
+        validCount: isSettled ? 10 : 0,
+        partialValidCount: isSettled ? 2 : 0,
+        invalidCount: 0,
+        effectiveSampleCount: isSettled ? 12 : 0,
+        currentProgress: isSettled ? 100 : 0,
+        hasReachedMinEffectiveSample: isSettled,
+        updatedAt: draft.updatedAt,
+      },
+      liveAt: isSettled ? minusDays(9) : null,
+      minFreezeAt: isSettled ? minusDays(8) : null,
+      maxFreezeAt: isSettled ? minusDays(3) : null,
+      minDurationReached: isSettled,
+      maxDurationReached: isSettled,
+      hasReachedMinEffectiveSample: isSettled,
+      isReadyToFreeze: isSettled,
+      triggerReason: isSettled ? 'min_duration_and_sample_reached' : 'not_ready',
+    },
+    dispatchSummary: {
+      totalTasks: isSettled ? 14 : 0,
+      submittedCount: isSettled ? 12 : 0,
+      uniqueAssignedUsers: isSettled ? 12 : 0,
+      lastAssignedAt: isSettled ? minusDays(8) : null,
+      lastSubmittedAt: isSettled ? minusDays(4) : null,
+    },
+    reviewSummary: {
+      totalReviews: isSettled ? 12 : 0,
+      pendingCount: 0,
+      finalizedCount: isSettled ? 12 : 0,
+      validCount: isSettled ? 10 : 0,
+      partialValidCount: isSettled ? 2 : 0,
+      invalidCount: 0,
+      fraudSuspectedCount: 0,
+    },
+    revealSettlement: {
+      propositionStatus: draft.status,
+      resultKind: isSettled ? 'resolved' : null,
+      winningOption: isSettled ? 0 : null,
+      voidReason: null,
+      frozenAt: isSettled ? minusDays(3) : null,
+      revealStartedAt: isSettled ? minusDays(2) : null,
+      resultComputedAt: isSettled ? minusDays(2) : null,
+      settledAt: isSettled ? minusDays(2) : null,
+      marketStatus: isSettled ? 'settled' : null,
+      currentPublicProgress: isSettled
+        ? buildPublicProgress(
+            draft.propositionId,
+            draft.title,
+            'settled',
+            12,
+            draft.minEffectiveSample,
+            100,
+            'settled',
+          )
+        : null,
+      lastPublicResult: isSettled
+        ? {
+            resultKind: 'resolved',
+            winningOption: 0,
+            voidReason: null,
+            publishedAt: minusDays(2),
+          }
+        : null,
+    },
+  }
+}
+
+function buildDemoSettledRequesterReport(
+  draft: PropositionDraftRecord,
+): RequesterOwnedSettledPropositionReportRecord {
+  const detail = buildDemoSubmissionDetail(draft)
+
+  return {
+    proposition: {
+      id: detail.proposition.id,
+      title: detail.proposition.title,
+      description: detail.proposition.description,
+      optionA: detail.proposition.optionA,
+      optionB: detail.proposition.optionB,
+      category: detail.proposition.category,
+      status: detail.proposition.status,
+      marketEnabled: detail.proposition.marketEnabled,
+      sampleConstraints: [...detail.proposition.sampleConstraints],
+      minEffectiveSample: detail.proposition.minEffectiveSample,
+      minBetAmount: detail.proposition.minBetAmount,
+      minDurationSeconds: detail.proposition.minDurationSeconds,
+      maxDurationSeconds: detail.proposition.maxDurationSeconds,
+      rewardBudget: detail.proposition.rewardBudget,
+      baseResponseReward: detail.proposition.baseResponseReward,
+      createdByUserId: detail.proposition.createdByUserId,
+      createdAt: detail.proposition.createdAt,
+      publishedAt: detail.proposition.publishedAt,
+      liveAt: detail.proposition.liveAt,
+      frozenAt: detail.proposition.frozenAt,
+      revealStartedAt: detail.proposition.revealStartedAt,
+      resultComputedAt: detail.proposition.resultComputedAt ?? minusDays(2),
+      settledAt: detail.proposition.settledAt ?? minusDays(2),
+    },
+    submission: {
+      ...detail.submission,
+    },
+    sample: {
+      ...detail.sampleCounter,
+    },
+    dispatchSummary: {
+      ...detail.dispatchSummary,
+    },
+    reviewSummary: {
+      ...detail.reviewSummary,
+    },
+    result: {
+      resultKind: 'resolved',
+      winningOption: 0,
+      winningOptionLabel: draft.optionA,
+      voidReason: null,
+      resultComputedAt: detail.revealSettlement.resultComputedAt ?? minusDays(2),
+      settledAt: detail.revealSettlement.settledAt ?? minusDays(2),
+      marketStatus: 'settled',
+      currentPublicProgress: detail.revealSettlement.currentPublicProgress,
+      lastPublicResult: detail.revealSettlement.lastPublicResult,
+    },
+    generatedAt: DEMO_NOW,
+  }
+}
+
+function buildDemoRequesterExport(
+  exportId: string,
+  requestedAt: string,
+  presetId?: string,
+): RequesterOwnedPropositionExportRecord {
+  const overview = buildRequesterOverview(demoState.drafts)
+  const preset =
+    presetId === 'preset-demo-settled'
+      ? {
+          presetId: 'preset-demo-settled',
+          name: 'Settled only',
+          statusScope: 'settled' as const,
+          categories: ['politics' as PropositionCategory],
+          marketEnabledOnly: false,
+        }
+      : null
+  const settledDrafts = demoState.drafts.filter((draft) => draft.status === 'settled')
+  const reports = settledDrafts.map((draft) => buildDemoSettledRequesterReport(draft))
+  const categoryHistory = [
+    {
+      category: 'ai' as const,
+      propositionCount: 2,
+      settledCount: 0,
+      unresolvedCount: 2,
+      totalEffectiveSampleCount: 0,
+      totalReviewedResponseCount: 0,
+      totalBetCount: 0,
+      totalBetStakeAmount: '0',
+      uniqueTraderCount: 0,
+    },
+    {
+      category: 'politics' as const,
+      propositionCount: 2,
+      settledCount: 1,
+      unresolvedCount: 1,
+      totalEffectiveSampleCount: 12,
+      totalReviewedResponseCount: 12,
+      totalBetCount: 0,
+      totalBetStakeAmount: '0',
+      uniqueTraderCount: 0,
+    },
+  ] satisfies RequesterOwnedPropositionAnalyticsViewModel['categoryHistory']
+  const analytics: RequesterOwnedPropositionAnalyticsViewModel = {
+    userId: DEMO_USER_ID,
+    windowDays: 30,
+    now: requestedAt,
+    windowStartedAt: minusDays(30),
+    preset: null,
+    totals: {
+      createdCount: demoState.drafts.length,
+      settledCount: settledDrafts.length,
+      unresolvedCount: demoState.drafts.length - settledDrafts.length,
+      marketEnabledCount: demoState.drafts.filter((draft) => draft.marketEnabled).length,
+      totalEffectiveSampleCount: overview.sampleSummary.totalEffectiveSampleCount,
+      totalReviewedResponseCount: 12,
+      totalBetCount: 0,
+      totalBetStakeAmount: '0',
+      uniqueTraderCount: 0,
+    },
+    lifecycle: {
+      averageHoursToPublish: 24,
+      averageHoursToLive: 24,
+      averageHoursToFreeze: 144,
+      averageHoursToSettle: 168,
+    },
+    categoryHistory,
+    trend: [
+      {
+        date: '2026-04-24',
+        createdCount: 1,
+        settledCount: 0,
+        reviewedResponseCount: 0,
+        effectiveSampleCount: 0,
+        betCount: 0,
+        betStakeAmount: '0',
+      },
+      {
+        date: '2026-04-26',
+        createdCount: 1,
+        settledCount: 1,
+        reviewedResponseCount: 12,
+        effectiveSampleCount: 12,
+        betCount: 0,
+        betStakeAmount: '0',
+      },
+      {
+        date: '2026-05-03',
+        createdCount: 2,
+        settledCount: 0,
+        reviewedResponseCount: 0,
+        effectiveSampleCount: 0,
+        betCount: 0,
+        betStakeAmount: '0',
+      },
+    ],
+    delivery: {
+      exportCount: demoState.requesterExports.length + 1,
+      latestExportAt: requestedAt,
+      latestExportId: exportId,
+    },
+  }
+
+  return {
+    exportId,
+    userId: DEMO_USER_ID,
+    status: 'completed',
+    format: 'json',
+    requestedAt,
+    completedAt: requestedAt,
+    fileName: `arena-requester-${DEMO_USER_ID}-${requestedAt.replace(/[:.]/g, '-')}.json`,
+    preset,
+    overview,
+    analytics,
+    reports,
+    metrics: {
+      settledReportCount: reports.length,
+      openLifecycleCount: overview.totals.unresolvedCount,
+    },
+  }
+}
+
+function buildDemoRequesterComparisonSets(): RequesterComparisonSetListRecord {
+  return {
+    userId: DEMO_USER_ID,
+    totalCount: 1,
+    items: [
+      {
+        comparisonSetId: 'comparison-set-demo-core',
+        userId: DEMO_USER_ID,
+        name: 'Core requester mix',
+        description: 'Saved comparison between settled and unresolved requester cohorts.',
+        presetIds: ['preset-demo-settled', 'preset-demo-unresolved'],
+        updatedAt: minusHours(1),
+      },
+    ],
+  }
+}
+
+function buildDemoRequesterComparisonDeliveryPolicies(): RequesterComparisonSetDeliveryPolicyViewModel[] {
+  return [
+    {
+      policyId: 'delivery-policy-demo-daily',
+      userId: DEMO_USER_ID,
+      comparisonSetId: 'comparison-set-demo-core',
+      name: 'Daily settled delivery',
+      description: 'Materialize a reusable requester comparison export on a daily cadence.',
+      cadence: 'daily',
+      nextRunAt: plusDays(1),
+      lastRunAt: minusHours(22),
+      lastRunStatus: 'completed',
+      lastRunError: null,
+      enabled: true,
+      retainedExportCount: 5,
+      transport: {
+        type: 'webhook',
+        targetUrl: 'https://example.arena.test/requester-deliveries',
+        credentialKey: 'ARENA_REQUESTER_WEBHOOK_BEARER',
+      },
+      createdAt: minusDays(7),
+      updatedAt: minusHours(3),
+    },
+  ]
+}
+
+function buildDemoRequesterComparisonDeliveryRuns(): RequesterComparisonSetDeliveryRunViewModel[] {
+  return [
+    {
+      runId: 'delivery-run-demo-failed',
+      userId: DEMO_USER_ID,
+      comparisonSetId: 'comparison-set-demo-core',
+      policyId: 'delivery-policy-demo-daily',
+      retriedRunId: null,
+      triggerType: 'automation',
+      status: 'failed',
+      startedAt: minusHours(30),
+      completedAt: minusHours(30),
+      exportId: 'comparison-export-demo-core',
+      retainedExportAvailable: true,
+      origin: {
+        type: 'delivery_policy_automation',
+        policyId: 'delivery-policy-demo-daily',
+        policyName: 'Daily settled delivery',
+      },
+      delivery: null,
+      error: {
+        code: 'transport_credential_missing',
+        message: 'transport credential missing',
+      },
+    },
+    {
+      runId: 'delivery-run-demo-latest',
+      userId: DEMO_USER_ID,
+      comparisonSetId: 'comparison-set-demo-core',
+      policyId: 'delivery-policy-demo-daily',
+      retriedRunId: null,
+      triggerType: 'manual',
+      status: 'completed',
+      startedAt: minusHours(22),
+      completedAt: minusHours(22),
+      exportId: 'comparison-export-demo-core',
+      retainedExportAvailable: true,
+      origin: {
+        type: 'delivery_policy_manual',
+        policyId: 'delivery-policy-demo-daily',
+        policyName: 'Daily settled delivery',
+      },
+      delivery: {
+        deliveredAt: minusHours(22),
+        statusCode: 202,
+        authentication: {
+          kind: 'none',
+          credentialKey: null,
+        },
+      },
+      error: null,
+    },
+  ]
+}
+
+function isDemoComparisonExportRetained(
+  comparisonSetId: string,
+  exportId: string | null,
+) {
+  if (!exportId) {
+    return false
+  }
+
+  return demoState.requesterComparisonExports.some(
+    (entry) =>
+      entry.comparisonSet.comparisonSetId === comparisonSetId && entry.exportId === exportId,
+  )
+}
+
+function withDemoRetainedExportAvailability(
+  run: RequesterComparisonSetDeliveryRunViewModel,
+): RequesterComparisonSetDeliveryRunViewModel {
+  return {
+    ...run,
+    retainedExportAvailable: isDemoComparisonExportRetained(
+      run.comparisonSetId,
+      run.exportId,
+    ),
+  }
+}
+
+function buildDemoRequesterComparisonAnalytics(
+  comparisonSetId: string,
+): RequesterComparisonSetAnalyticsRecord {
+  if (comparisonSetId !== 'comparison-set-demo-core') {
+    throw new Error('Demo requester comparison set not found')
+  }
+
+  const settledAnalytics: RequesterOwnedPropositionAnalyticsViewModel = {
+    userId: DEMO_USER_ID,
+    windowDays: 30,
+    now: DEMO_NOW,
+    windowStartedAt: minusDays(30),
+    preset: {
+      presetId: 'preset-demo-settled',
+      name: 'Settled only',
+      statusScope: 'settled',
+      categories: ['politics'],
+      marketEnabledOnly: false,
+    },
+    totals: {
+      createdCount: 1,
+      settledCount: 1,
+      unresolvedCount: 0,
+      marketEnabledCount: 1,
+      totalEffectiveSampleCount: 12,
+      totalReviewedResponseCount: 12,
+      totalBetCount: 0,
+      totalBetStakeAmount: '0',
+      uniqueTraderCount: 0,
+    },
+    lifecycle: {
+      averageHoursToPublish: 24,
+      averageHoursToLive: 24,
+      averageHoursToFreeze: 144,
+      averageHoursToSettle: 168,
+    },
+    categoryHistory: [
+      {
+        category: 'politics',
+        propositionCount: 1,
+        settledCount: 1,
+        unresolvedCount: 0,
+        totalEffectiveSampleCount: 12,
+        totalReviewedResponseCount: 12,
+        totalBetCount: 0,
+        totalBetStakeAmount: '0',
+        uniqueTraderCount: 0,
+      },
+    ],
+    trend: [
+      {
+        date: '2026-04-26',
+        createdCount: 1,
+        settledCount: 1,
+        reviewedResponseCount: 12,
+        effectiveSampleCount: 12,
+        betCount: 0,
+        betStakeAmount: '0',
+      },
+    ],
+    delivery: {
+      exportCount: 1,
+      latestExportAt: DEMO_NOW,
+      latestExportId: 'comparison-export-demo-core',
+    },
+  }
+
+  const unresolvedAnalytics: RequesterOwnedPropositionAnalyticsViewModel = {
+    userId: DEMO_USER_ID,
+    windowDays: 30,
+    now: DEMO_NOW,
+    windowStartedAt: minusDays(30),
+    preset: {
+      presetId: 'preset-demo-unresolved',
+      name: 'Unresolved watchlist',
+      statusScope: 'unresolved',
+      categories: ['ai'],
+      marketEnabledOnly: false,
+    },
+    totals: {
+      createdCount: 1,
+      settledCount: 0,
+      unresolvedCount: 1,
+      marketEnabledCount: 1,
+      totalEffectiveSampleCount: 0,
+      totalReviewedResponseCount: 0,
+      totalBetCount: 0,
+      totalBetStakeAmount: '0',
+      uniqueTraderCount: 0,
+    },
+    lifecycle: {
+      averageHoursToPublish: null,
+      averageHoursToLive: null,
+      averageHoursToFreeze: null,
+      averageHoursToSettle: null,
+    },
+    categoryHistory: [
+      {
+        category: 'ai',
+        propositionCount: 1,
+        settledCount: 0,
+        unresolvedCount: 1,
+        totalEffectiveSampleCount: 0,
+        totalReviewedResponseCount: 0,
+        totalBetCount: 0,
+        totalBetStakeAmount: '0',
+        uniqueTraderCount: 0,
+      },
+    ],
+    trend: [
+      {
+        date: '2026-05-03',
+        createdCount: 1,
+        settledCount: 0,
+        reviewedResponseCount: 0,
+        effectiveSampleCount: 0,
+        betCount: 0,
+        betStakeAmount: '0',
+      },
+    ],
+    delivery: {
+      exportCount: 1,
+      latestExportAt: DEMO_NOW,
+      latestExportId: 'comparison-export-demo-core',
+    },
+  }
+
+  return {
+    userId: DEMO_USER_ID,
+    totalCount: 2,
+    summary: {
+      presetCount: 2,
+      topPresetByCreatedCount: {
+        presetId: 'preset-demo-settled',
+        createdCount: 1,
+      },
+      topPresetBySettledCount: {
+        presetId: 'preset-demo-settled',
+        settledCount: 1,
+      },
+      topPresetByBetStakeAmount: {
+        presetId: 'preset-demo-settled',
+        totalBetStakeAmount: '0',
+      },
+      totals: {
+        createdCount: 2,
+        settledCount: 1,
+        unresolvedCount: 1,
+        totalEffectiveSampleCount: 12,
+        totalReviewedResponseCount: 12,
+        totalBetCount: 0,
+        totalBetStakeAmount: '0',
+        uniqueTraderCount: 0,
+      },
+    },
+    comparisonSet: {
+      comparisonSetId: 'comparison-set-demo-core',
+      name: 'Core requester mix',
+      presetIds: ['preset-demo-settled', 'preset-demo-unresolved'],
+    },
+    items: [
+      {
+        preset: settledAnalytics.preset!,
+        analytics: settledAnalytics,
+      },
+      {
+        preset: unresolvedAnalytics.preset!,
+        analytics: unresolvedAnalytics,
+      },
+    ],
+  }
+}
+
+function buildDemoRequesterComparisonExport(
+  comparisonSetId: string,
+  overrides?: Partial<
+    Pick<
+      RequesterComparisonSetExportRecord,
+      'exportId' | 'requestedAt' | 'completedAt' | 'fileName' | 'origin'
+    >
+  >,
+): RequesterComparisonSetExportRecord {
+  const comparison = buildDemoRequesterComparisonAnalytics(comparisonSetId)
+  const requestedAt = overrides?.requestedAt ?? new Date().toISOString()
+  const completedAt = overrides?.completedAt ?? requestedAt
+  const exportId =
+    overrides?.exportId
+    ?? `comparison-export-demo-${comparisonSetId}-${Date.now()}`
+
+  return {
+    exportId,
+    userId: DEMO_USER_ID,
+    status: 'completed',
+    format: 'json',
+    requestedAt,
+    completedAt,
+    fileName:
+      overrides?.fileName
+      ?? `arena-requester-comparison-${DEMO_USER_ID}-${comparisonSetId}-${requestedAt.replace(/[:.]/g, '-')}.json`,
+    origin: overrides?.origin ?? {
+      type: 'manual',
+      policyId: null,
+      policyName: null,
+    },
+    comparisonSet: {
+      comparisonSetId: comparison.comparisonSet!.comparisonSetId,
+      name: comparison.comparisonSet!.name,
+      presetIds: [...comparison.comparisonSet!.presetIds],
+    },
+    totalCount: comparison.totalCount,
+    summary: structuredClone(comparison.summary),
+    report: {
+      generatedAt: completedAt,
+      presetCount: comparison.summary.presetCount,
+      totals: structuredClone(comparison.summary.totals),
+      leaders: {
+        byCreatedCount: {
+          presetId: 'preset-demo-settled',
+          name: 'Settled only',
+          createdCount: 1,
+        },
+        bySettledCount: {
+          presetId: 'preset-demo-settled',
+          name: 'Settled only',
+          settledCount: 1,
+        },
+        byBetStakeAmount: {
+          presetId: 'preset-demo-settled',
+          name: 'Settled only',
+          totalBetStakeAmount: '0',
+        },
+      },
+      rows: [
+        {
+          rank: 1,
+          preset: comparison.items[0]!.preset,
+          createdCount: 1,
+          settledCount: 1,
+          unresolvedCount: 0,
+          totalEffectiveSampleCount: 12,
+          totalReviewedResponseCount: 12,
+          totalBetCount: 0,
+          totalBetStakeAmount: '0',
+          uniqueTraderCount: 0,
+        },
+        {
+          rank: 2,
+          preset: comparison.items[1]!.preset,
+          createdCount: 1,
+          settledCount: 0,
+          unresolvedCount: 1,
+          totalEffectiveSampleCount: 0,
+          totalReviewedResponseCount: 0,
+          totalBetCount: 0,
+          totalBetStakeAmount: '0',
+          uniqueTraderCount: 0,
+        },
+      ],
+    },
+    items: structuredClone(comparison.items),
+  }
+}
+
+function sortDemoComparisonExports(
+  records: RequesterOwnedComparisonSetExportArtifactViewModel[],
+) {
+  return [...records].sort(
+    (left, right) =>
+      Date.parse(right.completedAt) - Date.parse(left.completedAt)
+      || Date.parse(right.requestedAt) - Date.parse(left.requestedAt),
+  )
+}
+
+function applyDemoComparisonSetExportRetention(
+  records: RequesterOwnedComparisonSetExportArtifactViewModel[],
+  input: {
+    retainedExportCount?: number
+    policyId?: string | null
+  },
+) {
+  if (
+    typeof input.retainedExportCount !== 'number'
+    || input.retainedExportCount < 1
+    || typeof input.policyId !== 'string'
+    || input.policyId.length === 0
+  ) {
+    return records
+  }
+
+  let retainedForPolicy = 0
+
+  return records.filter((record) => {
+    if (record.origin.policyId !== input.policyId) {
+      return true
+    }
+
+    retainedForPolicy += 1
+    return retainedForPolicy <= input.retainedExportCount
+  })
+}
+
+function upsertDemoComparisonExport(
+  exportArtifact: RequesterOwnedComparisonSetExportArtifactViewModel,
+  retention?: {
+    retainedExportCount?: number
+    policyId?: string | null
+  },
+) {
+  const nextRecords = sortDemoComparisonExports([
+    exportArtifact,
+    ...demoState.requesterComparisonExports.filter(
+      (item) => item.exportId !== exportArtifact.exportId,
+    ),
+  ])
+
+  demoState.requesterComparisonExports = applyDemoComparisonSetExportRetention(
+    nextRecords,
+    retention ?? {},
+  )
+}
+
+function getComparisonDeliveryPolicyOrThrow(
+  comparisonSetId: string,
+  policyId: string,
+): RequesterComparisonSetDeliveryPolicyViewModel {
+  const policy = demoState.requesterComparisonDeliveryPolicies.find(
+    (entry) => entry.comparisonSetId === comparisonSetId && entry.policyId === policyId,
+  )
+
+  if (!policy) {
+    throw new Error('Demo requester comparison delivery policy not found')
+  }
+
+  return policy
+}
+
+function updateComparisonDeliveryPolicy(
+  comparisonSetId: string,
+  policyId: string,
+  recipe: (
+    current: RequesterComparisonSetDeliveryPolicyViewModel,
+  ) => RequesterComparisonSetDeliveryPolicyViewModel,
+): RequesterComparisonSetDeliveryPolicyViewModel {
+  let nextPolicy: RequesterComparisonSetDeliveryPolicyViewModel | null = null
+
+  demoState.requesterComparisonDeliveryPolicies = demoState.requesterComparisonDeliveryPolicies.map((entry) => {
+    if (entry.comparisonSetId !== comparisonSetId || entry.policyId !== policyId) {
+      return entry
+    }
+
+    nextPolicy = recipe(entry)
+    return nextPolicy
+  })
+
+  if (!nextPolicy) {
+    throw new Error('Demo requester comparison delivery policy not found')
+  }
+
+  return nextPolicy
+}
+
+function createDemoComparisonDeliveryPolicy(
+  comparisonSetId: string,
+  input: CreateRequesterComparisonSetDeliveryPolicyInputRecord,
+): RequesterComparisonSetDeliveryPolicyViewModel {
+  const policy: RequesterComparisonSetDeliveryPolicyViewModel = {
+    policyId: `delivery-policy-demo-${Date.now()}`,
+    userId: DEMO_USER_ID,
+    comparisonSetId,
+    name: input.name,
+    description: input.description ?? null,
+    cadence: input.cadence,
+    nextRunAt: input.nextRunAt,
+    lastRunAt: null,
+    lastRunStatus: null,
+    lastRunError: null,
+    enabled: input.enabled,
+    retainedExportCount: input.retainedExportCount ?? 5,
+    transport: input.transport ?? null,
+    createdAt: DEMO_NOW,
+    updatedAt: DEMO_NOW,
+  }
+
+  demoState.requesterComparisonDeliveryPolicies = [
+    policy,
+    ...demoState.requesterComparisonDeliveryPolicies,
+  ]
+
+  return policy
+}
+
+function deleteDemoComparisonDeliveryPolicy(
+  comparisonSetId: string,
+  policyId: string,
+): DeleteRequesterComparisonSetDeliveryPolicyResultRecord {
+  const beforeCount = demoState.requesterComparisonDeliveryPolicies.length
+  demoState.requesterComparisonDeliveryPolicies = demoState.requesterComparisonDeliveryPolicies.filter(
+    (entry) => !(entry.comparisonSetId === comparisonSetId && entry.policyId === policyId),
+  )
+
+  if (demoState.requesterComparisonDeliveryPolicies.length === beforeCount) {
+    throw new Error('Demo requester comparison delivery policy not found')
+  }
+
+  demoState.requesterComparisonDeliveryRuns = demoState.requesterComparisonDeliveryRuns.filter(
+    (entry) => !(entry.comparisonSetId === comparisonSetId && entry.policyId === policyId),
+  )
+
+  return {
+    userId: DEMO_USER_ID,
+    comparisonSetId,
+    policyId,
+    deleted: true,
+  }
+}
+
+function buildDemoRequesterComparisonDeliveryHealth(
+  comparisonSetId: string,
+  policyId: string,
+  checkedAt: string = DEMO_NOW,
+): RequesterComparisonSetDeliveryPolicyHealthViewModel {
+  const policy = getComparisonDeliveryPolicyOrThrow(comparisonSetId, policyId)
+  const runs = demoState.requesterComparisonDeliveryRuns
+    .filter((entry) => entry.comparisonSetId === comparisonSetId && entry.policyId === policyId)
+    .sort((left, right) => {
+      const rightCompletedAt = right.completedAt ? Date.parse(right.completedAt) : 0
+      const leftCompletedAt = left.completedAt ? Date.parse(left.completedAt) : 0
+      if (rightCompletedAt !== leftCompletedAt) {
+        return rightCompletedAt - leftCompletedAt
+      }
+
+      return Date.parse(right.startedAt) - Date.parse(left.startedAt)
+    })
+  const latestRun = runs[0] ?? null
+  const completedRuns = runs.filter((entry) => entry.status === 'completed')
+  const failedRuns = runs.filter((entry) => entry.status === 'failed')
+  const credentialKey =
+    policy.transport?.type === 'webhook' ? (policy.transport.credentialKey ?? null) : null
+  const transportStatus =
+    credentialKey && credentialKey !== 'ARENA_REQUESTER_WEBHOOK_BEARER'
+      ? {
+          status: 'blocked' as const,
+          blockingReason: 'transport_credential_missing' as const,
+          credentialKey,
+        }
+      : {
+          status: 'ready' as const,
+          blockingReason: null,
+          credentialKey,
+        }
+  const isDue =
+    policy.enabled && Date.parse(policy.nextRunAt) <= Date.parse(DEMO_NOW)
+  let consecutiveFailureCount = 0
+  for (const run of runs) {
+    if (run.status !== 'failed') {
+      break
+    }
+
+    consecutiveFailureCount += 1
+  }
+  const healthStatus =
+    !policy.enabled
+      ? 'disabled'
+      : consecutiveFailureCount > 0
+        ? 'failing'
+        : isDue
+          ? 'due'
+          : 'scheduled'
+
+  return {
+    policy: structuredClone(policy),
+    health: {
+      status: healthStatus,
+      checkedAt,
+      isDue,
+      lagSeconds:
+        isDue
+          ? Math.max(0, Math.floor((Date.parse(DEMO_NOW) - Date.parse(policy.nextRunAt)) / 1000))
+          : 0,
+      consecutiveFailureCount,
+      lastCompletedRunAt: completedRuns[0]?.completedAt ?? null,
+      lastFailedRunAt: failedRuns[0]?.completedAt ?? null,
+      latestRun: latestRun ? withDemoRetainedExportAvailability(latestRun) : null,
+      runCounts: {
+        totalCount: runs.length,
+        completedCount: completedRuns.length,
+        failedCount: failedRuns.length,
+      },
+      transport: transportStatus,
+    },
+  }
+}
+
+function buildDemoRequesterComparisonDeliveryRunResult(
+  comparisonSetId: string,
+  policyId: string,
+): RequesterComparisonSetDeliveryPolicyRunResultViewModel {
+  const currentPolicy = getComparisonDeliveryPolicyOrThrow(comparisonSetId, policyId)
+  const completedAt = DEMO_NOW
+  const exportArtifact: RequesterOwnedComparisonSetExportArtifactViewModel = {
+    ...buildDemoRequesterComparisonExport(comparisonSetId),
+    origin: {
+      type: 'delivery_policy_manual',
+      policyId,
+      policyName: currentPolicy.name,
+    },
+  }
+  upsertDemoComparisonExport(exportArtifact, {
+    retainedExportCount: currentPolicy.retainedExportCount,
+    policyId,
+  })
+
+  const credentialKey =
+    currentPolicy.transport?.type === 'webhook' ? (currentPolicy.transport.credentialKey ?? null) : null
+
+  if (credentialKey && credentialKey !== 'ARENA_REQUESTER_WEBHOOK_BEARER') {
+    updateComparisonDeliveryPolicy(comparisonSetId, policyId, (current) => ({
+      ...current,
+      lastRunAt: completedAt,
+      lastRunStatus: 'failed',
+      lastRunError: {
+        code: 'requester_comparison_set_delivery.transport_credential_missing',
+        message: 'Requester comparison set delivery credential is not configured',
+      },
+      updatedAt: completedAt,
+    }))
+    demoState.requesterComparisonDeliveryRuns = [
+      {
+        runId: `delivery-run-demo-failed-${Date.now()}`,
+        userId: DEMO_USER_ID,
+        comparisonSetId,
+        policyId,
+        retriedRunId: null,
+        triggerType: 'manual',
+        status: 'failed',
+        startedAt: completedAt,
+        completedAt,
+        exportId: exportArtifact.exportId,
+        retainedExportAvailable: true,
+        origin: {
+          type: 'delivery_policy_manual',
+          policyId,
+          policyName: currentPolicy.name,
+        },
+        delivery: null,
+        error: {
+          code: 'requester_comparison_set_delivery.transport_credential_missing',
+          message: 'Requester comparison set delivery credential is not configured',
+        },
+      },
+      ...demoState.requesterComparisonDeliveryRuns,
+    ]
+
+    throw new Error('Requester comparison set delivery credential is not configured')
+  }
+
+  const updatedPolicy = updateComparisonDeliveryPolicy(comparisonSetId, policyId, (current) => ({
+    ...current,
+    lastRunAt: completedAt,
+    lastRunStatus: 'completed',
+    lastRunError: null,
+    updatedAt: completedAt,
+  }))
+  exportArtifact.origin.policyName = updatedPolicy.name
+    const run: RequesterComparisonSetDeliveryRunViewModel = {
+      runId: `delivery-run-demo-${Date.now()}`,
+      userId: DEMO_USER_ID,
+      comparisonSetId,
+      policyId,
+      retriedRunId: null,
+      triggerType: 'manual',
+      status: 'completed',
+      startedAt: completedAt,
+      completedAt,
+      exportId: exportArtifact.exportId,
+      retainedExportAvailable: true,
+      origin: {
+        type: 'delivery_policy_manual',
+        policyId: updatedPolicy.policyId,
+        policyName: updatedPolicy.name,
+      },
+      delivery: {
+        deliveredAt: completedAt,
+        statusCode: 202,
+        authentication: {
+          kind:
+            updatedPolicy.transport?.type === 'webhook'
+            && updatedPolicy.transport.credentialKey
+              ? 'bearer'
+              : 'none',
+          credentialKey:
+            updatedPolicy.transport?.type === 'webhook'
+              ? (updatedPolicy.transport.credentialKey ?? null)
+              : null,
+        },
+      },
+      error: null,
+    }
+  demoState.requesterComparisonDeliveryRuns = [run, ...demoState.requesterComparisonDeliveryRuns]
+
+  return {
+    policy: {
+      policyId: updatedPolicy.policyId,
+      comparisonSetId: updatedPolicy.comparisonSetId,
+      name: updatedPolicy.name,
+      cadence: updatedPolicy.cadence,
+      enabled: updatedPolicy.enabled,
+      lastRunAt: updatedPolicy.lastRunAt,
+      lastRunStatus: updatedPolicy.lastRunStatus,
+      lastRunError: updatedPolicy.lastRunError,
+      nextRunAt: updatedPolicy.nextRunAt,
+    },
+    run: structuredClone(run),
+    export: structuredClone(exportArtifact),
+    delivery: {
+      deliveredAt: completedAt,
+      statusCode: 202,
+      authentication: {
+        kind: 'bearer',
+        credentialKey:
+          updatedPolicy.transport?.type === 'webhook'
+            ? (updatedPolicy.transport.credentialKey ?? null)
+            : null,
+      },
+    },
+  }
+}
+
+function listDemoRequesterComparisonDeliveryRuns(
+  comparisonSetId: string,
+  policyId: string,
+  filters?: {
+    status?: 'completed' | 'failed'
+    triggerType?: 'manual' | 'automation'
+    replay?: 'all' | 'fresh_only' | 'replayed_only'
+    limit?: number
+  },
+): RequesterComparisonSetDeliveryRunListViewModel {
+  const storedItems = demoState.requesterComparisonDeliveryRuns.filter(
+    (entry) => entry.comparisonSetId === comparisonSetId && entry.policyId === policyId,
+  )
+  const filteredItems = storedItems
+    .filter((entry) => (filters?.status ? entry.status === filters.status : true))
+    .filter((entry) => (filters?.triggerType ? entry.triggerType === filters.triggerType : true))
+    .filter((entry) =>
+      filters?.replay === 'fresh_only'
+        ? entry.retriedRunId === null
+        : filters?.replay === 'replayed_only'
+          ? entry.retriedRunId !== null
+          : true,
+    )
+  const items =
+    typeof filters?.limit === 'number' ? filteredItems.slice(0, filters.limit) : filteredItems
+
+  return {
+    userId: DEMO_USER_ID,
+    comparisonSetId,
+    policyId,
+    totalCount: items.length,
+    storedCount: storedItems.length,
+    appliedFilters: {
+      status: filters?.status ?? null,
+      triggerType: filters?.triggerType ?? null,
+      replay: filters?.replay ?? 'all',
+      limit: filters?.limit ?? null,
+    },
+    items: items.map(withDemoRetainedExportAvailability),
+  }
+}
+
+function buildDemoRequesterComparisonDeliveryRetryResult(
+  comparisonSetId: string,
+  policyId: string,
+  runId: string,
+): RequesterComparisonSetDeliveryRunRetryResultViewModel {
+  const previousRun = demoState.requesterComparisonDeliveryRuns.find(
+    (entry) =>
+      entry.comparisonSetId === comparisonSetId &&
+      entry.policyId === policyId &&
+      entry.runId === runId,
+  )
+
+  if (!previousRun) {
+    throw new Error('Demo requester comparison delivery run not found')
+  }
+
+  if (previousRun.status !== 'failed') {
+    throw new Error('Demo requester comparison delivery run can only retry a failed run')
+  }
+
+  if (!previousRun.exportId) {
+    throw new Error('Demo requester comparison delivery retry requires a preserved export artifact')
+  }
+
+  if (!isDemoComparisonExportRetained(comparisonSetId, previousRun.exportId)) {
+    throw new Error('Demo requester comparison delivery retry requires a retained export artifact')
+  }
+
+  const exportArtifact =
+    demoState.requesterComparisonExports.find(
+      (entry) =>
+        entry.comparisonSet.comparisonSetId === comparisonSetId && entry.exportId === previousRun.exportId,
+    )
+
+  if (!exportArtifact) {
+    throw new Error('Demo requester comparison delivery retained export not found')
+  }
+
+  const currentPolicy = getComparisonDeliveryPolicyOrThrow(comparisonSetId, policyId)
+  const credentialKey =
+    currentPolicy.transport?.type === 'webhook' ? (currentPolicy.transport.credentialKey ?? null) : null
+
+  if (credentialKey && credentialKey !== 'ARENA_REQUESTER_WEBHOOK_BEARER') {
+    updateComparisonDeliveryPolicy(comparisonSetId, policyId, (current) => ({
+      ...current,
+      lastRunAt: DEMO_NOW,
+      lastRunStatus: 'failed',
+      lastRunError: {
+        code: 'requester_comparison_set_delivery.transport_credential_missing',
+        message: 'Requester comparison set delivery credential is not configured',
+      },
+      updatedAt: DEMO_NOW,
+    }))
+    demoState.requesterComparisonDeliveryRuns = [
+      {
+        runId: `delivery-run-demo-retry-failed-${Date.now()}`,
+        userId: DEMO_USER_ID,
+        comparisonSetId,
+        policyId,
+        retriedRunId: previousRun.runId,
+        triggerType: 'manual',
+        status: 'failed',
+        startedAt: DEMO_NOW,
+        completedAt: DEMO_NOW,
+        exportId: previousRun.exportId,
+        retainedExportAvailable: true,
+        origin: structuredClone(previousRun.origin),
+        delivery: null,
+        error: {
+          code: 'requester_comparison_set_delivery.transport_credential_missing',
+          message: 'Requester comparison set delivery credential is not configured',
+        },
+      },
+      ...demoState.requesterComparisonDeliveryRuns,
+    ]
+    throw new Error('Requester comparison set delivery credential is not configured')
+  }
+
+  const completedAt = DEMO_NOW
+  const updatedPolicy = updateComparisonDeliveryPolicy(comparisonSetId, policyId, (current) => ({
+    ...current,
+    lastRunAt: completedAt,
+    lastRunStatus: 'completed',
+    lastRunError: null,
+    updatedAt: completedAt,
+  }))
+  const retryRunId = `delivery-run-demo-retry-${Date.now()}`
+  const retryRun: RequesterComparisonSetDeliveryRunViewModel = {
+    runId: retryRunId,
+    userId: DEMO_USER_ID,
+    comparisonSetId,
+    policyId,
+    retriedRunId: previousRun.runId,
+    triggerType: 'manual',
+    status: 'completed',
+    startedAt: completedAt,
+    completedAt,
+    exportId: previousRun.exportId,
+    retainedExportAvailable: true,
+    origin: structuredClone(previousRun.origin),
+    delivery: {
+      deliveredAt: completedAt,
+      statusCode: 202,
+      authentication: {
+        kind:
+          updatedPolicy.transport?.type === 'webhook'
+          && updatedPolicy.transport.credentialKey
+            ? 'bearer'
+            : 'none',
+        credentialKey:
+          updatedPolicy.transport?.type === 'webhook'
+            ? (updatedPolicy.transport.credentialKey ?? null)
+            : null,
+      },
+    },
+    error: null,
+  }
+  demoState.requesterComparisonDeliveryRuns = [retryRun, ...demoState.requesterComparisonDeliveryRuns]
+
+  return {
+    retriedRunId: previousRun.runId,
+    retryRunId,
+    policy: {
+      policyId: updatedPolicy.policyId,
+      comparisonSetId: updatedPolicy.comparisonSetId,
+      name: updatedPolicy.name,
+      cadence: updatedPolicy.cadence,
+      enabled: updatedPolicy.enabled,
+      lastRunAt: updatedPolicy.lastRunAt,
+      lastRunStatus: updatedPolicy.lastRunStatus,
+      lastRunError: updatedPolicy.lastRunError,
+      nextRunAt: updatedPolicy.nextRunAt,
+    },
+    run: structuredClone(retryRun),
+    export: structuredClone(exportArtifact),
+    delivery: {
+      deliveredAt: completedAt,
+      statusCode: 202,
+      authentication: {
+        kind: 'bearer',
+        credentialKey:
+          updatedPolicy.transport?.type === 'webhook'
+            ? (updatedPolicy.transport.credentialKey ?? null)
+            : null,
+      },
+    },
+  }
+}
+
+function buildDemoPublicSettledResults(): PublicSettledResultsViewModel {
+  return {
+    totalCount: 3,
+    items: [
+      {
+        propositionId: 'demo-proposition-public-trust',
+        marketId: 'public-trust',
+        title: '公众是否认为本季度公共服务响应速度有所改善？',
+        category: 'politics',
+        winningOptionLabel: '改善明显',
+        resultKind: 'resolved',
+        winningOption: 0,
+        voidReason: null,
+        validSampleCount: 612,
+        winMarginPercent: 58.3,
+        settledAt: '2026-04-18T08:00:00.000Z',
+        settlementTxHash: '0x3a8f00000000000000000000000000000000000000000000000000000000e291',
+        onChain: true,
+      },
+      {
+        propositionId: 'demo-proposition-ai-regulation',
+        marketId: 'ai-model-review',
+        title: '多数受访者是否支持对生成式 AI 实施行业自律规范？',
+        category: 'ai',
+        winningOptionLabel: '支持自律规范',
+        resultKind: 'resolved',
+        winningOption: 0,
+        voidReason: null,
+        validSampleCount: 480,
+        winMarginPercent: 61.7,
+        settledAt: '2026-03-31T08:00:00.000Z',
+        settlementTxHash: '0xb12c000000000000000000000000000000000000000000000000000000007f04',
+        onChain: true,
+      },
+      {
+        propositionId: 'demo-proposition-defi-adoption',
+        marketId: 'btc-network-fee',
+        title: '链上用户是否认为 DeFi 协议在 2026 Q1 安全性有所提升？',
+        category: 'general',
+        winningOptionLabel: '安全性有所提升',
+        resultKind: 'resolved',
+        winningOption: 0,
+        voidReason: null,
+        validSampleCount: 344,
+        winMarginPercent: 54.1,
+        settledAt: '2026-02-28T08:00:00.000Z',
+        settlementTxHash: '0x9d4400000000000000000000000000000000000000000000000000000000a812',
+        onChain: true,
+      },
+    ],
+  }
+}
+
+function buildDemoPublicIntegrityOverview(): PublicIntegrityOverviewViewModel {
+  return {
+    generatedAt: DEMO_NOW,
+    live: {
+      totalCount: 3,
+      reachedSampleThresholdCount: 2,
+      marketEnabledCount: 3,
+      phaseBreakdown: [
+        { phase: 'live', label: '采集中', count: 2 },
+        { phase: 'revealing', label: '开奖中', count: 1 },
+      ],
+      items: [
+        {
+          propositionId: 'demo-integrity-ai-sampling',
+          title: 'AI 工具在客服响应中是否显著提升满意度？',
+          category: 'ai',
+          phase: 'live',
+          effectiveSampleCount: 128,
+          requiredSampleCount: 200,
+          progressPercent: 64,
+          reachedSampleThreshold: false,
+          marketEnabled: true,
+          deadlineAt: plusDays(2),
+        },
+        {
+          propositionId: 'demo-integrity-public-service',
+          title: '多数受访者是否认可本月公共服务响应改善？',
+          category: 'politics',
+          phase: 'live',
+          effectiveSampleCount: 244,
+          requiredSampleCount: 200,
+          progressPercent: 100,
+          reachedSampleThreshold: true,
+          marketEnabled: true,
+          deadlineAt: plusHours(18),
+        },
+        {
+          propositionId: 'demo-integrity-sports-reveal',
+          title: '球迷是否认为联赛新规提升了现场观赛体验？',
+          category: 'sports',
+          phase: 'revealing',
+          effectiveSampleCount: 182,
+          requiredSampleCount: 180,
+          progressPercent: 100,
+          reachedSampleThreshold: true,
+          marketEnabled: true,
+          deadlineAt: plusHours(4),
+        },
+      ],
+    },
+    archive: {
+      settledCount: 3,
+      onChainCount: 3,
+      averageValidSampleCount: 479,
+      latestSettledAt: '2026-04-18T08:00:00.000Z',
+      recentItems: [
+        {
+          propositionId: 'demo-integrity-city-budget',
+          title: '鏄惁搴旇鎶婂煄甯傞绠楃殑澧為噺閮ㄥ垎浼樺厛鐢ㄤ簬鍏叡浜ら€氾紵',
+          category: 'politics',
+          settledAt: '2026-04-18T08:00:00.000Z',
+          settlementTxHash: '0x8bf1ac2f0d4a91c5d4f9b8d0f4f3b183d5d0a23a8c1b5d6e7f8091a2b3c4d5e6',
+          onChain: true,
+        },
+        {
+          propositionId: 'demo-integrity-ai-copilot',
+          title: 'AI 缂栫▼鍓┚鏄惁宸茬粡鎴愪负鍥㈤槦鏍囬厤宸ュ叿锛?',
+          category: 'ai',
+          settledAt: '2026-04-12T06:30:00.000Z',
+          settlementTxHash: '0x7cf1ac2f0d4a91c5d4f9b8d0f4f3b183d5d0a23a8c1b5d6e7f8091a2b3c4d5e7',
+          onChain: true,
+        },
+        {
+          propositionId: 'demo-integrity-sports-reform',
+          title: '鐞冭糠鏄惁璁や负鑱旇禌鏂拌鐪熸鎻愬崌浜嗘瘮璧涜鎰燂紵',
+          category: 'sports',
+          settledAt: '2026-04-03T03:15:00.000Z',
+          settlementTxHash: '0x6df1ac2f0d4a91c5d4f9b8d0f4f3b183d5d0a23a8c1b5d6e7f8091a2b3c4d5e8',
+          onChain: true,
+        },
+      ],
+    },
+    focus: {
+      propositionId: 'demo-integrity-public-service',
+      visible: true,
+      source: 'live',
+      liveItem: {
+        propositionId: 'demo-integrity-public-service',
+        title: '澶氭暟鍙楄鑰呮槸鍚﹁鍙湰鏈堝叕鍏辨湇鍔″搷搴旀敼鍠勶紵',
+        category: 'politics',
+        phase: 'live',
+        effectiveSampleCount: 244,
+        requiredSampleCount: 200,
+        progressPercent: 100,
+        reachedSampleThreshold: true,
+        marketEnabled: true,
+        deadlineAt: plusHours(18),
+      },
+      archiveItem: null,
+    },
+  }
+}
+
+function buildDemoPublicRespondentLeaderboard(): PublicRespondentLeaderboardViewModel {
+  return {
+    categories: [
+      {
+        id: 'public-policy',
+        label: '公共政策',
+        description: '公共政策、公共服务、舆情类命题的回答率排行。',
+        rows: [
+          {
+            userId: '0x4f12b8fae7f2776bc6a56a7c2ef8a2cdb91ab9c3',
+            handle: 'civic.signal',
+            walletShort: '0x4f12…b9c3',
+            responseRatePercent: 96.4,
+            reviewedCount: 142,
+            acceptedCount: 137,
+            reputationScore: 1840,
+            topTag: '公共服务',
+          },
+        ],
+      },
+      {
+        id: 'ai-research',
+        label: 'AI 调研',
+        description: 'AI 工具链、模型调研、开发者工作流类命题的回答率排行。',
+        rows: [
+          {
+            userId: '0x82ad0ca1f41575438a743490507e610e1a3f3a14',
+            handle: 'kernel.research',
+            walletShort: '0x82ad…3a14',
+            responseRatePercent: 94.7,
+            reviewedCount: 165,
+            acceptedCount: 156,
+            reputationScore: 1925,
+            topTag: '开发者调研',
+          },
+        ],
+      },
+      {
+        id: 'geopolitics',
+        label: '地缘事件',
+        description: '地缘动态、跨境观察类命题的回答率排行。',
+        rows: [
+          {
+            userId: '0x6e10b3f4c1987b081d34fcb2a8717f12001212bd',
+            handle: 'border.brief',
+            walletShort: '0x6e10…12bd',
+            responseRatePercent: 95.2,
+            reviewedCount: 134,
+            acceptedCount: 128,
+            reputationScore: 1788,
+            topTag: '跨境观察',
+          },
+        ],
+      },
+      {
+        id: 'finance',
+        label: '金融观察',
+        description: '宏观金融、市场动态、价格趋势类命题的回答率排行。',
+        rows: [
+          {
+            userId: '0xf43270d1f5287334a7e1dd7be9021875db3f1198',
+            handle: 'macro.scope',
+            walletShort: '0xf432…1198',
+            responseRatePercent: 93.6,
+            reviewedCount: 138,
+            acceptedCount: 129,
+            reputationScore: 1812,
+            topTag: '宏观判断',
+          },
+        ],
+      },
+      {
+        id: 'sports',
+        label: '体育结果',
+        description: '体育赛事、赛季积分、赛前共识类命题的回答率排行。',
+        rows: [
+          {
+            userId: '0x9d770ba9a406bdce9a1b7289f0a2bce0a7123aa0',
+            handle: 'court.notes',
+            walletShort: '0x9d77…3aa0',
+            responseRatePercent: 92.4,
+            reviewedCount: 121,
+            acceptedCount: 112,
+            reputationScore: 1648,
+            topTag: '赛季积分',
+          },
+        ],
+      },
+    ],
+  }
+}
+
+function listStoredDemoComparisonExports(
+  comparisonSetId: string,
+): RequesterOwnedComparisonSetExportArtifactViewModel[] {
+  return demoState.requesterComparisonExports.filter(
+    (item) => item.comparisonSet.comparisonSetId === comparisonSetId,
+  )
+}
+
+function buildFallbackDemoComparisonExportFromRun(
+  comparisonSetId: string,
+  exportId: string,
+): RequesterOwnedComparisonSetExportArtifactViewModel | null {
+  if (!isDemoComparisonExportRetained(comparisonSetId, exportId)) {
+    return null
+  }
+
+  const matchingRun = demoState.requesterComparisonDeliveryRuns
+    .filter(
+      (entry) =>
+        entry.comparisonSetId === comparisonSetId && entry.exportId === exportId,
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.completedAt) - Date.parse(left.completedAt)
+        || Date.parse(right.startedAt) - Date.parse(left.startedAt),
+    )[0]
+
+  if (!matchingRun) {
+    return null
+  }
+
+  return buildDemoRequesterComparisonExport(comparisonSetId, {
+    exportId,
+    requestedAt: matchingRun.completedAt,
+    completedAt: matchingRun.completedAt,
+    origin: structuredClone(matchingRun.origin),
+  })
 }
 
 function ensureDemoToken(token: string) {
@@ -930,6 +2797,20 @@ export const demoBackend = {
 
     return structuredClone(market)
   },
+  searchValidationMarkets(query: string): ValidationMarketViewModel[] {
+    const normalizedQuery = query.trim().toLowerCase()
+    const markets = structuredClone(demoState.markets)
+
+    if (!normalizedQuery) {
+      return markets
+    }
+
+    return markets.filter((market) =>
+      `${market.title} ${market.category} ${market.options.join(' ')}`
+        .toLowerCase()
+        .includes(normalizedQuery),
+    )
+  },
   placeValidationBet(input: {
     marketId: string
     propositionId: string
@@ -972,6 +2853,311 @@ export const demoBackend = {
   },
   listDrafts(): PropositionDraftRecord[] {
     return structuredClone(demoState.drafts)
+  },
+  listSubmissions(): PropositionDraftRecord[] {
+    return structuredClone(
+      demoState.drafts.filter((draft) => draft.submissionStatus === 'submitted'),
+    )
+  },
+  getRequesterOverview(): RequesterOwnedPropositionOverviewRecord {
+    return structuredClone(buildRequesterOverview(demoState.drafts))
+  },
+  getOwnedPropositionDetail(propositionId: string): RequesterOwnedPropositionDetailRecord {
+    const draft = demoState.drafts.find((entry) => entry.propositionId === propositionId)
+    if (!draft) {
+      throw new Error('Demo submission not found')
+    }
+
+    return structuredClone(buildDemoSubmissionDetail(draft))
+  },
+  getOwnedPropositionReport(propositionId: string): RequesterOwnedSettledPropositionReportRecord {
+    const draft = demoState.drafts.find((entry) => entry.propositionId === propositionId)
+    if (!draft || draft.status !== 'settled') {
+      throw new Error('Demo settled report is unavailable before settlement')
+    }
+
+    return structuredClone(buildDemoSettledRequesterReport(draft))
+  },
+  getOwnedPropositionExport(exportId: string): RequesterOwnedPropositionExportRecord {
+    const record = demoState.requesterExports.find((item) => item.exportId === exportId)
+    if (!record) {
+      throw new Error('Demo requester export not found')
+    }
+
+    return structuredClone(record)
+  },
+  listOwnedPropositionExports(): RequesterOwnedPropositionExportListRecord {
+    return structuredClone({
+      userId: DEMO_USER_ID,
+      totalCount: demoState.requesterExports.length,
+      items: demoState.requesterExports.map((item) => ({
+        exportId: item.exportId,
+        userId: item.userId,
+        status: item.status,
+        format: item.format,
+        requestedAt: item.requestedAt,
+        completedAt: item.completedAt,
+        fileName: item.fileName,
+        preset: item.preset
+          ? {
+              presetId: item.preset.presetId,
+              name: item.preset.name,
+            }
+          : null,
+        metrics: item.metrics,
+      })),
+    })
+  },
+  listRequesterReportPresets(): RequesterReportPresetListViewModel {
+    return structuredClone({
+      userId: DEMO_USER_ID,
+      totalCount: 2,
+      items: [
+        {
+          presetId: 'preset-demo-settled',
+          userId: DEMO_USER_ID,
+          name: 'Settled only',
+          description: 'Only settled requester propositions with completed reports.',
+          updatedAt: minusHours(4),
+        },
+        {
+          presetId: 'preset-demo-unresolved',
+          userId: DEMO_USER_ID,
+          name: 'Unresolved watchlist',
+          description: 'Requester propositions still moving through review and settlement.',
+          updatedAt: minusHours(2),
+        },
+      ],
+    })
+  },
+  listRequesterComparisonSets(): RequesterComparisonSetListRecord {
+    return structuredClone(buildDemoRequesterComparisonSets())
+  },
+  listRequesterComparisonSetDeliveryPolicies(
+    comparisonSetId: string,
+  ): RequesterComparisonSetDeliveryPolicyListViewModel {
+    const items = demoState.requesterComparisonDeliveryPolicies.filter(
+      (entry) => entry.comparisonSetId === comparisonSetId,
+    )
+
+    return structuredClone({
+      userId: DEMO_USER_ID,
+      comparisonSetId,
+      totalCount: items.length,
+      items,
+    })
+  },
+  createRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    body: CreateRequesterComparisonSetDeliveryPolicyInputRecord,
+  ): RequesterComparisonSetDeliveryPolicyViewModel {
+    return structuredClone(createDemoComparisonDeliveryPolicy(comparisonSetId, body))
+  },
+  updateRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+    body: UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
+  ): RequesterComparisonSetDeliveryPolicyViewModel {
+    return structuredClone(
+      updateComparisonDeliveryPolicy(comparisonSetId, policyId, (current) => ({
+        ...current,
+        name: body.name ?? current.name,
+        description: body.description ?? current.description,
+        cadence: body.cadence ?? current.cadence,
+        nextRunAt: body.nextRunAt ?? current.nextRunAt,
+        enabled: body.enabled ?? current.enabled,
+        retainedExportCount: body.retainedExportCount ?? current.retainedExportCount,
+        transport: body.transport === undefined ? current.transport : (body.transport ?? null),
+        updatedAt: DEMO_NOW,
+      })),
+    )
+  },
+  deleteRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+  ): DeleteRequesterComparisonSetDeliveryPolicyResultRecord {
+    return structuredClone(deleteDemoComparisonDeliveryPolicy(comparisonSetId, policyId))
+  },
+  getRequesterComparisonSetAnalytics(
+    comparisonSetId: string,
+  ): RequesterComparisonSetAnalyticsRecord {
+    return structuredClone(buildDemoRequesterComparisonAnalytics(comparisonSetId))
+  },
+  getRequesterComparisonSetDeliveryPolicyHealth(
+    comparisonSetId: string,
+    policyId: string,
+  ): RequesterComparisonSetDeliveryPolicyHealthViewModel {
+    demoState = {
+      ...demoState,
+      requesterComparisonDeliveryHealthReadCount:
+        demoState.requesterComparisonDeliveryHealthReadCount + 1,
+    }
+
+    const checkedAt = new Date(
+      Date.parse(DEMO_NOW) + demoState.requesterComparisonDeliveryHealthReadCount * 60 * 1000,
+    ).toISOString()
+
+    return structuredClone(
+      buildDemoRequesterComparisonDeliveryHealth(comparisonSetId, policyId, checkedAt),
+    )
+  },
+  listRequesterComparisonSetExports(
+    comparisonSetId: string,
+    filters?: {
+      origin?: RequesterComparisonSetExportOriginFilterRecord
+      policyId?: string
+      limit?: number
+    },
+  ): RequesterOwnedComparisonSetExportListViewModel {
+    const comparisonSet = buildDemoRequesterComparisonSets().items.find(
+      (item) => item.comparisonSetId === comparisonSetId,
+    )
+
+    if (!comparisonSet) {
+      throw new Error('Demo requester comparison set not found')
+    }
+
+    const items = listStoredDemoComparisonExports(comparisonSetId)
+      .filter((item) => (filters?.origin ? item.origin.type === filters.origin : true))
+      .filter((item) => (filters?.policyId ? item.origin.policyId === filters.policyId : true))
+    const limitedItems =
+      typeof filters?.limit === 'number' ? items.slice(0, filters.limit) : items
+
+    return structuredClone({
+      userId: DEMO_USER_ID,
+      comparisonSet: {
+        comparisonSetId,
+        name: comparisonSet.name,
+      },
+      totalCount: limitedItems.length,
+      storedCount: items.length,
+      appliedFilters: {
+        origin: filters?.origin ?? null,
+        policyId: filters?.policyId ?? null,
+        limit: filters?.limit ?? null,
+      },
+      items: limitedItems.map((item) => ({
+        exportId: item.exportId,
+        userId: item.userId,
+        status: item.status,
+        format: item.format,
+        requestedAt: item.requestedAt,
+        completedAt: item.completedAt,
+        fileName: item.fileName,
+        origin: structuredClone(item.origin),
+        comparisonSet: {
+          comparisonSetId: item.comparisonSet.comparisonSetId,
+          name: item.comparisonSet.name,
+        },
+      })),
+    })
+  },
+  getRequesterComparisonSetExport(
+    comparisonSetId: string,
+    exportId: string,
+  ): RequesterComparisonSetExportRecord {
+    const record =
+      listStoredDemoComparisonExports(comparisonSetId).find(
+        (item) => item.exportId === exportId,
+      )
+      ?? buildFallbackDemoComparisonExportFromRun(comparisonSetId, exportId)
+
+    if (!record) {
+      throw new Error('Demo requester comparison export not found')
+    }
+
+    return structuredClone(record)
+  },
+  createRequesterComparisonSetExport(
+    comparisonSetId: string,
+  ): RequesterComparisonSetExportRecord {
+    const exportArtifact = buildDemoRequesterComparisonExport(comparisonSetId)
+    upsertDemoComparisonExport(exportArtifact)
+    return structuredClone(exportArtifact)
+  },
+  deleteRequesterComparisonSetExport(
+    comparisonSetId: string,
+    exportId: string,
+  ): DeleteRequesterComparisonSetExportResultRecord {
+    const beforeCount = demoState.requesterComparisonExports.length
+    demoState.requesterComparisonExports = demoState.requesterComparisonExports.filter(
+      (item) =>
+        !(
+          item.comparisonSet.comparisonSetId === comparisonSetId
+          && item.exportId === exportId
+        ),
+    )
+
+    if (demoState.requesterComparisonExports.length === beforeCount) {
+      throw new Error('Demo requester comparison export not found')
+    }
+
+    return structuredClone({
+      userId: DEMO_USER_ID,
+      comparisonSetId,
+      exportId,
+      deleted: true,
+    })
+  },
+  runRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+  ): RequesterComparisonSetDeliveryPolicyRunResultViewModel {
+    return structuredClone(buildDemoRequesterComparisonDeliveryRunResult(comparisonSetId, policyId))
+  },
+  listRequesterComparisonSetDeliveryRuns(
+    comparisonSetId: string,
+    policyId: string,
+    filters?: {
+      status?: RequesterComparisonSetDeliveryRunStatusFilterRecord
+      triggerType?: RequesterComparisonSetDeliveryRunTriggerTypeFilterRecord
+      replay?: RequesterComparisonSetDeliveryRunReplayFilterRecord
+      limit?: number
+    },
+  ): RequesterComparisonSetDeliveryRunListViewModel {
+    return structuredClone(
+      listDemoRequesterComparisonDeliveryRuns(comparisonSetId, policyId, filters),
+    )
+  },
+  retryRequesterComparisonSetDeliveryRun(
+    comparisonSetId: string,
+    policyId: string,
+    runId: string,
+  ): RequesterComparisonSetDeliveryRunRetryResultViewModel {
+    return structuredClone(
+      buildDemoRequesterComparisonDeliveryRetryResult(comparisonSetId, policyId, runId),
+    )
+  },
+  pauseRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+  ): RequesterComparisonSetDeliveryPolicyViewModel {
+    return structuredClone(
+      updateComparisonDeliveryPolicy(comparisonSetId, policyId, (current) => ({
+        ...current,
+        enabled: false,
+        updatedAt: DEMO_NOW,
+      })),
+    )
+  },
+  resumeRequesterComparisonSetDeliveryPolicy(
+    comparisonSetId: string,
+    policyId: string,
+  ): RequesterComparisonSetDeliveryPolicyViewModel {
+    return structuredClone(
+      updateComparisonDeliveryPolicy(comparisonSetId, policyId, (current) => ({
+        ...current,
+        enabled: true,
+        updatedAt: DEMO_NOW,
+      })),
+    )
+  },
+  createOwnedPropositionExport(body: { presetId?: string }): RequesterOwnedPropositionExportRecord {
+    const requestedAt = DEMO_NOW
+    const exportId = `requester-export-${Date.now()}`
+    const record = buildDemoRequesterExport(exportId, requestedAt, body.presetId)
+    demoState.requesterExports = [record, ...demoState.requesterExports]
+    return structuredClone(record)
   },
   getDraft(propositionId: string): PropositionDraftRecord {
     const draft = demoState.drafts.find((entry) => entry.propositionId === propositionId)
@@ -1046,6 +3232,30 @@ export const demoBackend = {
 
     return structuredClone(nextDraft)
   },
+  withdrawSubmission(propositionId: string): PropositionDraftRecord {
+    let nextDraft: PropositionDraftRecord | null = null
+
+    demoState.drafts = demoState.drafts.map((draft) => {
+      if (draft.propositionId !== propositionId) {
+        return draft
+      }
+
+      nextDraft = {
+        ...draft,
+        submissionStatus: 'draft',
+        updatedAt: DEMO_NOW,
+        submittedAt: null,
+      }
+
+      return nextDraft
+    })
+
+    if (!nextDraft) {
+      throw new Error('Demo submission not found')
+    }
+
+    return structuredClone(nextDraft)
+  },
   deleteDraft(propositionId: string) {
     demoState.drafts = demoState.drafts.filter((draft) => draft.propositionId !== propositionId)
     return {
@@ -1105,6 +3315,30 @@ export const demoBackend = {
   },
   getAccountExports(): RespondentAccountExportListViewModel {
     return structuredClone(demoState.exports)
+  },
+  getAccountExport(exportId: string): RespondentAccountExportArtifactViewModel {
+    if (demoState.latestExport?.exportId === exportId) {
+      return structuredClone(demoState.latestExport)
+    }
+
+    const item = demoState.exports.items.find((entry) => entry.exportId === exportId)
+    if (!item) {
+      throw new Error(`Demo account export ${exportId} unavailable`)
+    }
+
+    return structuredClone({
+      ...(demoState.latestExport ?? buildDemoExportArtifact(getOverview(), demoState.preferences, demoState.exports)),
+      exportId: item.exportId,
+      userId: item.userId,
+      status: item.status,
+      format: item.format,
+      period: item.period,
+      includeSettlementAttachment: item.includeSettlementAttachment,
+      maskWalletAddress: item.maskWalletAddress,
+      requestedAt: item.requestedAt,
+      completedAt: item.completedAt,
+      fileName: item.fileName,
+    })
   },
   createAccountExport(): RespondentAccountExportArtifactViewModel {
     const exportId = `demo-export-${Date.now()}`
@@ -1200,8 +3434,81 @@ export const demoBackend = {
   getLatestTopics(): PublicLatestTopicsViewModel {
     return structuredClone(buildDemoLatestTopics())
   },
+  getDiscoveryClosingSoon(): PublicClosingSoonViewModel {
+    return structuredClone(buildDemoClosingSoon(demoState.markets))
+  },
+  getPublicRespondentLeaderboard(): PublicRespondentLeaderboardViewModel {
+    return structuredClone(buildDemoPublicRespondentLeaderboard())
+  },
+  getCategoryDirectoryIndex(): PublicCategoryDirectoryIndexViewModel {
+    return structuredClone(buildDemoCategoryDirectoryIndex())
+  },
   getCategoryDirectory(slug: string): PublicCategoryDirectoryViewModel | null {
     return structuredClone(buildDemoCategoryDirectory(slug))
+  },
+  getPublicSettledResults(): PublicSettledResultsViewModel {
+    return structuredClone(buildDemoPublicSettledResults())
+  },
+  getPublicIntegrityOverview(): PublicIntegrityOverviewViewModel {
+    return structuredClone(buildDemoPublicIntegrityOverview())
+  },
+  getMarketDiscussionThread(marketId: string): ArenaDiscussionThreadViewModel {
+    return structuredClone(
+      demoState.discussionThreads[marketId] ?? {
+        marketId,
+        propositionId: `demo-proposition-${marketId}`,
+        availability: 'demo',
+        totalCount: 0,
+        comments: [],
+      },
+    )
+  },
+  createMarketDiscussionComment(
+    marketId: string,
+    body: {
+      propositionId: string
+      body: string
+      optionIndex?: 0 | 1
+      createdAt: string
+    },
+  ): ArenaDiscussionThreadViewModel {
+    const current = demoState.discussionThreads[marketId] ?? {
+      marketId,
+      propositionId: body.propositionId,
+      availability: 'demo' as const,
+      totalCount: 0,
+      comments: [],
+    }
+
+    const nextComment = {
+      id: `demo-comment-${current.comments.length + 1}`,
+      marketId,
+      propositionId: body.propositionId,
+      userId: DEMO_USER_ID,
+      author: 'You',
+      handle: '@arena_demo',
+      tone: body.optionIndex === 0 ? '演示观点 A' : body.optionIndex === 1 ? '演示观点 B' : '演示讨论',
+      timeLabel: '刚刚',
+      minutesAgo: 0,
+      optionIndex:
+        body.optionIndex === 0 || body.optionIndex === 1
+          ? body.optionIndex
+          : null,
+      body: body.body.trim(),
+      likes: 0,
+      replyCount: 0,
+      repliesPreview: [],
+      createdAt: body.createdAt,
+    }
+
+    const nextThread: ArenaDiscussionThreadViewModel = {
+      ...current,
+      totalCount: current.totalCount + 1,
+      comments: [nextComment, ...current.comments],
+    }
+
+    demoState.discussionThreads[marketId] = nextThread
+    return structuredClone(nextThread)
   },
   reset() {
     demoState = createInitialState()

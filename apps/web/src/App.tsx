@@ -6,19 +6,30 @@ import { SmartRoutePage } from './app/SmartRoutePage'
 import { AppLayout } from './components/layout/AppLayout'
 import { MarketDetailPage } from './components/market/MarketDetailPage'
 import { NotFoundPage } from './components/shared/NotFoundPage'
+import { QuickMenuProvider } from './components/shared/QuickMenuContext'
+import { RulesIntroProvider } from './components/shared/RulesIntroContext'
+import { ShellLanguageProvider } from './components/shared/ShellLanguageContext'
 
+// UI layer: router and UI-state providers (auth modal, language, quick-menu) live here.
+// Data providers (server state, session) are in main.tsx and wrap this entire tree.
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Navigate to="/zh" replace />} />
-        <Route path="/zh" element={<AppLayout><HomePage /></AppLayout>} />
-        <Route path="/zh/markets" element={<AppLayout><MarketPage /></AppLayout>} />
-        <Route path="/zh/results" element={<AppLayout><ResultsPage /></AppLayout>} />
-        <Route path="/zh/event/:marketId" element={<AppLayout><MarketDetailPage /></AppLayout>} />
-        <Route path="/zh/*" element={<AppLayout><SmartRoutePage /></AppLayout>} />
-        <Route path="*" element={<AppLayout><NotFoundPage /></AppLayout>} />
-      </Routes>
+      <RulesIntroProvider>
+        <ShellLanguageProvider>
+          <QuickMenuProvider>
+            <Routes>
+              <Route path="/" element={<Navigate to="/zh" replace />} />
+              <Route path="/zh" element={<AppLayout><HomePage /></AppLayout>} />
+              <Route path="/zh/markets" element={<AppLayout><MarketPage /></AppLayout>} />
+              <Route path="/zh/results" element={<AppLayout><ResultsPage /></AppLayout>} />
+              <Route path="/zh/event/:marketId" element={<AppLayout><MarketDetailPage /></AppLayout>} />
+              <Route path="/zh/*" element={<AppLayout><SmartRoutePage /></AppLayout>} />
+              <Route path="*" element={<AppLayout><NotFoundPage /></AppLayout>} />
+            </Routes>
+          </QuickMenuProvider>
+        </ShellLanguageProvider>
+      </RulesIntroProvider>
     </BrowserRouter>
   )
 }

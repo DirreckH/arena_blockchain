@@ -221,14 +221,13 @@ export const ACCOUNT_MENU_PRIMARY_LINKS: AccountShortcutLink[] = [
 ]
 
 export const ACCOUNT_MENU_SUPPORT_LINKS: AccountShortcutLink[] = [
-  { label: '账户设置', caption: '管理通知、显示偏好、API 占位与签名入口', href: '/zh/activity' },
+  { label: '账户设置', caption: '管理通知、显示偏好、API 密钥与签名入口', href: '/zh/activity' },
   { label: '语言', caption: '当前演示语言为中文', href: '/zh/language' },
-  { label: '搜索', caption: '搜索命题与公开结果', href: '/zh/search' },
-  { label: '收藏', caption: '查看已收藏命题占位', href: '/zh/watchlist' },
-  { label: '参与激励', caption: '查看参与奖励占位', href: '/zh/rewards' },
-  { label: '开发文档', caption: '产品与接口说明占位', href: '/zh/docs' },
-  { label: '帮助中心', caption: '帮助与支持入口占位', href: '/zh/help' },
-  { label: '联系 Arena', caption: '联系与反馈入口占位', href: '/zh/contact' },
+  { label: '收藏', caption: '查看已关注的命题与追踪列表', href: '/zh/watchlist' },
+  { label: '参与激励', caption: '了解奖励层级与质检加成规则', href: '/zh/rewards' },
+  { label: '开发文档', caption: '查看 API 参考与集成指南', href: '/zh/docs' },
+  { label: '帮助中心', caption: '了解玩法规则与常见问题', href: '/zh/help' },
+  { label: '联系 Arena', caption: '发送反馈或联系 Arena 团队', href: '/zh/contact' },
 ]
 
 export const ACCOUNT_MENU_STATUS_ITEMS: AccountSummaryItem[] = [

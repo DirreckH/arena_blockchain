@@ -13,8 +13,8 @@ export function BreakingPage() {
       <section className="route-page">
         <div className="route-header compact">
           <span>Arena</span>
-          <h1>Breaking</h1>
-          <p>Loading the current public breaking ranking.</p>
+          <h1>突发</h1>
+          <p>正在加载当前突发事件排行。</p>
         </div>
       </section>
     )
@@ -25,7 +25,7 @@ export function BreakingPage() {
       <section className="route-page">
         <div className="route-header compact">
           <span>Arena</span>
-          <h1>Breaking</h1>
+          <h1>突发</h1>
           <p>{errorMessage}</p>
         </div>
       </section>
@@ -37,8 +37,8 @@ export function BreakingPage() {
       <section className="route-page">
         <div className="route-header compact">
           <span>Arena</span>
-          <h1>Breaking</h1>
-          <p>No breaking ranking is available right now.</p>
+          <h1>突发</h1>
+          <p>当前暂无突发事件排行数据。</p>
         </div>
       </section>
     )
@@ -46,17 +46,12 @@ export function BreakingPage() {
 
   return (
     <>
-      <DataSourceBadge
-        mode={sessionMode === 'demo' ? 'demo' : sourceMode}
-        detail={
-          sessionMode === 'demo'
-            ? 'Breaking uses the authenticated demo read model.'
-            : sourceMode === 'demo'
-              ? 'Breaking ranking fell back to the seeded demo ranking.'
-              : 'Breaking ranking is being read from the public discovery surface.'
-        }
+      <DataSourceBadge mode={sessionMode === 'demo' ? 'demo' : sourceMode} />
+      <MarketRankingPage
+        config={toRankedMarketPageConfig(breaking)}
+        showSearch
+        searchPlaceholder="搜索市场标题"
       />
-      <MarketRankingPage config={toRankedMarketPageConfig(breaking)} />
     </>
   )
 }

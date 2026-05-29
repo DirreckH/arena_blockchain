@@ -112,6 +112,8 @@ export interface Market {
   propositionId: string;
   settlementTarget: ArenaSettlementTarget;
   status: MarketStatus;
+  chainMarketId?: string | null;
+  chainStatus?: string | null;
   currentPublicProgress: unknown | null;
   lastPublicResult: unknown | null;
   liveAt: string | null;

@@ -9,6 +9,27 @@ const optionalPrivateKeySchema = z
     (value) => value.length === 0 || /^0x[a-fA-F0-9]{64}$/.test(value),
     "Must be empty or a 32-byte hex private key prefixed with 0x",
   );
+const webhookBearerTokenMappingsSchema = z
+  .string()
+  .optional()
+  .default("")
+  .refine((value) => {
+    const entries = value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+
+    return entries.every((entry) => {
+      const separatorIndex = entry.indexOf(":");
+      if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
+        return false;
+      }
+
+      const key = entry.slice(0, separatorIndex).trim();
+      const token = entry.slice(separatorIndex + 1).trim();
+      return key.length > 0 && token.length > 0;
+    });
+  }, "Must be a comma-separated list of key:token webhook bearer mappings");
 
 export const envSchema = z
   .object({
@@ -29,6 +50,7 @@ export const envSchema = z
     ARENA_VALIDATION_OPERATOR_PRIVATE_KEY: optionalPrivateKeySchema,
     ARENA_VALIDATION_ORACLE_PRIVATE_KEY: optionalPrivateKeySchema,
     ARENA_VALIDATION_PAUSER_PRIVATE_KEY: optionalPrivateKeySchema,
+    REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS: webhookBearerTokenMappingsSchema,
     OPERATOR_WALLET_ADDRESSES: z.string().optional().default(""),
     ADMIN_WALLET_ADDRESSES: z.string().optional().default(""),
     SYSTEM_WALLET_ADDRESSES: z.string().optional().default(""),

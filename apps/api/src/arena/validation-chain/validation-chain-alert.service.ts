@@ -16,6 +16,7 @@ import { VALIDATION_CHAIN_STREAM_KEY } from "./validation-chain.types";
 
 const RECENT_ALERT_WINDOW_MS = 15 * 60 * 1000;
 const STALE_PAYOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const UNSYNCED_BET_BACKLOG_WINDOW_MS = 15 * 60 * 1000;
 
 const CURSOR_STALLED_ACTION = "validation_chain.alert.cursor_stalled";
 const COMMAND_TERMINAL_ACTION = "validation_chain.alert.command_terminal";
@@ -25,6 +26,8 @@ const PROJECTOR_ENTITY_MISSING_ACTION =
   "validation_chain.alert.projector_entity_missing";
 const SYNC_WORKER_UNHEALTHY_ACTION =
   "validation_chain.alert.sync_worker_unhealthy";
+const UNSYNCED_BET_BACKLOG_ACTION =
+  "validation_chain.alert.unsynced_bet_backlog";
 
 const RECENT_ALERT_ACTIONS = [
   CURSOR_STALLED_ACTION,
@@ -32,6 +35,7 @@ const RECENT_ALERT_ACTIONS = [
   COMMAND_RETRY_EXHAUSTED_ACTION,
   PROJECTOR_ENTITY_MISSING_ACTION,
   SYNC_WORKER_UNHEALTHY_ACTION,
+  UNSYNCED_BET_BACKLOG_ACTION,
   "validation_chain.pause.submitted",
   "validation_chain.unpause.submitted",
 ] as const;
@@ -203,6 +207,7 @@ export class ValidationChainAlertService {
         recentEvents,
         latestMarket,
         latestBet,
+        unsyncedBetBacklog,
         projectorFailuresCount,
         syncFailuresCount,
         recentFailures,
@@ -343,6 +348,39 @@ export class ValidationChainAlertService {
             chainSyncedAt: true,
           },
         }),
+        tx.bet.findMany({
+          where: {
+            chainSyncedAt: null,
+            market: {
+              chainMarketId: {
+                not: null,
+              },
+              chainStatus: {
+                notIn: ["resolved", "cancelled"],
+              },
+            },
+          },
+          orderBy: {
+            placedAt: "asc",
+          },
+          take: 20,
+          select: {
+            id: true,
+            marketId: true,
+            propositionId: true,
+            userId: true,
+            status: true,
+            stakeAmount: true,
+            placedAt: true,
+            chainSyncedAt: true,
+            market: {
+              select: {
+                chainMarketId: true,
+                chainStatus: true,
+              },
+            },
+          },
+        }),
         tx.internalAuditEvent.count({
           where: {
             action: "validation_chain.project.failed",
@@ -415,6 +453,7 @@ export class ValidationChainAlertService {
             (item) => item.action === PROJECTOR_ENTITY_MISSING_ACTION,
           ).length,
           stalePayoutMarketCount: stalePayoutMarkets.length,
+          unsyncedBetBacklogCount: unsyncedBetBacklog.length,
         },
         eventLedger: {
           totalEventCount,
@@ -462,6 +501,21 @@ export class ValidationChainAlertService {
                 chainSyncedAt: latestBet.chainSyncedAt?.toISOString() ?? null,
               }
             : null,
+          unsyncedBetBacklog: unsyncedBetBacklog.map((bet) => ({
+            betId: bet.id,
+            marketId: bet.marketId,
+            propositionId: bet.propositionId,
+            userId: bet.userId,
+            status: bet.status,
+            stakeAmount: bet.stakeAmount,
+            placedAt: bet.placedAt.toISOString(),
+            chainMarketId: bet.market.chainMarketId,
+            chainStatus: bet.market.chainStatus as ValidationChainMarketStatus | null,
+            oldestUnsyncedAgeMs: Math.max(
+              0,
+              now.getTime() - bet.placedAt.getTime(),
+            ),
+          })),
         },
         failures: {
           projectorFailuresCount,
@@ -518,6 +572,27 @@ export class ValidationChainAlertService {
         metadata: {
           recentSyncFailureCount: snapshot.metrics.recentSyncFailureCount,
           windowMs: RECENT_ALERT_WINDOW_MS,
+        },
+      });
+    }
+
+    const oldestUnsyncedBet = snapshot.projection.unsyncedBetBacklog[0];
+    if (
+      oldestUnsyncedBet &&
+      oldestUnsyncedBet.oldestUnsyncedAgeMs >= UNSYNCED_BET_BACKLOG_WINDOW_MS
+    ) {
+      await this.recordAlertOnce({
+        entityType: "validation_chain_stream",
+        entityId: snapshot.streamKey,
+        action: UNSYNCED_BET_BACKLOG_ACTION,
+        reason: "validation_chain.bet_projection.backlog",
+        dedupeAfter: UNSYNCED_BET_BACKLOG_WINDOW_MS,
+        metadata: {
+          unsyncedBetBacklogCount: snapshot.metrics.unsyncedBetBacklogCount,
+          oldestUnsyncedAgeMs: oldestUnsyncedBet.oldestUnsyncedAgeMs,
+          oldestUnsyncedBetId: oldestUnsyncedBet.betId,
+          marketId: oldestUnsyncedBet.marketId,
+          propositionId: oldestUnsyncedBet.propositionId,
         },
       });
     }

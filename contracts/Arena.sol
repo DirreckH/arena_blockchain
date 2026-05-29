@@ -265,6 +265,8 @@ contract Arena is ReentrancyGuard, Ownable, Pausable {
         return allPKs;
     }
     
-    // 接收ETH
-    receive() external payable {}
+    // 仅允许通过 bet 函数发送ETH，防止ETH意外锁定
+    receive() external payable {
+        revert("Arena: direct ETH transfers not allowed, use bet()");
+    }
 }

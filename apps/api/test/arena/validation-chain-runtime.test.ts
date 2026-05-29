@@ -7,6 +7,7 @@ import type {
   Bet,
   Market,
   Proposition,
+  SystemKeyValue,
   ValidationChainCursor,
   ValidationChainEvent,
 } from "@prisma/client";
@@ -18,6 +19,9 @@ import { ValidationChainProjectionService } from "../../src/arena/validation-cha
 import { ValidationChainSyncWorker } from "../../src/arena/validation-chain/validation-chain-sync.worker";
 import { ValidationChainIdService } from "../../src/arena/validation-chain/validation-chain-id.service";
 import { ValidationChainCommandRuntimeService } from "../../src/arena/validation-chain/validation-chain-command-runtime.service";
+import { ValidationRehearsalCheckpointService } from "../../src/arena/services/validation-rehearsal-checkpoint.service";
+import { PropositionLifecycleAutomationService } from "../../src/arena/services/proposition-lifecycle-automation.service";
+import { RequesterComparisonSetDeliveryAutomationService } from "../../src/arena/services/requester-comparison-set-delivery-automation.service";
 import {
   VALIDATION_CHAIN_STREAM_KEY,
   type ValidationChainCommandJobPayload,
@@ -32,6 +36,7 @@ import {
 } from "../../src/queue/queue.constants";
 import type { AppConfigService } from "../../src/config/app-config.service";
 import type { PrismaService } from "../../src/database/prisma.service";
+import type { ArenaIdService } from "../../src/arena/arena-id.service";
 
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -45,12 +50,24 @@ function createConfigStub(): AppConfigService {
   } as AppConfigService;
 }
 
+class FakeArenaIdService {
+  private readonly sequences = new Map<string, number>();
+
+  next(namespace: string): string {
+    const current = this.sequences.get(namespace) ?? 0;
+    const nextValue = current + 1;
+    this.sequences.set(namespace, nextValue);
+    return `${namespace}_${nextValue}`;
+  }
+}
+
 interface ValidationChainHarness {
   propositions: Proposition[];
   markets: Market[];
   bets: Bet[];
   audits: Array<Record<string, unknown>>;
   events: ValidationChainEvent[];
+  systemKeyValues: SystemKeyValue[];
   cursor: ValidationChainCursor | null;
   currentCursor: () => ValidationChainCursor | null;
   restartWorker: () => ValidationChainSyncWorker;
@@ -59,6 +76,7 @@ interface ValidationChainHarness {
   oracle: ValidationChainOracleService;
   projector: ValidationChainProjectionService;
   worker: ValidationChainSyncWorker;
+  rehearsalCheckpoints: ValidationRehearsalCheckpointService;
 }
 
 interface ValidationChainSample {
@@ -131,6 +149,35 @@ class FakeMarketRepository {
 class FakeBetRepository {
   constructor(private readonly bets: Bet[]) {}
 
+  async create(data: Partial<Bet> & Pick<Bet, "id" | "marketId" | "propositionId" | "userId" | "selectedOption" | "stakeAmount" | "placedAt">): Promise<Bet> {
+    const record: Bet = {
+      id: data.id,
+      marketId: data.marketId,
+      propositionId: data.propositionId,
+      userId: data.userId,
+      selectedOption: data.selectedOption,
+      stakeAmount: data.stakeAmount,
+      status: data.status ?? "placed",
+      placedAt: data.placedAt,
+      settledAt: data.settledAt ?? null,
+      settlementOutcome: data.settlementOutcome ?? null,
+      grossPayout: data.grossPayout ?? null,
+      pnl: data.pnl ?? null,
+      refundAmount: data.refundAmount ?? null,
+      claimed: data.claimed ?? false,
+      claimedAt: data.claimedAt ?? null,
+      claimTxHash: data.claimTxHash ?? null,
+      refundedAt: data.refundedAt ?? null,
+      refundTxHash: data.refundTxHash ?? null,
+      chainSyncedAt: data.chainSyncedAt ?? null,
+      createdAt: data.createdAt ?? data.placedAt,
+      updatedAt: data.updatedAt ?? data.placedAt,
+    };
+
+    this.bets.push(record);
+    return clone(record);
+  }
+
   async findByMarketAndUser(marketId: string, userId: string): Promise<Bet | null> {
     return clone(
       this.bets.find(
@@ -151,6 +198,64 @@ class FakeBetRepository {
 
     Object.assign(bet, clone(data), { updatedAt: now(99) });
     return clone(bet);
+  }
+}
+
+class FakeSystemKeyValueRepository {
+  constructor(private readonly systemKeyValues: SystemKeyValue[]) {}
+
+  async findByKey(key: string): Promise<SystemKeyValue | null> {
+    return clone(
+      this.systemKeyValues.find(
+        (item) => item.key === key && item.deletedAt === null,
+      ) ?? null,
+    );
+  }
+
+  async upsertByKey(
+    key: string,
+    create: any,
+    update: any,
+  ): Promise<SystemKeyValue> {
+    const existing = this.systemKeyValues.find(
+      (item) => item.key === key && item.deletedAt === null,
+    );
+
+    if (existing) {
+      Object.assign(existing, clone(update), {
+        deletedAt: null,
+        updatedAt: now(95),
+      });
+      return clone(existing);
+    }
+
+    const record: SystemKeyValue = {
+      id: create.id,
+      key: create.key,
+      valueJson: clone(create.valueJson ?? null),
+      description: create.description ?? null,
+      createdAt: create.createdAt ?? now(95),
+      updatedAt: create.updatedAt ?? now(95),
+      deletedAt: create.deletedAt ?? null,
+    };
+
+    this.systemKeyValues.push(record);
+    return clone(record);
+  }
+
+  async listByKeyPrefix(keyPrefix: string): Promise<SystemKeyValue[]> {
+    return clone(
+      this.systemKeyValues
+        .filter(
+          (item) =>
+            item.key.startsWith(keyPrefix) && item.deletedAt === null,
+        )
+        .sort(
+          (left, right) =>
+            right.updatedAt.getTime() - left.updatedAt.getTime() ||
+            right.createdAt.getTime() - left.createdAt.getTime(),
+        ),
+    );
   }
 }
 
@@ -204,6 +309,40 @@ class FakeValidationChainCommandAlerts {
 
   async recordCommandRetryExhausted(input: Record<string, unknown>): Promise<void> {
     this.exhausted.push(clone(input));
+  }
+}
+
+class FakePropositionLifecycleAutomationService {
+  async runDuePropositionTransitions() {
+    return {
+      processedAt: new Date().toISOString(),
+      published: {
+        processedAt: new Date().toISOString(),
+        processedCount: 0,
+        propositionIds: [],
+      },
+      revealPrepared: {
+        processedAt: new Date().toISOString(),
+        processedCount: 0,
+        propositionIds: [],
+      },
+      settled: {
+        processedAt: new Date().toISOString(),
+        processedCount: 0,
+        propositionIds: [],
+      },
+    };
+  }
+}
+
+class FakeRequesterComparisonSetDeliveryAutomationService {
+  async runDuePolicies(_input: { now: string }) {
+    return {
+      processedCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+      items: [],
+    };
   }
 }
 
@@ -707,6 +846,7 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
 
   const audits: Array<Record<string, unknown>> = [];
   const events: ValidationChainEvent[] = [];
+  const systemKeyValues: SystemKeyValue[] = [];
   const cursorState = { cursor: null as ValidationChainCursor | null };
 
   const prisma = new FakePrismaService() as unknown as PrismaService;
@@ -714,9 +854,19 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
     new FakePropositionRepository(propositions) as never;
   const marketRepository = new FakeMarketRepository(markets) as never;
   const betRepository = new FakeBetRepository(bets) as never;
+  const arenaIds = new FakeArenaIdService() as unknown as ArenaIdService;
+  const systemKeyValueRepository =
+    new FakeSystemKeyValueRepository(systemKeyValues) as never;
   const auditService = new FakeAuditService(audits) as never;
   const idService = new ValidationChainIdService(createConfigStub());
   const contract = new FakeValidationChainContractService();
+  const rehearsalCheckpoints = new ValidationRehearsalCheckpointService(
+    prisma,
+    arenaIds,
+    createConfigStub(),
+    propositionRepository,
+    systemKeyValueRepository,
+  );
 
   const operator = new ValidationChainOperatorCommandService(
     prisma,
@@ -740,6 +890,7 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
     prisma,
     marketRepository,
     betRepository,
+    arenaIds as never,
     auditService,
   );
 
@@ -748,8 +899,10 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
     contract as never,
     new FakeValidationChainCursorRepository(cursorState) as never,
     new FakeValidationChainEventRepository(events) as never,
+    marketRepository,
     projector,
     auditService,
+    rehearsalCheckpoints,
     new FakeLogger() as never,
   );
 
@@ -759,6 +912,7 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
     bets,
     audits,
     events,
+    systemKeyValues,
     cursor: cursorState.cursor,
     currentCursor: () => clone(cursorState.cursor),
     restartWorker: () =>
@@ -767,8 +921,10 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
         contract as never,
         new FakeValidationChainCursorRepository(cursorState) as never,
         new FakeValidationChainEventRepository(events) as never,
+        marketRepository,
         projector,
         auditService,
+        rehearsalCheckpoints,
         new FakeLogger() as never,
       ),
     contract,
@@ -776,6 +932,7 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
     oracle,
     projector,
     worker,
+    rehearsalCheckpoints,
   };
 }
 
@@ -912,12 +1069,15 @@ function createQueuedRehearsal(
     harness.operator,
     harness.oracle,
     alerts as never,
+    harness.rehearsalCheckpoints,
     new FakeLogger() as never,
   );
   const processor = new SchedulerQueueProcessor(
     new FakeLogger() as never,
     worker,
     commandRuntime,
+    new FakePropositionLifecycleAutomationService() as PropositionLifecycleAutomationService,
+    new FakeRequesterComparisonSetDeliveryAutomationService() as RequesterComparisonSetDeliveryAutomationService,
     alerts as never,
   );
 
@@ -1021,6 +1181,122 @@ describe("Validation chain phase five runtime", () => {
       "MarketCreated,MarketOpened,BetPlaced",
     );
     assert.equal(firstSync.streamKey, VALIDATION_CHAIN_STREAM_KEY);
+    const checkpoints =
+      await harness.rehearsalCheckpoints.listCheckpointsForProposition("prop_1");
+
+    assert.equal(
+      checkpoints.some(
+        (checkpoint) =>
+          checkpoint.stepId === "local_bet_and_sync" &&
+          checkpoint.reason === "validation_rehearsal.auto.bet_projection_synced" &&
+          checkpoint.status === "complete",
+      ),
+      true,
+    );
+  });
+
+  it("records proposition-scoped rehearsal checkpoints for queued create and open commands", async () => {
+    const harness = createHarness({ includeCounterpartyBet: false });
+    const rehearsal = createQueuedRehearsal(harness);
+    harness.markets[0].status = "live";
+
+    await rehearsal.commandRuntime.enqueueCreateOpenCommands({
+      propositionId: "prop_1",
+      actorUserId: "system",
+      reason: "validation_chain.runtime.publish_live",
+    });
+    await processQueuedCommands(rehearsal);
+
+    const checkpoints =
+      await harness.rehearsalCheckpoints.listCheckpointsForProposition("prop_1");
+
+    assert.equal(
+      checkpoints.some(
+        (checkpoint) =>
+          checkpoint.stepId === "publish_and_open" &&
+          checkpoint.reason ===
+            "validation_rehearsal.auto.create_market_submitted" &&
+          checkpoint.status === "complete" &&
+          checkpoint.recordedByUserId === "system" &&
+          checkpoint.txHash !== null,
+      ),
+      true,
+    );
+    assert.equal(
+      checkpoints.some(
+        (checkpoint) =>
+          checkpoint.stepId === "publish_and_open" &&
+          checkpoint.reason ===
+            "validation_rehearsal.auto.open_market_submitted" &&
+          checkpoint.status === "complete" &&
+          checkpoint.recordedByUserId === "system" &&
+          checkpoint.txHash !== null,
+      ),
+      true,
+    );
+  });
+
+  it("records proposition-scoped rehearsal checkpoints for queued freeze and resolve commands", async () => {
+    const harness = createHarness({ includeCounterpartyBet: false });
+    const rehearsal = createQueuedRehearsal(harness);
+    harness.markets[0].status = "live";
+
+    await rehearsal.commandRuntime.enqueueCreateOpenCommands({
+      propositionId: "prop_1",
+      actorUserId: "system",
+      reason: "validation_chain.runtime.publish_live",
+    });
+    await processQueuedCommands(rehearsal);
+    await harness.contract.emitBetPlacedForTest({
+      marketId: harness.markets[0].chainMarketId as string,
+      propositionId: harness.markets[0].chainPropositionId as string,
+      user: harness.bets[0].userId,
+      selectedOption: harness.bets[0].selectedOption as 0 | 1,
+      amount: harness.bets[0].stakeAmount,
+    });
+
+    harness.markets[0].status = "frozen_for_reveal";
+    await rehearsal.commandRuntime.enqueueFreezeCommand({
+      propositionId: "prop_1",
+      actorUserId: "system",
+      reason: "validation_chain.runtime.prepare_reveal",
+    });
+    await processQueuedCommands(rehearsal);
+
+    await rehearsal.commandRuntime.enqueueResolveCommand({
+      propositionId: "prop_1",
+      actorUserId: "system",
+      reason: "validation_chain.runtime.official_result",
+    });
+    await processQueuedCommands(rehearsal);
+
+    const checkpoints =
+      await harness.rehearsalCheckpoints.listCheckpointsForProposition("prop_1");
+
+    assert.equal(
+      checkpoints.some(
+        (checkpoint) =>
+          checkpoint.stepId === "freeze_and_resolve" &&
+          checkpoint.reason ===
+            "validation_rehearsal.auto.freeze_market_submitted" &&
+          checkpoint.status === "complete" &&
+          checkpoint.recordedByUserId === "system" &&
+          checkpoint.txHash !== null,
+      ),
+      true,
+    );
+    assert.equal(
+      checkpoints.some(
+        (checkpoint) =>
+          checkpoint.stepId === "freeze_and_resolve" &&
+          checkpoint.reason ===
+            "validation_rehearsal.auto.resolve_market_submitted" &&
+          checkpoint.status === "complete" &&
+          checkpoint.recordedByUserId === "system" &&
+          checkpoint.txHash !== null,
+      ),
+      true,
+    );
   });
 
   it("completes the minimal create -> open -> freeze -> resolve -> ingest happy path", async () => {
@@ -1329,6 +1605,38 @@ describe("Validation chain phase five runtime", () => {
         (entry) => entry.action === "validation_chain.sync.failed",
       ),
       true,
+    );
+  });
+
+  it("projects BetPlaced by creating a local bet when sync sees the chain event before local confirm", async () => {
+    const harness = createHarness({ includeCounterpartyBet: false });
+    harness.markets[0].status = "live";
+    harness.bets.splice(0, harness.bets.length);
+
+    const createResult = await harness.operator.createMarket({ propositionId: "prop_1" });
+    await harness.operator.openMarket({ propositionId: "prop_1" });
+    await harness.contract.emitBetPlacedForTest({
+      marketId: createResult.chainMarketId,
+      propositionId: createResult.chainPropositionId,
+      user: "0x00000000000000000000000000000000000000aa",
+      selectedOption: 0,
+      amount: "40",
+    });
+    harness.contract.mineEmptyBlock();
+
+    const sync = await harness.worker.syncOnce();
+
+    assert.equal(sync.processedEvents, 3);
+    assert.equal(harness.bets.length, 1);
+    assert.equal(harness.bets[0]?.userId, "0x00000000000000000000000000000000000000aa");
+    assert.equal(harness.bets[0]?.selectedOption, 0);
+    assert.equal(harness.bets[0]?.stakeAmount, "40");
+    assert.equal(harness.bets[0]?.chainSyncedAt !== null, true);
+    assert.equal(
+      harness.audits.some(
+        (entry) => entry.action === "validation_chain.project.failed",
+      ),
+      false,
     );
   });
 

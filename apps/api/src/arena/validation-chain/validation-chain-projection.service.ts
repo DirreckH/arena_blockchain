@@ -14,6 +14,7 @@ import {
   ArenaInvariantError,
   ArenaValidationError,
 } from "../arena.errors";
+import { ArenaIdService } from "../arena-id.service";
 import { withArenaTransaction } from "../arena-transaction.utils";
 import type { ArenaDbClient } from "../prisma.types";
 import { BetRepository } from "../repositories/bet.repository";
@@ -39,6 +40,7 @@ export class ValidationChainProjectionService {
     private readonly prisma: PrismaService,
     private readonly markets: MarketRepository,
     private readonly bets: BetRepository,
+    private readonly ids: ArenaIdService,
     private readonly audit: InternalAuditService,
     @Optional()
     private readonly alerts?: ValidationChainAlertService,
@@ -163,18 +165,30 @@ export class ValidationChainProjectionService {
     const payload = event.payloadJson as unknown as ValidationChainBetPlacedPayload;
     const market = await this.findRequiredMarketByEvent(event, db);
     const userId = normalizeWalletAddress(payload.user);
-    const bet = await this.bets.findByMarketAndUser(market.id, userId, db);
+    const existingBet = await this.bets.findByMarketAndUser(market.id, userId, db);
+    const syncedAt = this.toDate(payload.blockTimestamp);
 
-    if (!bet) {
-      throw new ValidationChainProcessingError(
-        `Validation bet for market ${market.id} and user ${userId} was not found`,
-        false,
+    if (!existingBet) {
+      await this.bets.create(
+        {
+          id: this.ids.next("bet"),
+          marketId: market.id,
+          propositionId: market.propositionId,
+          userId,
+          selectedOption: payload.selectedOption as 0 | 1,
+          stakeAmount: payload.amount,
+          status: "placed",
+          placedAt: syncedAt,
+          chainSyncedAt: syncedAt,
+        },
+        db,
       );
+      return;
     }
 
     if (
-      bet.selectedOption !== payload.selectedOption ||
-      bet.stakeAmount !== payload.amount
+      existingBet.selectedOption !== payload.selectedOption ||
+      existingBet.stakeAmount !== payload.amount
     ) {
       throw new ValidationChainProcessingError(
         `Validation bet payload mismatch for market ${market.id} and user ${userId}`,
@@ -183,9 +197,9 @@ export class ValidationChainProjectionService {
     }
 
     await this.bets.update(
-      bet.id,
+      existingBet.id,
       {
-        chainSyncedAt: this.toDate(payload.blockTimestamp),
+        chainSyncedAt: syncedAt,
       },
       db,
     );

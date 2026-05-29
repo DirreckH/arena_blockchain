@@ -117,12 +117,7 @@ If you want the frontend to talk to a local API, the shortest path is:
 
 ```powershell
 pnpm install
-Copy-Item .env.example .env
-pnpm deps:up
-pnpm exec hardhat compile
-pnpm exec hardhat node
-pnpm api:prisma:migrate
-pnpm api:dev
+pnpm run backend:prepare:local
 ```
 
 Then start the frontend in another terminal:
@@ -134,6 +129,14 @@ pnpm web:dev
 ```
 
 Full validation-chain deployment, role wiring, and preflight checks are covered later under "Detailed Setup".
+The local bootstrap script writes a development-ready `.env` with Hardhat-local
+signer keys and default Postgres / Redis / RPC wiring, so the rest of the
+validation preflight commands can run without hand-editing the first draft.
+`backend:prepare:local` builds on top of that validation bootstrap path: it
+prepares the local validation runtime, starts the production-style API when
+needed, waits for `/health/live` and `/health/ready`, and then runs the repo's
+canonical backend release check so local A-track verification reaches the same
+runtime contract used by later proposition proof capture.
 
 ## 🌱 Why This Project Exists
 
@@ -444,7 +447,45 @@ If your goal is the full A-track runtime path across proposition / queue / chain
 
 1. Complete Path B first.
 
-2. Choose a validation signer and admin strategy
+2. Prefer the one-command local setup path when your machine can run Docker/Desktop-compatible services:
+
+   ```powershell
+   pnpm run validation:prepare:local
+   ```
+
+   That wrapper reuses the repo's existing local validation steps in the documented order:
+
+   - `validation:bootstrap:local`
+   - `deps:up`
+   - `hardhat compile`
+   - `hardhat node` when the local RPC is not already reachable
+   - `validation:deploy` when the current local deployment does not pass `validation:chain:check`
+   - `validation:preflight`
+   - `validation:db:deploy`
+   - `validation:db:status`
+
+   If dependency startup still fails, the command falls back to structured runtime diagnostics:
+
+   - if Postgres and Redis are already reachable and only the local RPC is still missing, the wrapper continues and tries to start `hardhat node` automatically
+   - if Postgres or Redis are still unavailable, the wrapper stops and emits the same Docker / Postgres / Redis / RPC remediation guidance as the standalone preflight path
+
+3. When you want the backend itself to be started and checked as part of the same local bring-up contract, use:
+
+   ```powershell
+   pnpm run backend:prepare:local
+   ```
+
+   That wrapper:
+
+   - runs `pnpm run validation:prepare:local`
+   - reuses an already-running local backend when `/health/live` is already reachable
+   - otherwise builds the backend, starts `pnpm run api:start` in the background, and writes logs to `validation-local/backend-api.log`
+   - waits for `GET /health/live` and `GET /health/ready`
+   - runs `pnpm run backend:release:check`
+
+   This is the shortest repo path for local A-track runtime verification before exercising proposition-scoped rehearsal or public proof capture.
+
+4. Choose a validation signer and admin strategy
 
    The two simplest local options are:
 
@@ -466,19 +507,19 @@ If your goal is the full A-track runtime path across proposition / queue / chain
 
    If you skip this part, `validation:chain:check` will fail because the signers either lack on-chain roles or do not match the configured addresses.
 
-3. Compile contracts
+5. Compile contracts
 
    ```powershell
    pnpm exec hardhat compile
    ```
 
-4. Deploy the validation contract
+6. Deploy the validation contract
 
    ```powershell
    pnpm run validation:deploy --network localhost
    ```
 
-5. Write the emitted `ARENA_VALIDATION_CONTRACT_ADDRESS` back into `.env`
+7. Write the emitted `ARENA_VALIDATION_CONTRACT_ADDRESS` back into `.env`
 
    Also make sure your chosen signer configuration remains present in `.env`:
 
@@ -493,7 +534,7 @@ If your goal is the full A-track runtime path across proposition / queue / chain
    - `ARENA_VALIDATION_ORACLE_ADDRESS`
    - `ARENA_VALIDATION_PAUSER_ADDRESS`
 
-6. Run validation preflight checks
+8. Run validation preflight checks
 
    ```powershell
    pnpm run validation:env:check
@@ -503,7 +544,10 @@ If your goal is the full A-track runtime path across proposition / queue / chain
    pnpm run validation:db:status
    ```
 
-7. Start the API and run the real proposition -> create/open/freeze/resolve -> sync runtime path.
+9. Start the API and run the real proposition -> create/open/freeze/resolve -> sync runtime path.
+
+   If you used `pnpm run backend:prepare:local`, the API should already be running
+   and the repo-side backend release contract should already have passed.
 
 This path is best for A-track work, validation-chain integration, and runtime verification.
 
@@ -521,6 +565,8 @@ This path is best for A-track work, validation-chain integration, and runtime ve
 | Dependencies up | `pnpm deps:up` | Start Postgres / Redis |
 | Dependencies down | `pnpm deps:down` | Stop Postgres / Redis |
 | Prisma migrate | `pnpm api:prisma:migrate` | Apply local migrations |
+| Validation local prepare | `pnpm validation:prepare:local` | Bootstrap local env, bring up deps/RPC, deploy when needed, and run full local preflight |
+| Backend local prepare | `pnpm backend:prepare:local` | Prepare validation local runtime, start the backend when needed, wait for readiness, and run the backend release contract |
 | Validation preflight | `pnpm validation:preflight` | Combined env / deps / chain checks |
 | Validation deploy | `pnpm validation:deploy --network localhost` | Deploy the validation contract |
 | Validation test | `pnpm validation:test` | Run validation-chain tests |

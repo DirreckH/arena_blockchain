@@ -13,6 +13,7 @@ export class PropositionRepository {
       status?: PropositionStatus;
       category?: Proposition["category"];
       marketEnabled?: boolean;
+      createdByUserId?: string;
       createdFrom?: Date;
       createdTo?: Date;
     } = {},
@@ -23,6 +24,7 @@ export class PropositionRepository {
         status: filters.status,
         category: filters.category,
         marketEnabled: filters.marketEnabled,
+        createdByUserId: filters.createdByUserId,
         createdAt:
           filters.createdFrom || filters.createdTo
             ? {

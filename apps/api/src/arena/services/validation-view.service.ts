@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { ValidationMarketViewModel } from "@arena/shared";
 import { buildValidationMarketViewModel } from "@arena/shared";
 
+import { AppConfigService } from "../../config/app-config.service";
 import { ArenaNotFoundError } from "../arena.errors";
 import {
   toSharedCounter,
@@ -17,6 +18,7 @@ import { PropositionRepository } from "../repositories/proposition.repository";
 @Injectable()
 export class ValidationViewService {
   constructor(
+    private readonly config: AppConfigService,
     private readonly propositions: PropositionRepository,
     private readonly counters: EffectiveSampleCounterRepository,
     private readonly markets: MarketRepository,
@@ -28,6 +30,30 @@ export class ValidationViewService {
     return Promise.all(
       markets.map((market) => this.getMarket(market.id, userId)),
     );
+  }
+
+  async searchMarkets(
+    query: string | undefined,
+    userId?: string,
+  ): Promise<ValidationMarketViewModel[]> {
+    const normalizedQuery = query?.trim().toLowerCase() ?? "";
+    const allMarkets = await this.listMarkets(userId);
+
+    if (normalizedQuery.length === 0) {
+      return allMarkets;
+    }
+
+    return allMarkets.filter((market) => {
+      const haystack = [
+        market.title,
+        market.category,
+        ...market.options,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedQuery);
+    });
   }
 
   async getMarket(
@@ -61,6 +87,8 @@ export class ValidationViewService {
       counter: toSharedCounter(counter),
       currentUserPosition: toSharedPositionBet(currentUserPosition),
       now: new Date().toISOString(),
+      chainId: this.config.chainId,
+      contractAddress: this.config.validationContractAddress,
     });
   }
 }

@@ -78,6 +78,8 @@ export interface BuildValidationMarketViewInput {
   counter: EffectiveSampleCounter | null;
   currentUserPosition: PositionBet | null;
   now: string;
+  chainId?: number;
+  contractAddress?: string;
 }
 
 export interface SanitizedCurrentUserPosition

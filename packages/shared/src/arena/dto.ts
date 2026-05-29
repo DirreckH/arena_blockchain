@@ -436,6 +436,30 @@ export interface ValidationMarketViewModel {
   canBet: boolean;
   publicProgress: PublicProgressViewModel;
   currentUserPosition: CurrentUserPositionViewModel | null;
+  executionReadiness?: ValidationExecutionReadinessViewModel;
+}
+
+export type ValidationExecutionReadinessReasonCode =
+  | "ready"
+  | "market_not_live"
+  | "chain_market_missing"
+  | "chain_market_not_live"
+  | "wallet_chain_mismatch";
+
+export interface ValidationExecutionReadinessViewModel {
+  ready: boolean;
+  reasonCode: ValidationExecutionReadinessReasonCode;
+  detail: string;
+  chainId: number;
+  contractAddress: string;
+  chainMarketId: string | null;
+  chainStatus: string | null;
+}
+
+export interface PrepareValidationBetResult {
+  marketView: ValidationMarketViewModel;
+  execution: ValidationBetExecutionViewModel;
+  transaction: ValidationBetTransactionRequestViewModel;
 }
 
 export interface PlaceValidationBetResult {
@@ -444,11 +468,26 @@ export interface PlaceValidationBetResult {
   execution: ValidationBetExecutionViewModel;
 }
 
-export type ValidationBetExecutionMode = "wallet_authenticated_account_write" | "demo_bypass";
+export interface ValidationBetTransactionRequestViewModel {
+  chainId: number;
+  to: string;
+  data: string;
+  value: string;
+  chainMarketId: string;
+  selectedOption: BinaryOption;
+  stakeAmount: string;
+}
+
+export type ValidationBetExecutionMode =
+  | "wallet_authenticated_account_write"
+  | "wallet_direct_contract_write"
+  | "demo_bypass";
 
 export type ValidationBetExecutionStage =
   | "session_validated"
+  | "awaiting_signature"
   | "account_write_submitted"
+  | "transaction_submitted"
   | "position_recorded";
 
 export interface ValidationBetExecutionViewModel {
@@ -960,11 +999,137 @@ export interface PublicCategorySidebarItemViewModel {
   count: string;
 }
 
+export interface PublicCategoryDirectoryIndexItemViewModel {
+  slug: string;
+  pathname: string;
+  label: string;
+  title: string;
+  directoryLabel: string;
+  description: string;
+}
+
+export interface PublicCategoryDirectoryIndexViewModel {
+  items: PublicCategoryDirectoryIndexItemViewModel[];
+}
+
 export interface PublicCategoryDirectoryViewModel {
   title: string;
   sidebarItems: PublicCategorySidebarItemViewModel[];
   featuredMarketId: string | null;
   marketIds: string[];
+}
+
+export interface PublicRespondentLeaderboardRowViewModel {
+  userId: string;
+  handle: string;
+  walletShort: string;
+  responseRatePercent: number;
+  reviewedCount: number;
+  acceptedCount: number;
+  reputationScore: number;
+  topTag: string;
+}
+
+export interface PublicRespondentLeaderboardCategoryViewModel {
+  id: string;
+  label: string;
+  description: string;
+  rows: PublicRespondentLeaderboardRowViewModel[];
+}
+
+export interface PublicRespondentLeaderboardViewModel {
+  categories: PublicRespondentLeaderboardCategoryViewModel[];
+}
+
+export interface PublicClosingSoonItemViewModel {
+  marketId: string;
+  revealAt: string | null;
+  differenceMs: number;
+}
+
+export interface PublicClosingSoonViewModel {
+  generatedAt: string;
+  urgentWindowMs: number;
+  urgent: PublicClosingSoonItemViewModel[];
+  upcoming: PublicClosingSoonItemViewModel[];
+}
+
+export interface PublicSettledResultItemViewModel {
+  propositionId: string;
+  marketId: string | null;
+  title: string;
+  category: PropositionCategory;
+  winningOptionLabel: string | null;
+  resultKind: PropositionResultKind;
+  winningOption: BinaryOption | null;
+  voidReason: PropositionVoidReason | null;
+  validSampleCount: number;
+  winMarginPercent: number | null;
+  settledAt: string;
+  settlementTxHash: string | null;
+  onChain: boolean;
+}
+
+export interface PublicSettledResultsViewModel {
+  totalCount: number;
+  items: PublicSettledResultItemViewModel[];
+}
+
+export interface PublicIntegrityPhaseBucketViewModel {
+  phase: PublicLifecyclePhase;
+  label: string;
+  count: number;
+}
+
+export interface PublicIntegrityLiveProgressItemViewModel {
+  propositionId: string;
+  title: string;
+  category: PropositionCategory;
+  phase: PublicLifecyclePhase;
+  effectiveSampleCount: number;
+  requiredSampleCount: number;
+  progressPercent: number;
+  reachedSampleThreshold: boolean;
+  marketEnabled: boolean;
+  deadlineAt: string | null;
+}
+
+export interface PublicIntegrityArchiveStatsViewModel {
+  settledCount: number;
+  onChainCount: number;
+  averageValidSampleCount: number;
+  latestSettledAt: string | null;
+  recentItems: PublicIntegrityArchiveItemViewModel[];
+}
+
+export interface PublicIntegrityArchiveItemViewModel {
+  propositionId: string;
+  title: string;
+  category: PropositionCategory;
+  settledAt: string;
+  settlementTxHash: string | null;
+  onChain: boolean;
+}
+
+export interface PublicIntegrityFocusViewModel {
+  propositionId: string;
+  visible: boolean;
+  source: "live" | "archive" | null;
+  liveItem: PublicIntegrityLiveProgressItemViewModel | null;
+  archiveItem: PublicIntegrityArchiveItemViewModel | null;
+}
+
+export interface PublicIntegrityOverviewViewModel {
+  generatedAt: string;
+  live: {
+    totalCount: number;
+    reachedSampleThresholdCount: number;
+    marketEnabledCount: number;
+    phaseBreakdown: PublicIntegrityPhaseBucketViewModel[];
+    items: PublicIntegrityLiveProgressItemViewModel[];
+  };
+  archive: PublicIntegrityArchiveStatsViewModel;
+  focus: PublicIntegrityFocusViewModel | null;
 }
 
 export interface FrontendIsolationPolicyView {

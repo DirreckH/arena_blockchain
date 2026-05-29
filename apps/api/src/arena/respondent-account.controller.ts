@@ -50,6 +50,17 @@ export class ArenaRespondentAccountController {
     );
   }
 
+  @Get("exports/:exportId")
+  getOwnAccountExport(
+    @Param("exportId") exportId: string,
+    @Req() request: RequestWithUser,
+  ) {
+    return this.accountExports.getAccountExportForUser(
+      request.user?.sub as string,
+      exportId,
+    );
+  }
+
   @Post("exports")
   createOwnAccountExport(
     @Body() body: CreateAccountExportDto,

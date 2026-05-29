@@ -19,6 +19,22 @@ interface ValidationArtifact {
 
 type ValidationSignerRole = "operator" | "oracle" | "pauser";
 
+interface ValidationSignerReadiness {
+  role: ValidationSignerRole;
+  address: string;
+  hasBalance: boolean;
+  hasRequiredRole: boolean;
+  balance: string;
+}
+
+interface ValidationContractDeploymentReadiness {
+  contractAddress: string;
+  hasRuntimeCode: boolean;
+  runtimeBytecodeMatchesArtifact: boolean;
+  paused: boolean;
+  signers: ValidationSignerReadiness[];
+}
+
 @Injectable()
 export class ValidationChainContractService {
   private readonly artifactPath = resolveFromWorkspaceRoot(
@@ -105,6 +121,37 @@ export class ValidationChainContractService {
     }
   }
 
+  async getDeploymentReadiness(): Promise<ValidationContractDeploymentReadiness> {
+    try {
+      await this.assertReady();
+
+      const contractAddress = this.config.validationContractAddress;
+      const onChainCode = await this.provider.getCode(contractAddress);
+      const hasRuntimeCode = Boolean(onChainCode && onChainCode !== "0x");
+      const artifactRuntime = this.readArtifactRuntimeBytecode();
+      const runtimeBytecodeMatchesArtifact =
+        hasRuntimeCode &&
+        artifactRuntime !== null &&
+        artifactRuntime === onChainCode.toLowerCase();
+      const paused = await this.contract.paused();
+      const signers = await Promise.all([
+        this.getSignerReadiness("operator"),
+        this.getSignerReadiness("oracle"),
+        this.getSignerReadiness("pauser"),
+      ]);
+
+      return {
+        contractAddress,
+        hasRuntimeCode,
+        runtimeBytecodeMatchesArtifact,
+        paused,
+        signers,
+      };
+    } catch (error) {
+      throw this.wrapError("getDeploymentReadiness", error);
+    }
+  }
+
   async getLogs(query: ValidationChainLogQuery): Promise<providers.Log[]> {
     try {
       return await this.provider.getLogs({
@@ -186,6 +233,16 @@ export class ValidationChainContractService {
     }
   }
 
+  async getTransactionReceipt(
+    txHash: string,
+  ): Promise<providers.TransactionReceipt | null> {
+    try {
+      return await this.provider.getTransactionReceipt(txHash);
+    } catch (error) {
+      throw this.wrapError("getTransactionReceipt", error);
+    }
+  }
+
   async isPaused(): Promise<boolean> {
     try {
       return await this.contract.paused();
@@ -254,6 +311,14 @@ export class ValidationChainContractService {
     return JSON.parse(readFileSync(this.artifactPath, "utf8")) as ValidationArtifact;
   }
 
+  private readArtifactRuntimeBytecode(): string | null {
+    const payload = JSON.parse(readFileSync(this.artifactPath, "utf8")) as {
+      deployedBytecode?: string;
+    };
+    const runtime = payload.deployedBytecode?.toLowerCase() ?? "";
+    return runtime.length > 0 ? runtime : null;
+  }
+
   private wrapError(
     operation: string,
     error: unknown,
@@ -284,6 +349,37 @@ export class ValidationChainContractService {
     }
 
     return privateKey.trim();
+  }
+
+  private getSignerAddress(role: ValidationSignerRole): string {
+    return new ethers.Wallet(this.getSignerPrivateKey(role)).address;
+  }
+
+  private getSignerRoleConstantName(role: ValidationSignerRole): "OPERATOR_ROLE" | "ORACLE_ROLE" | "PAUSER_ROLE" {
+    return role === "operator"
+      ? "OPERATOR_ROLE"
+      : role === "oracle"
+        ? "ORACLE_ROLE"
+        : "PAUSER_ROLE";
+  }
+
+  private async getSignerReadiness(
+    role: ValidationSignerRole,
+  ): Promise<ValidationSignerReadiness> {
+    const address = this.getSignerAddress(role);
+    const [balance, roleId] = await Promise.all([
+      this.provider.getBalance(address),
+      this.contract[this.getSignerRoleConstantName(role)](),
+    ]);
+    const hasRequiredRole = await this.contract.hasRole(roleId, address);
+
+    return {
+      role,
+      address,
+      hasBalance: !balance.isZero(),
+      hasRequiredRole,
+      balance: balance.toString(),
+    };
   }
 
   private getWriteContract(role: ValidationSignerRole): ethers.Contract {

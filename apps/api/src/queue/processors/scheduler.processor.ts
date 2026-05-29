@@ -3,10 +3,14 @@ import type { Job } from "bullmq";
 import { PinoLogger } from "nestjs-pino";
 
 import type { ValidationChainCommandJobPayload } from "../../arena/validation-chain/validation-chain.types";
+import { PropositionLifecycleAutomationService } from "../../arena/services/proposition-lifecycle-automation.service";
+import { RequesterComparisonSetDeliveryAutomationService } from "../../arena/services/requester-comparison-set-delivery-automation.service";
 import { ValidationChainAlertService } from "../../arena/validation-chain/validation-chain-alert.service";
 import { ValidationChainCommandRuntimeService } from "../../arena/validation-chain/validation-chain-command-runtime.service";
 import { ValidationChainSyncWorker } from "../../arena/validation-chain/validation-chain-sync.worker";
 import {
+  PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+  REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
   VALIDATION_CHAIN_COMMAND_JOB,
   SCHEDULER_HEARTBEAT_JOB,
   SCHEDULER_QUEUE,
@@ -22,6 +26,8 @@ export class SchedulerQueueProcessor extends WorkerHost {
     private readonly logger: PinoLogger,
     private readonly validationChainSyncWorker: ValidationChainSyncWorker,
     private readonly validationChainCommands: ValidationChainCommandRuntimeService,
+    private readonly propositionLifecycle: PropositionLifecycleAutomationService,
+    private readonly requesterComparisonSetDeliveryAutomation: RequesterComparisonSetDeliveryAutomationService,
     private readonly validationChainAlerts: ValidationChainAlertService,
   ) {
     super();
@@ -60,6 +66,37 @@ export class SchedulerQueueProcessor extends WorkerHost {
         processedAt: new Date().toISOString(),
         propositionId: String(job.data.propositionId ?? ""),
         command: String(job.data.command ?? ""),
+      };
+    }
+
+    if (job.name === PROPOSITION_LIFECYCLE_AUTOMATION_JOB) {
+      const result = await this.propositionLifecycle.runDuePropositionTransitions();
+      const processedCount =
+        result.published.processedCount +
+        result.revealPrepared.processedCount +
+        result.settled.processedCount;
+
+      return {
+        processedAt: new Date().toISOString(),
+        jobName: PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+        processedCount: String(processedCount),
+      };
+    }
+
+    if (job.name === REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB) {
+      const requestedAt =
+        typeof job.data.requestedAt === "string" && job.data.requestedAt.length > 0
+          ? job.data.requestedAt
+          : new Date().toISOString();
+      const result =
+        await this.requesterComparisonSetDeliveryAutomation.runDuePolicies({
+          now: requestedAt,
+        });
+
+      return {
+        processedAt: new Date().toISOString(),
+        jobName: REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
+        processedCount: String(result.processedCount),
       };
     }
 

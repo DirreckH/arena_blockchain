@@ -1,4 +1,5 @@
 import type {
+  PrepareValidationBetResult,
   PlaceValidationBetResult,
   ValidationMarketViewModel,
   PlacePositionBetInput,
@@ -32,6 +33,46 @@ export class ValidationSurface implements ValidationSurfaceContract {
     }
 
     return this.buildMarketView(marketId, this.deps.clock.now(), userId);
+  }
+
+  async prepareBetForUser(
+    input: PlacePositionBetInput,
+  ): Promise<PrepareValidationBetResult> {
+    const marketView = await this.getMarket(input.marketId, input.userId);
+
+    if (!marketView) {
+      throw new MarketViewNotAccessibleError(input.marketId);
+    }
+
+    return {
+      marketView,
+      execution: {
+        mode: "wallet_direct_contract_write",
+        stage: "session_validated",
+        requiresWalletSignature: true,
+        usesDemoFlow: false,
+        chainId: input.chainId,
+        txHash: null,
+        submittedAt: input.placedAt,
+        recordedAt: input.placedAt,
+        statusLabel: "Wallet session validated",
+        detail:
+          "Arena validated the authenticated wallet session and prepared the on-chain validation bet request.",
+      },
+      transaction: {
+        chainId: input.chainId,
+        to:
+          marketView.executionReadiness?.contractAddress ??
+          "0x0000000000000000000000000000000000000000",
+        data: "0x",
+        value: input.stakeAmount,
+        chainMarketId:
+          marketView.executionReadiness?.chainMarketId ??
+          "0x0000000000000000000000000000000000000000000000000000000000000000",
+        selectedOption: input.selectedOption,
+        stakeAmount: input.stakeAmount,
+      },
+    };
   }
 
   async placeBetForUser(

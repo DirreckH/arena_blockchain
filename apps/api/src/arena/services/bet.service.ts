@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import type { Bet } from "@prisma/client";
 
+import { AppConfigService } from "../../config/app-config.service";
 import { PrismaService } from "../../database/prisma.service";
 import {
   ArenaConflictError,
@@ -30,6 +31,7 @@ import {
 @Injectable()
 export class BetService {
   constructor(
+    private readonly config: AppConfigService,
     private readonly prisma: PrismaService,
     private readonly ids: ArenaIdService,
     private readonly propositions: PropositionRepository,
@@ -44,6 +46,14 @@ export class BetService {
     return withArenaTransaction(this.prisma, db, async (tx) => {
       assertBinaryOption(input.selectedOption, "selectedOption");
       assertNonNegativeIntegerString(input.stakeAmount, "stakeAmount");
+
+      const targetChainId = input.chainId ?? this.config.chainId;
+      if (targetChainId !== this.config.chainId) {
+        throw new ArenaValidationError(
+          "bet.chain_id_mismatch",
+          "Bets can only be recorded for the configured validation chain",
+        );
+      }
 
       const proposition = await this.propositions.findById(input.propositionId, tx);
       if (!proposition) {

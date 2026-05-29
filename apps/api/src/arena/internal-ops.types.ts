@@ -1,4 +1,9 @@
 import type {
+  HealthSnapshot,
+  QueueOverviewSnapshot,
+  ReadinessSnapshot,
+} from "@arena/shared";
+import type {
   BetSettlementOutcome,
   BetStatus,
   InternalAuditEvent,
@@ -23,6 +28,7 @@ import type {
   ValidationLifecycleDriftReason,
   ValidationLifecycleSnapshotViewModel,
 } from "./validation-lifecycle";
+import type { ValidationChainAutomaticCommand } from "./validation-chain/validation-chain.types";
 
 export const INTERNAL_AUDIT_ENTITY_TYPES = {
   proposition: "proposition",
@@ -172,6 +178,76 @@ export interface PropositionValidationChainActivityViewModel {
   eventAuditEvents: InternalAuditEventViewModel[];
 }
 
+export type PropositionValidationRehearsalStepStatus =
+  | "pending"
+  | "complete"
+  | "blocked";
+
+export type PropositionValidationRehearsalStepId =
+  | "preflight"
+  | "publish_and_open"
+  | "local_bet_and_sync"
+  | "freeze_and_resolve"
+  | "projection_and_settlement";
+
+export interface PropositionValidationRehearsalStepViewModel {
+  id: PropositionValidationRehearsalStepId;
+  status: PropositionValidationRehearsalStepStatus;
+  summary: string;
+  commands: string[];
+  evidence: string[];
+  blockingReasons: string[];
+  manualCheckpoint: PropositionValidationRehearsalCheckpointViewModel | null;
+}
+
+export interface PropositionValidationRehearsalSummaryViewModel {
+  completedStepCount: number;
+  remainingStepCount: number;
+  currentStepId: PropositionValidationRehearsalStepId | null;
+  currentStepStatus: PropositionValidationRehearsalStepStatus | null;
+  nextCommands: string[];
+  blockingReasons: string[];
+  latestCheckpointAt: string | null;
+  latestCheckpointStepId: PropositionValidationRehearsalStepId | null;
+  latestCheckpointStatus: PropositionValidationRehearsalStepStatus | null;
+}
+
+export interface PropositionValidationRehearsalEnvironmentReadinessViewModel {
+  status: "ok" | "degraded";
+  checkedAt: string;
+  validationEnvironment: "local" | "dev" | "staging" | "prod";
+  chainId: number;
+  runbookPath: string;
+  blockingDependencies: ValidationChainRuntimeReadinessDependencyViewModel["name"][];
+  preflightCommands: string[];
+  operatorActions: ValidationChainRuntimeReadinessActionViewModel[];
+}
+
+export interface PropositionValidationRehearsalViewModel {
+  status: "ready" | "blocked";
+  targetOutcome: string;
+  runbookPath: string;
+  blockingDependencies: string[];
+  summary: PropositionValidationRehearsalSummaryViewModel;
+  environmentReadiness: PropositionValidationRehearsalEnvironmentReadinessViewModel;
+  steps: PropositionValidationRehearsalStepViewModel[];
+}
+
+export interface PropositionValidationRehearsalCheckpointViewModel {
+  propositionId: string;
+  environment: "local" | "dev" | "staging" | "prod";
+  chainId: number;
+  stepId: PropositionValidationRehearsalStepId;
+  status: PropositionValidationRehearsalStepStatus;
+  reason: string;
+  note: string | null;
+  evidence: string[];
+  txHash: string | null;
+  blockNumber: number | null;
+  recordedByUserId: string | null;
+  recordedAt: string;
+}
+
 export interface InternalPropositionDetailViewModel {
   proposition: {
     id: string;
@@ -229,6 +305,8 @@ export interface InternalPropositionDetailViewModel {
   } | null;
   validationLifecycle: PropositionValidationLifecycleViewModel;
   validationChainActivity: PropositionValidationChainActivityViewModel;
+  validationRehearsal: PropositionValidationRehearsalViewModel;
+  validationRehearsalCheckpoints: PropositionValidationRehearsalCheckpointViewModel[];
   sampleCounter: EffectiveSampleCounterSnapshot;
   closureReadiness: ClosureReadinessSnapshot;
   dispatchSummary: PropositionDispatchSummaryViewModel;
@@ -237,6 +315,13 @@ export interface InternalPropositionDetailViewModel {
   revealSettlement: PropositionRevealSettlementViewModel;
   auditEvents: InternalAuditEventViewModel[];
   rewardAuditEvents: InternalAuditEventViewModel[];
+}
+
+export interface InternalPropositionEvidenceBundleViewModel {
+  propositionId: string;
+  exportedAt: string;
+  propositionExport: InternalPropositionDetailViewModel & { exportedAt: string };
+  runtimeContract: BackendRuntimeContractViewModel;
 }
 
 export interface SampleShortageMonitoringItemViewModel {
@@ -280,6 +365,7 @@ export interface ValidationLifecycleDriftMonitoringItemViewModel {
   marketStatus: MarketStatus | null;
   chainMarketId: string | null;
   chainStatus: ValidationChainMarketStatus | null;
+  onChainState: ValidationChainContractStateViewModel | null;
   chainSyncedAt: string | null;
   publishedAt: string | null;
   liveAt: string | null;
@@ -288,6 +374,7 @@ export interface ValidationLifecycleDriftMonitoringItemViewModel {
   resultComputedAt: string | null;
   settledAt: string | null;
   driftReason: ValidationLifecycleDriftReason;
+  operatorGuidance: ValidationLifecycleDriftOperatorGuidanceViewModel;
 }
 
 export interface ValidationChainHealthAlertViewModel {
@@ -349,6 +436,161 @@ export interface ValidationChainLatestBetProjectionViewModel {
   chainSyncedAt: string | null;
 }
 
+export interface ValidationChainUnsyncedBetBacklogItemViewModel {
+  betId: string;
+  marketId: string;
+  propositionId: string;
+  userId: string;
+  status: BetStatus;
+  stakeAmount: string;
+  placedAt: string;
+  chainMarketId: string | null;
+  chainStatus: ValidationChainMarketStatus | null;
+  oldestUnsyncedAgeMs: number;
+}
+
+export interface ValidationChainBetReconciliationViewModel {
+  betId: string;
+  marketId: string;
+  propositionId: string;
+  userId: string;
+  localBet: {
+    selectedOption: number;
+    stakeAmount: string;
+    status: BetStatus;
+    claimed: boolean;
+    chainSyncedAt: string | null;
+    placedAt: string;
+  };
+  onChainPosition: {
+    exists: boolean;
+    selectedOption: number | null;
+    stakeAmount: string;
+    claimed: boolean;
+    claimableAmount: string;
+  };
+  comparison: {
+    positionExists: boolean;
+    optionMatches: boolean;
+    amountMatches: boolean;
+    claimedMatches: boolean;
+    claimableAmount: string;
+  };
+}
+
+export type ValidationChainBetReconciliationBatchItemStatus =
+  | "matched"
+  | "mismatched"
+  | "failed";
+
+export interface ValidationChainBetReconciliationBatchItemViewModel {
+  betId: string;
+  marketId: string;
+  propositionId: string;
+  userId: string;
+  status: ValidationChainBetReconciliationBatchItemStatus;
+  reconciliation: ValidationChainBetReconciliationViewModel | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
+export interface ValidationChainBetReconciliationBatchViewModel {
+  processedAt: string;
+  requestedLimit: number;
+  processedCount: number;
+  matchedCount: number;
+  mismatchedCount: number;
+  failedCount: number;
+  items: ValidationChainBetReconciliationBatchItemViewModel[];
+}
+
+export interface ValidationChainProjectionReplayMarketViewModel {
+  chainStatus: ValidationChainMarketStatus | null;
+  chainOpenedAt: string | null;
+  chainFrozenAt: string | null;
+  chainResolvedAt: string | null;
+  chainCancelledAt: string | null;
+  chainResultKind: ValidationChainResultKind | null;
+  chainWinningOption: number | null;
+  chainVoidReason: ValidationChainVoidReason | null;
+  resolutionTxHash: string | null;
+  cancelTxHash: string | null;
+  chainSyncedAt: string | null;
+}
+
+export interface ValidationChainProjectionReplayBetViewModel {
+  betId: string;
+  marketId: string;
+  propositionId: string;
+  userId: string;
+  status: BetStatus;
+  claimed: boolean;
+  settlementOutcome: BetSettlementOutcome | null;
+  grossPayout: string | null;
+  refundAmount: string | null;
+  claimTxHash: string | null;
+  refundTxHash: string | null;
+  chainSyncedAt: string | null;
+}
+
+export interface ValidationChainProjectionReplayViewModel {
+  marketId: string;
+  propositionId: string;
+  chainMarketId: string | null;
+  chainPropositionId: string | null;
+  processedAt: string;
+  replayedEventCount: number;
+  replayedEvents: ValidationChainRecentEventViewModel[];
+  propositionStatus: PropositionStatus;
+  propositionSettledAt: string | null;
+  finalMarketProjection: ValidationChainProjectionReplayMarketViewModel;
+  finalBetProjections: ValidationChainProjectionReplayBetViewModel[];
+}
+
+export type ValidationChainContractStateViewModel =
+  | "unset"
+  | "pre_live"
+  | "live"
+  | "frozen"
+  | "resolved"
+  | "cancelled";
+
+export type ValidationLifecycleDriftOperatorGuidanceKind =
+  | "queue_recovery"
+  | "projection_repair"
+  | "manual_intervention";
+
+export type ValidationChainCommandRecoveryReason =
+  | "create_open_missing_market"
+  | "open_pre_live_market"
+  | "freeze_live_market"
+  | "freeze_resolve_live_market"
+  | "resolve_settled_market"
+  | "resolve_frozen_market";
+
+export interface ValidationLifecycleDriftOperatorGuidanceViewModel {
+  kind: ValidationLifecycleDriftOperatorGuidanceKind;
+  summary: string;
+  recoveryReason: ValidationChainCommandRecoveryReason | null;
+  plannedCommands: ValidationChainAutomaticCommand[];
+  operatorActions: string[];
+}
+
+export interface ValidationChainCommandRecoveryViewModel {
+  propositionId: string;
+  marketId: string;
+  chainMarketId: string;
+  chainPropositionId: string;
+  queuedAt: string;
+  propositionStatus: PropositionStatus;
+  marketStatus: MarketStatus;
+  localChainStatus: ValidationChainMarketStatus | null;
+  onChainState: ValidationChainContractStateViewModel | null;
+  driftReason: ValidationLifecycleDriftReason | null;
+  recoveryReason: ValidationChainCommandRecoveryReason;
+  plannedCommands: ValidationChainAutomaticCommand[];
+}
+
 export interface ValidationChainFailureViewModel {
   action: string;
   entityType: string;
@@ -356,6 +598,117 @@ export interface ValidationChainFailureViewModel {
   reason: string;
   metadata: unknown;
   createdAt: string;
+}
+
+export interface ValidationChainRuntimeReadinessDependencyViewModel {
+  name:
+    | "env"
+    | "database"
+    | "redis"
+    | "rpc"
+    | "arena_artifact"
+    | "validation_artifact"
+    | "validation_contract"
+    | "validation_contract_code"
+    | "validation_contract_bytecode"
+    | "validation_operator_signer"
+    | "validation_oracle_signer"
+    | "validation_pauser_signer";
+  status: "up" | "down";
+  details?: string;
+}
+
+export interface ValidationChainRuntimeReadinessActionViewModel {
+  dependency: ValidationChainRuntimeReadinessDependencyViewModel["name"];
+  summary: string;
+  envKeys: string[];
+  commands: string[];
+}
+
+export interface ValidationChainRuntimeReadinessViewModel {
+  status: "ok" | "degraded";
+  checkedAt: string;
+  validationEnvironment: "local" | "dev" | "staging" | "prod";
+  chainId: number;
+  rpcUrl: string;
+  arenaContractAddress: string;
+  validationContractAddress: string;
+  dependencies: ValidationChainRuntimeReadinessDependencyViewModel[];
+  requiredEnvKeys: string[];
+  optionalEnvKeys: string[];
+  preflightCommands: string[];
+  runbookPath: string;
+  operatorActions: ValidationChainRuntimeReadinessActionViewModel[];
+}
+
+export interface BackendRuntimeContractCommandSetViewModel {
+  install: string[];
+  dev: string[];
+  typecheck: string[];
+  unitTest: string[];
+  integrationTest: string[];
+  e2eOrSmoke: string[];
+  productionBuild: string[];
+  validationLocalPrepare: string[];
+  databaseMigrate: string[];
+  preflight: string[];
+}
+
+export interface BackendRuntimeContractChecklistItemViewModel {
+  id: string;
+  status: "ready" | "blocked";
+  summary: string;
+  blockingDependencies: string[];
+  commands: string[];
+}
+
+export interface BackendRuntimeContractReleaseReadinessViewModel {
+  status: "ready" | "blocked";
+  blockingDependencies: string[];
+  completedGateCount: number;
+  totalGateCount: number;
+}
+
+export type BackendValidationRehearsalStepId =
+  | "preflight"
+  | "publish_and_open"
+  | "local_bet_and_sync"
+  | "freeze_and_resolve"
+  | "projection_and_settlement";
+
+export interface BackendValidationRehearsalStepViewModel {
+  id: BackendValidationRehearsalStepId;
+  summary: string;
+  commands: string[];
+  evidence: string[];
+}
+
+export interface BackendValidationRehearsalViewModel {
+  status: "ready" | "blocked";
+  targetOutcome: string;
+  runbookPath: string;
+  blockingDependencies: string[];
+  steps: BackendValidationRehearsalStepViewModel[];
+}
+
+export interface BackendRuntimeContractViewModel {
+  status: "ok" | "degraded";
+  generatedAt: string;
+  environment: {
+    nodeEnv: "development" | "test" | "production";
+    validationEnvironment: "local" | "dev" | "staging" | "prod";
+    port: number;
+  };
+  health: {
+    live: HealthSnapshot;
+    readiness: ReadinessSnapshot;
+    queues: QueueOverviewSnapshot;
+  };
+  validationChain: ValidationChainRuntimeReadinessViewModel;
+  validationRehearsal: BackendValidationRehearsalViewModel;
+  commands: BackendRuntimeContractCommandSetViewModel;
+  releaseReadiness: BackendRuntimeContractReleaseReadinessViewModel;
+  releaseChecklist: BackendRuntimeContractChecklistItemViewModel[];
 }
 
 export interface ValidationChainMonitoringViewModel {
@@ -378,6 +731,7 @@ export interface ValidationChainMonitoringViewModel {
     recentSyncFailureCount: number;
     recentProjectorEntityMissingCount: number;
     stalePayoutMarketCount: number;
+    unsyncedBetBacklogCount: number;
   };
   eventLedger: {
     totalEventCount: number;
@@ -387,6 +741,7 @@ export interface ValidationChainMonitoringViewModel {
   projection: {
     latestMarket: ValidationChainLatestMarketProjectionViewModel | null;
     latestBet: ValidationChainLatestBetProjectionViewModel | null;
+    unsyncedBetBacklog: ValidationChainUnsyncedBetBacklogItemViewModel[];
   };
   failures: {
     projectorFailuresCount: number;

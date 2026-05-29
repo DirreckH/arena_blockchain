@@ -10,6 +10,7 @@ import type {
   MarketSettlementInput,
   OpenMarketForLiveInput,
   PlacePositionBetInput,
+  PrepareValidationBetResult,
   PlaceValidationBetResult,
   PublicProgressViewModel,
   PropositionRuntimeSnapshot,
@@ -31,10 +32,14 @@ import type {
   ResultSummaryViewModel,
   RespondentWatchlistViewModel,
   PublicCategoryDirectoryViewModel,
+  PublicCategoryDirectoryIndexViewModel,
+  PublicClosingSoonViewModel,
   PublicDiscoverPageViewModel,
   PublicDiscoveryRankingKind,
   PublicDiscoveryRankingViewModel,
+  PublicIntegrityOverviewViewModel,
   PublicLatestTopicsViewModel,
+  PublicSettledResultsViewModel,
   RewardReviewResolutionInput,
   ReviewPendingResponseInput,
   ReviewResponseInput,
@@ -50,6 +55,10 @@ import type {
   ValidationMarketViewModel,
   UpdateRespondentAccountPreferencesInput,
 } from "./dto.js";
+import type {
+  ArenaDiscussionThreadViewModel,
+  CreateArenaDiscussionCommentInput,
+} from "./discussion.js";
 import type {
   DispatchTask,
   Market,
@@ -215,6 +224,9 @@ export interface ValidationSurfaceContract {
     marketId: string,
     userId?: string,
   ): Promise<ValidationMarketViewModel | null>;
+  prepareBetForUser(
+    input: PlacePositionBetInput,
+  ): Promise<PrepareValidationBetResult>;
   placeBetForUser(
     input: PlacePositionBetInput,
   ): Promise<PlaceValidationBetResult>;
@@ -277,13 +289,32 @@ export interface RespondentWatchlistSurfaceContract {
   ): Promise<UpdateRespondentWatchlistResultViewModel>;
 }
 
+export interface DiscussionSurfaceContract {
+  getDiscussionThread(
+    marketId: string,
+    userId?: string,
+  ): Promise<ArenaDiscussionThreadViewModel>;
+  createDiscussionComment(
+    input: CreateArenaDiscussionCommentInput,
+  ): Promise<ArenaDiscussionThreadViewModel>;
+}
+
 export interface PublicDiscoverySurfaceContract {
   getHome(): Promise<PublicDiscoverPageViewModel>;
   getRanking(
     kind: PublicDiscoveryRankingKind,
   ): Promise<PublicDiscoveryRankingViewModel>;
   getLatestTopics(): Promise<PublicLatestTopicsViewModel>;
+  getClosingSoon(): Promise<PublicClosingSoonViewModel>;
+  getCategoryDirectoryIndex(): Promise<PublicCategoryDirectoryIndexViewModel>;
   getCategoryDirectory(
     pathname: string,
   ): Promise<PublicCategoryDirectoryViewModel | null>;
+}
+
+export interface PublicResultSurfaceContract {
+  listSettledResults(): Promise<PublicSettledResultsViewModel>;
+  getIntegrityOverview(
+    propositionId?: string,
+  ): Promise<PublicIntegrityOverviewViewModel>;
 }

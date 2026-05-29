@@ -48,9 +48,23 @@ export class ArenaInternalPropositionsController {
     return this.propositions.getPropositionDetail(propositionId);
   }
 
+  @Get(":propositionId/rehearsal-checkpoints")
+  listValidationRehearsalCheckpoints(
+    @Param("propositionId") propositionId: string,
+  ) {
+    return this.propositions.listValidationRehearsalCheckpoints(propositionId);
+  }
+
   @Get(":propositionId/export")
   exportProposition(@Param("propositionId") propositionId: string) {
     return this.propositions.exportPropositionAudit(propositionId);
+  }
+
+  @Get(":propositionId/evidence-bundle")
+  exportPropositionEvidenceBundle(
+    @Param("propositionId") propositionId: string,
+  ) {
+    return this.propositions.exportPropositionEvidenceBundle(propositionId);
   }
 
   @Post(":propositionId/approve")

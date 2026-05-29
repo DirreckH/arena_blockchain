@@ -7,6 +7,9 @@ const {
   normalizeAddress,
 } = require("./_validation-common.cjs");
 
+const ROOT_DIR = process.cwd();
+const ENV_PATH = path.resolve(ROOT_DIR, ".env");
+
 async function grantRoleIfNeeded(contract, roleName, account) {
   if (!account) {
     return;
@@ -26,7 +29,7 @@ async function grantRoleIfNeeded(contract, roleName, account) {
 }
 
 async function main() {
-  loadEnvFile();
+  loadEnvFile(ENV_PATH, { override: true });
 
   const [deployer] = await ethers.getSigners();
   const admin = process.env.ARENA_VALIDATION_ADMIN_ADDRESS || deployer.address;
@@ -79,8 +82,27 @@ async function main() {
   );
   fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
   console.log("Deployment info saved to:", outputPath);
+  updateEnvFileContractAddress(contract.address);
   console.log("Next env update:");
   console.log(`ARENA_VALIDATION_CONTRACT_ADDRESS=${contract.address}`);
+}
+
+function updateEnvFileContractAddress(contractAddress) {
+  if (!fs.existsSync(ENV_PATH)) {
+    return;
+  }
+
+  const contents = fs.readFileSync(ENV_PATH, "utf8");
+  const nextLine = `ARENA_VALIDATION_CONTRACT_ADDRESS=${contractAddress}`;
+  const nextContents = contents.match(/^ARENA_VALIDATION_CONTRACT_ADDRESS=/m)
+    ? contents.replace(
+        /^ARENA_VALIDATION_CONTRACT_ADDRESS=.*$/m,
+        nextLine,
+      )
+    : `${contents.replace(/\n*$/u, "\n")}${nextLine}\n`;
+
+  fs.writeFileSync(ENV_PATH, nextContents);
+  console.log("Updated .env validation contract address.");
 }
 
 main()

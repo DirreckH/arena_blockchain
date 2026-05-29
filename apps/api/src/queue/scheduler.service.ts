@@ -2,7 +2,6 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PinoLogger } from "nestjs-pino";
 
-import { PropositionLifecycleAutomationService } from "../arena/services/proposition-lifecycle-automation.service";
 import { ValidationChainAlertService } from "../arena/validation-chain/validation-chain-alert.service";
 import { AppConfigService } from "../config/app-config.service";
 import { AppQueueService } from "./queue.service";
@@ -14,7 +13,6 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: AppConfigService,
     private readonly queueService: AppQueueService,
-    private readonly propositionLifecycle: PropositionLifecycleAutomationService,
     private readonly validationChainAlerts: ValidationChainAlertService,
     private readonly logger: PinoLogger,
   ) {
@@ -70,18 +68,8 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   @Cron(CronExpression.EVERY_MINUTE)
   async runPropositionLifecycleAutomation(): Promise<void> {
     try {
-      const result =
-        await this.propositionLifecycle.runDuePropositionTransitions();
-      const processedCount =
-        result.published.processedCount +
-        result.revealPrepared.processedCount +
-        result.settled.processedCount;
-      if (processedCount > 0) {
-        this.logger.info(
-          result,
-          "Ran proposition lifecycle automation",
-        );
-      }
+      const job = await this.queueService.enqueuePropositionLifecycleAutomation();
+      this.logger.debug({ job }, "Enqueued proposition lifecycle automation job");
     } catch (error) {
       this.logger.error(
         {
@@ -91,6 +79,30 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
               : "Unknown proposition lifecycle automation error",
         },
         "Failed to run proposition lifecycle automation",
+      );
+    }
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async runRequesterComparisonSetDeliveryAutomation(): Promise<void> {
+    try {
+      const job =
+        await this.queueService.enqueueRequesterComparisonSetDeliveryAutomation({
+          requestedAt: new Date().toISOString(),
+        });
+      this.logger.debug(
+        { job },
+        "Enqueued requester comparison set delivery automation job",
+      );
+    } catch (error) {
+      this.logger.error(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown requester comparison set delivery automation error",
+        },
+        "Failed to run requester comparison set delivery automation",
       );
     }
   }

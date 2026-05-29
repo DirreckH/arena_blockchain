@@ -438,7 +438,7 @@ export interface PlaceBetInput {
   propositionId: string;
   marketId: string;
   userId: string;
-  chainId: number;
+  chainId?: number;
   selectedOption: BinaryOption;
   stakeAmount: string;
   placedAt: TimestampInput;

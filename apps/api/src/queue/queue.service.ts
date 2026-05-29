@@ -9,6 +9,8 @@ import type { ValidationChainCommandJobPayload } from "../arena/validation-chain
 import {
   AUTH_QUEUE,
   AUTH_PLACEHOLDER_JOB,
+  PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+  REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
   SCHEDULER_HEARTBEAT_JOB,
   SCHEDULER_QUEUE,
   SYSTEM_FAILURE_DEMO_JOB,
@@ -25,6 +27,12 @@ import {
   toJobOptions,
 } from "./queue-job-options";
 import { RedisService } from "./redis.service";
+
+const VALIDATION_CHAIN_SYNC_JOB_ID = "validation-chain:sync";
+const PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID =
+  "automation:proposition-lifecycle";
+const REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID =
+  "automation:requester-comparison-set-delivery";
 
 @Injectable()
 export class AppQueueService {
@@ -63,6 +71,8 @@ export class AppQueueService {
   async enqueueValidationChainSync(
     payload: Record<string, unknown> = {},
   ): Promise<EnqueuedJobSnapshot> {
+    await this.releaseFinishedSchedulerJob(VALIDATION_CHAIN_SYNC_JOB_ID);
+
     return this.enqueueJob(
       this.schedulerQueue,
       SCHEDULER_QUEUE,
@@ -72,6 +82,9 @@ export class AppQueueService {
         ...payload,
       },
       SAFE_RETRY_JOB_POLICY,
+      {
+        jobId: VALIDATION_CHAIN_SYNC_JOB_ID,
+      },
     );
   }
 
@@ -79,6 +92,10 @@ export class AppQueueService {
     payload: ValidationChainCommandJobPayload,
     overrides: Partial<JobsOptions> = {},
   ): Promise<EnqueuedJobSnapshot> {
+    const jobId = `validation-chain:${payload.command}:${payload.propositionId}`;
+
+    await this.releaseFinishedSchedulerJob(jobId);
+
     return this.enqueueJob(
       this.schedulerQueue,
       SCHEDULER_QUEUE,
@@ -86,8 +103,52 @@ export class AppQueueService {
       payload as unknown as Record<string, unknown>,
       SAFE_RETRY_JOB_POLICY,
       {
-        jobId: `validation-chain:${payload.command}:${payload.propositionId}`,
+        jobId,
         ...overrides,
+      },
+    );
+  }
+
+  async enqueuePropositionLifecycleAutomation(
+    payload: Record<string, unknown> = {},
+  ): Promise<EnqueuedJobSnapshot> {
+    await this.releaseFinishedSchedulerJob(
+      PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID,
+    );
+
+    return this.enqueueJob(
+      this.schedulerQueue,
+      SCHEDULER_QUEUE,
+      PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+      {
+        requestedAt: new Date().toISOString(),
+        ...payload,
+      },
+      SAFE_RETRY_JOB_POLICY,
+      {
+        jobId: PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID,
+      },
+    );
+  }
+
+  async enqueueRequesterComparisonSetDeliveryAutomation(
+    payload: Record<string, unknown> = {},
+  ): Promise<EnqueuedJobSnapshot> {
+    await this.releaseFinishedSchedulerJob(
+      REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID,
+    );
+
+    return this.enqueueJob(
+      this.schedulerQueue,
+      SCHEDULER_QUEUE,
+      REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
+      {
+        requestedAt: new Date().toISOString(),
+        ...payload,
+      },
+      SAFE_RETRY_JOB_POLICY,
+      {
+        jobId: REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID,
       },
     );
   }
@@ -220,6 +281,22 @@ export class AppQueueService {
           error instanceof Error ? error.message : "Unknown queue inspection error",
       };
     }
+  }
+
+  private async releaseFinishedSchedulerJob(
+    jobId: string,
+  ): Promise<void> {
+    const job = await this.schedulerQueue.getJob(jobId);
+    if (!job) {
+      return;
+    }
+
+    const state = await job.getState();
+    if (state !== "completed" && state !== "failed") {
+      return;
+    }
+
+    await job.remove();
   }
 
   private resolveQueuePolicy(queueName: string): QueueJobPolicy {

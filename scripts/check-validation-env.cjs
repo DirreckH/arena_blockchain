@@ -36,7 +36,7 @@ const optionalAddressPairs = [
 ];
 
 function main() {
-  const envState = loadEnvFile();
+  const envState = loadEnvFile(undefined, { override: true });
   info(
     envState.exists
       ? `Loaded .env from ${envState.envPath}`

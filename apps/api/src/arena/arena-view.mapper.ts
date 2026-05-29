@@ -123,6 +123,8 @@ export const toSharedMarket = (
   propositionId: market.propositionId,
   settlementTarget: market.settlementTarget,
   status: market.status,
+  chainMarketId: market.chainMarketId,
+  chainStatus: market.chainStatus,
   currentPublicProgress: market.currentPublicProgress,
   lastPublicResult: market.lastPublicResult,
   liveAt: toIso(market.liveAt),

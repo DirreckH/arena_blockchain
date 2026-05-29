@@ -736,10 +736,13 @@ export class PropositionDraftService {
     proposition: Proposition,
     auditEvents: Awaited<ReturnType<InternalAuditService["listByEntity"]>>,
   ) {
-    const latestWithdrawIndex = auditEvents.findIndex(
+    // 逆序搜索获取最新事件位置（而非首个匹配）
+    const latestWithdrawIndex = findLastIndex(
+      auditEvents,
       (event) => event.action === PROPOSITION_AUDIT_ACTIONS.withdrawn,
     );
-    const latestSubmitIndex = auditEvents.findIndex(
+    const latestSubmitIndex = findLastIndex(
+      auditEvents,
       (event) => event.action === PROPOSITION_AUDIT_ACTIONS.submittedForReview,
     );
 
@@ -796,4 +799,21 @@ export class PropositionDraftService {
 
     return proposition;
   }
+}
+
+/**
+ * 逆序搜索数组中最后一个匹配项的索引。
+ * 与 Array.prototype.findIndex 不同，此函数从数组末尾向前搜索，
+ * 确保在多轮 submit/withdraw 周期中返回最新事件的位置。
+ */
+function findLastIndex<T>(
+  arr: readonly T[],
+  predicate: (item: T) => boolean,
+): number {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (predicate(arr[i])) {
+      return i;
+    }
+  }
+  return -1;
 }

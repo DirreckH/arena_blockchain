@@ -20,6 +20,7 @@ import { PropositionRepository } from "../repositories/proposition.repository";
 import { EffectiveSampleCounterService } from "./effective-sample-counter.service";
 import { MarketService } from "./market.service";
 import { PropositionStateService } from "./proposition-state.service";
+import { ValidationRehearsalCheckpointService } from "./validation-rehearsal-checkpoint.service";
 
 const toIso = (value: Date | null): string | null =>
   value ? value.toISOString() : null;
@@ -34,6 +35,7 @@ export class ValidationSettlementService {
     private readonly marketService: MarketService,
     private readonly propositionState: PropositionStateService,
     private readonly counters: EffectiveSampleCounterService,
+    private readonly rehearsalCheckpoints: ValidationRehearsalCheckpointService,
   ) {}
 
   async settleValidationMarket(
@@ -45,8 +47,9 @@ export class ValidationSettlementService {
       const market = await this.getRequiredMarketForProposition(proposition.id, tx);
       const settledAt = toDate(input.settledAt);
       const platformFeeBps = input.platformFeeBps ?? 0;
+      const wasAlreadySettled = proposition.status === "settled";
 
-      if (proposition.status === "settled") {
+      if (wasAlreadySettled) {
         this.assertOfficialResultRecorded(proposition);
         await this.counters.maybeRefreshPublicProgress(proposition.id, tx);
 
@@ -100,6 +103,14 @@ export class ValidationSettlementService {
         proposition.id,
         tx,
       );
+      await this.recordAutomaticSettlementCheckpoint(
+        {
+          proposition: settledProposition,
+          market: settledMarket,
+          settledAt,
+        },
+        tx,
+      );
 
       return this.buildSettlementSnapshot(settledProposition, settledMarket, tx);
     });
@@ -138,6 +149,48 @@ export class ValidationSettlementService {
       isVoidSettlement: proposition.resultKind === "void",
       isTieSettlement: proposition.voidReason === "tie",
     };
+  }
+
+  private async recordAutomaticSettlementCheckpoint(
+    input: {
+      proposition: Proposition;
+      market: Awaited<ReturnType<MarketRepository["findByPropositionId"]>> extends infer TResult
+        ? NonNullable<TResult>
+        : never;
+      settledAt: Date;
+    },
+    db: ArenaDbClient,
+  ): Promise<void> {
+    const bets = await this.bets.listByMarketId(input.market.id, db);
+    const terminalBetCount = bets.filter(
+      (bet) => bet.status === "settled" && bet.settlementOutcome !== null,
+    ).length;
+    const projectedSyncedBetCount = bets.filter(
+      (bet) => bet.chainSyncedAt !== null,
+    ).length;
+
+    await this.rehearsalCheckpoints.recordCheckpoint(
+      {
+        propositionId: input.proposition.id,
+        stepId: "projection_and_settlement",
+        status: "complete",
+        reason: "validation_rehearsal.auto.local_settlement_converged",
+        evidence: [
+          `propositionStatus=${input.proposition.status}`,
+          `propositionSettledAt=${toIso(input.proposition.settledAt) ?? "missing"}`,
+          `marketStatus=${input.market.status}`,
+          `marketSettledAt=${toIso(input.market.settledAt) ?? "missing"}`,
+          `chainStatus=${input.market.chainStatus ?? "missing"}`,
+          `chainResolvedAt=${toIso(input.market.chainResolvedAt) ?? "missing"}`,
+          `chainCancelledAt=${toIso(input.market.chainCancelledAt) ?? "missing"}`,
+          `terminalBetCount=${String(terminalBetCount)}`,
+          `projectedSyncedBetCount=${String(projectedSyncedBetCount)}`,
+        ],
+        txHash: input.market.resolutionTxHash ?? input.market.cancelTxHash ?? undefined,
+        recordedAt: input.settledAt.toISOString(),
+      },
+      db,
+    );
   }
 
   private async getRequiredProposition(

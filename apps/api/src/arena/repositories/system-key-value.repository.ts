@@ -42,4 +42,39 @@ export class SystemKeyValueRepository {
       data: create,
     });
   }
+
+  async listByKeyPrefix(
+    keyPrefix: string,
+    db: ArenaDbClient = this.prisma,
+  ): Promise<SystemKeyValue[]> {
+    return db.systemKeyValue.findMany({
+      where: {
+        key: {
+          startsWith: keyPrefix,
+        },
+        deletedAt: null,
+      },
+      orderBy: [
+        { updatedAt: "desc" },
+        { createdAt: "desc" },
+      ],
+    });
+  }
+
+  async softDeleteByKey(
+    key: string,
+    db: ArenaDbClient = this.prisma,
+  ): Promise<SystemKeyValue | null> {
+    const existing = await this.findByKey(key, db);
+    if (!existing) {
+      return null;
+    }
+
+    return db.systemKeyValue.update({
+      where: { id: existing.id },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+  }
 }

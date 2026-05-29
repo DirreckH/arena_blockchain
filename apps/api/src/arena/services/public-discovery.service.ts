@@ -1,6 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import type {
   PublicCategoryDirectoryViewModel,
+  PublicCategoryDirectoryIndexViewModel,
+  PublicClosingSoonItemViewModel,
+  PublicClosingSoonViewModel,
   PublicDiscoverPageSectionViewModel,
   PublicDiscoverPageViewModel,
   PublicDiscoveryCategoryViewModel,
@@ -23,15 +26,20 @@ type DiscoveryDisplayCategoryId =
   | "culture";
 
 type DirectoryConfig = {
+  slug: string;
   pathname: string;
   label: string;
   title: string;
+  directoryLabel: string;
+  description: string;
   marketFilter: (market: ValidationMarketViewModel) => boolean;
 };
 
 const MAX_RANKING_ITEMS = 24;
 const DISCOVER_FEATURED_LIMIT = 6;
 const SPARKLINE_POINTS = 10;
+const CLOSING_SOON_URGENT_WINDOW_MS = 3 * 60 * 60 * 1000;
+const MAX_UPCOMING_CLOSING_SOON_ITEMS = 6;
 
 const displayCategoryByArenaCategory: Record<
   ValidationMarketViewModel["category"],
@@ -59,72 +67,105 @@ const displayCategoryLabels: Record<
 
 const directoryConfigs: DirectoryConfig[] = [
   {
+    slug: "politics",
     pathname: "/zh/politics",
-    label: "Politics",
-    title: "Politics",
+    label: "公共政策",
+    title: "政治",
+    directoryLabel: "公共政策",
+    description: "政府、立法与公共治理",
     marketFilter: (market) => market.category === "politics",
   },
   {
+    slug: "sports-live",
     pathname: "/zh/sports/live",
-    label: "Sports",
-    title: "Sports",
+    label: "体育",
+    title: "体育",
+    directoryLabel: "体育结果",
+    description: "赛事结果与运动员表现",
     marketFilter: (market) => market.category === "sports",
   },
   {
+    slug: "crypto",
     pathname: "/zh/crypto",
-    label: "Crypto",
-    title: "Crypto",
+    label: "加密",
+    title: "加密",
+    directoryLabel: "加密观察",
+    description: "区块链与数字资产市场",
     marketFilter: (market) => market.category === "ai",
   },
   {
+    slug: "tech",
     pathname: "/zh/tech",
-    label: "Tech",
-    title: "Tech",
+    label: "科技",
+    title: "科技",
+    directoryLabel: "科技调研",
+    description: "产品、开发者与科技生态",
     marketFilter: (market) => market.category === "ai",
   },
   {
+    slug: "geopolitics",
     pathname: "/zh/geopolitics",
-    label: "Geopolitics",
-    title: "Geopolitics",
+    label: "地缘",
+    title: "地缘",
+    directoryLabel: "地缘事件",
+    description: "国际局势与区域冲突",
     marketFilter: (market) =>
       market.category === "politics" || market.category === "general",
   },
   {
+    slug: "finance",
     pathname: "/zh/finance",
-    label: "Finance",
-    title: "Finance",
+    label: "金融",
+    title: "金融",
+    directoryLabel: "金融观察",
+    description: "资产价格与宏观经济",
     marketFilter: (market) =>
       market.category === "brand_research" || market.category === "general",
   },
   {
+    slug: "pop-culture",
     pathname: "/zh/pop-culture",
-    label: "Culture",
-    title: "Culture",
+    label: "文化",
+    title: "文化",
+    directoryLabel: "文化调研",
+    description: "娱乐、媒体与大众文化",
     marketFilter: (market) => market.category === "entertainment",
   },
   {
+    slug: "economy",
     pathname: "/zh/economy",
-    label: "Economy",
-    title: "Economy",
+    label: "经济",
+    title: "经济",
+    directoryLabel: "经济观察",
+    description: "就业、消费与产业数据",
     marketFilter: (market) =>
       market.category === "brand_research" || market.category === "general",
   },
   {
+    slug: "weather",
     pathname: "/zh/weather",
-    label: "Weather",
-    title: "Weather",
+    label: "天气",
+    title: "天气",
+    directoryLabel: "天气滚动命题",
+    description: "天气与滚动观察命题",
     marketFilter: (market) => market.category === "general",
   },
   {
+    slug: "surveys",
     pathname: "/zh/surveys",
-    label: "Surveys",
-    title: "Surveys",
+    label: "调研",
+    title: "调研",
+    directoryLabel: "调研网络",
+    description: "开发者、消费者与品牌调研",
     marketFilter: (market) => market.category === "brand_research",
   },
   {
+    slug: "rolling",
     pathname: "/zh/rolling",
-    label: "Rolling",
-    title: "Rolling",
+    label: "滚动命题",
+    title: "滚动命题",
+    directoryLabel: "滚动命题",
+    description: "周期更新与上期结果归档",
     marketFilter: (market) => market.category === "general",
   },
 ];
@@ -145,6 +186,40 @@ const parseIsoTime = (value: string | null | undefined): number => {
 
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const resolveClosingSoonRevealAt = (
+  market: ValidationMarketViewModel,
+): string | null =>
+  market.publicProgress.timing.deadlineAt ??
+  market.publicProgress.timing.minDurationEndsAt ??
+  market.bettingClosesAt ??
+  null;
+
+const toClosingSoonItem = (
+  market: ValidationMarketViewModel,
+  referenceNowMs: number,
+): PublicClosingSoonItemViewModel | null => {
+  if (market.publicProgress.publicState.phase === "settled") {
+    return null;
+  }
+
+  const revealAt = resolveClosingSoonRevealAt(market);
+  const revealAtMs = parseIsoTime(revealAt);
+  if (revealAtMs <= 0) {
+    return null;
+  }
+
+  const differenceMs = revealAtMs - referenceNowMs;
+  if (differenceMs <= 0) {
+    return null;
+  }
+
+  return {
+    marketId: market.marketId,
+    revealAt,
+    differenceMs,
+  };
 };
 
 const compareByRecency = (
@@ -337,6 +412,19 @@ const buildSidebarItems = (
 export class PublicDiscoveryService {
   constructor(private readonly validationViews: ValidationViewService) {}
 
+  async getCategoryDirectoryIndex(): Promise<PublicCategoryDirectoryIndexViewModel> {
+    return {
+      items: directoryConfigs.map((config) => ({
+        slug: config.slug,
+        pathname: config.pathname,
+        label: config.label,
+        title: config.title,
+        directoryLabel: config.directoryLabel,
+        description: config.description,
+      })),
+    };
+  }
+
   async getHome(): Promise<PublicDiscoverPageViewModel> {
     const markets = await this.validationViews.listMarkets();
     const hotRanking = this.buildRanking(markets, "hot");
@@ -390,6 +478,28 @@ export class PublicDiscoveryService {
   async getLatestTopics(): Promise<PublicLatestTopicsViewModel> {
     const markets = await this.validationViews.listMarkets();
     return this.buildLatestTopics(markets);
+  }
+
+  async getClosingSoon(): Promise<PublicClosingSoonViewModel> {
+    const generatedAt = new Date().toISOString();
+    const referenceNowMs = Date.parse(generatedAt);
+    const orderedItems = (await this.validationViews.listMarkets())
+      .map((market) => toClosingSoonItem(market, referenceNowMs))
+      .filter(
+        (item): item is PublicClosingSoonItemViewModel => item !== null,
+      )
+      .sort((left, right) => left.differenceMs - right.differenceMs);
+
+    return {
+      generatedAt,
+      urgentWindowMs: CLOSING_SOON_URGENT_WINDOW_MS,
+      urgent: orderedItems.filter(
+        (item) => item.differenceMs <= CLOSING_SOON_URGENT_WINDOW_MS,
+      ),
+      upcoming: orderedItems
+        .filter((item) => item.differenceMs > CLOSING_SOON_URGENT_WINDOW_MS)
+        .slice(0, MAX_UPCOMING_CLOSING_SOON_ITEMS),
+    };
   }
 
   async getCategoryDirectory(

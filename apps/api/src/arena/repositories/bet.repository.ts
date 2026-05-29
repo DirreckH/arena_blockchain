@@ -4,6 +4,17 @@ import type { Bet, Prisma } from "@prisma/client";
 import { PrismaService } from "../../database/prisma.service";
 import type { ArenaDbClient } from "../prisma.types";
 
+type UnsyncedProjectedBetBacklogRecord = Prisma.BetGetPayload<{
+  include: {
+    market: {
+      select: {
+        chainMarketId: true;
+        chainStatus: true;
+      };
+    };
+  };
+}>;
+
 @Injectable()
 export class BetRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -54,6 +65,37 @@ export class BetRepository {
     return db.bet.findMany({
       where: { userId },
       orderBy: [{ settledAt: "desc" }, { placedAt: "desc" }],
+    });
+  }
+
+  async listUnsyncedProjectedBacklog(
+    limit: number,
+    db: ArenaDbClient = this.prisma,
+  ): Promise<UnsyncedProjectedBetBacklogRecord[]> {
+    return db.bet.findMany({
+      where: {
+        chainSyncedAt: null,
+        market: {
+          chainMarketId: {
+            not: null,
+          },
+          chainStatus: {
+            notIn: ["resolved", "cancelled"],
+          },
+        },
+      },
+      include: {
+        market: {
+          select: {
+            chainMarketId: true,
+            chainStatus: true,
+          },
+        },
+      },
+      orderBy: {
+        placedAt: "asc",
+      },
+      take: limit,
     });
   }
 

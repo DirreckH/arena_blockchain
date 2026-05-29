@@ -171,4 +171,41 @@ export class ValidationChainEventRepository {
 
     return events.map((event) => event.id);
   }
+
+  async listByChainReferences(
+    input: {
+      propositionChainId?: string | null;
+      marketChainId?: string | null;
+    },
+    db: ArenaDbClient = this.prisma,
+  ): Promise<ValidationChainEvent[]> {
+    const orClauses: Prisma.ValidationChainEventWhereInput[] = [];
+
+    if (input.propositionChainId) {
+      orClauses.push({
+        propositionChainId: input.propositionChainId,
+      });
+    }
+
+    if (input.marketChainId) {
+      orClauses.push({
+        marketChainId: input.marketChainId,
+      });
+    }
+
+    if (orClauses.length === 0) {
+      return [];
+    }
+
+    return db.validationChainEvent.findMany({
+      where: {
+        OR: orClauses,
+      },
+      orderBy: [
+        { blockNumber: "asc" },
+        { transactionIndex: "asc" },
+        { logIndex: "asc" },
+      ],
+    });
+  }
 }

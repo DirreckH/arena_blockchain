@@ -32,6 +32,16 @@ export class ArenaPublicDiscoveryController {
     return this.discovery.getLatestTopics();
   }
 
+  @Get("closing-soon")
+  getClosingSoon() {
+    return this.discovery.getClosingSoon();
+  }
+
+  @Get("categories")
+  getCategoryDirectoryIndex() {
+    return this.discovery.getCategoryDirectoryIndex();
+  }
+
   @Get("categories/:slug")
   getCategoryDirectory(@Param("slug") slug: string) {
     return this.discovery.getCategoryDirectory(this.toCategoryPathname(slug));

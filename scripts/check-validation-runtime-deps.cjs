@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const { spawnSync } = require("node:child_process");
 const net = require("node:net");
 const { URL } = require("node:url");
 
@@ -8,29 +9,18 @@ const { fail, info, loadEnvFile, pass } = require("./_validation-common.cjs");
 const CHECK_API = process.argv.includes("--check-api");
 
 async function main() {
-  const envState = loadEnvFile();
+  const envState = loadEnvFile(undefined, { override: true });
   info(
     envState.exists
       ? `Loaded .env from ${envState.envPath}`
       : `No .env file found at ${envState.envPath}; using process env only`,
   );
 
-  const checks = [];
-
-  if (process.env.DATABASE_URL) {
-    checks.push(checkTcpUrl("postgres", process.env.DATABASE_URL));
-  }
-  if (process.env.REDIS_URL) {
-    checks.push(checkTcpUrl("redis", process.env.REDIS_URL));
-  }
-  if (process.env.RPC_URL) {
-    checks.push(checkRpc(process.env.RPC_URL, process.env.CHAIN_ID));
-  }
-  if (CHECK_API) {
-    checks.push(checkApi(process.env.PORT || "4000"));
-  }
-
-  const results = await Promise.all(checks);
+  const inspection = await inspectRuntimeDependencies({
+    env: process.env,
+    checkApi: CHECK_API,
+  });
+  const { results } = inspection;
   const failed = results.filter((result) => !result.ok);
 
   for (const result of results) {
@@ -40,6 +30,8 @@ async function main() {
       fail(`${result.name}: ${result.message}`);
     }
   }
+
+  emitLocalRemediation(results);
 
   if (failed.length > 0) {
     process.exitCode = 1;
@@ -144,4 +136,108 @@ function defaultPort(protocol) {
   }
 }
 
-main();
+function emitLocalRemediation(results) {
+  if (process.env.ARENA_VALIDATION_ENVIRONMENT !== "local") {
+    return;
+  }
+
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length === 0) {
+    return;
+  }
+
+  const failedNames = new Set(failed.map((result) => result.name));
+  const dockerStatus = detectDockerCli();
+  const needsContainerRuntime =
+    failedNames.has("postgres") || failedNames.has("redis");
+
+  if (needsContainerRuntime && !dockerStatus.available) {
+    info(
+      "Local runtime blocker: Docker or another compatible container runtime is not available in PATH, so pnpm run deps:up cannot start Postgres or Redis here.",
+    );
+    info(
+      "Install Docker Desktop or provide equivalent local Postgres and Redis services, then rerun pnpm run validation:deps:check.",
+    );
+  } else if (needsContainerRuntime) {
+    info(
+      "Local runtime blocker: Postgres or Redis is down. Start them with pnpm run deps:up, then rerun pnpm run validation:deps:check.",
+    );
+  }
+
+  if (failedNames.has("rpc")) {
+    info(
+      "Local runtime blocker: the Hardhat/local RPC is unavailable. Start it with pnpm exec hardhat node, redeploy the validation contract if needed, then rerun pnpm run validation:deps:check and pnpm run validation:chain:check.",
+    );
+  }
+}
+
+function detectDockerCli() {
+  try {
+    const result = spawnSync("docker", ["--version"], {
+      encoding: "utf8",
+      timeout: 3000,
+      windowsHide: true,
+    });
+
+    if (result.error) {
+      return {
+        available: false,
+        reason: result.error.message,
+      };
+    }
+
+    return {
+      available: result.status === 0,
+      reason:
+        result.status === 0
+          ? null
+          : (result.stderr || result.stdout || `exit ${result.status}`).trim(),
+    };
+  } catch (error) {
+    return {
+      available: false,
+      reason: error instanceof Error ? error.message : "unknown docker detection error",
+    };
+  }
+}
+
+async function inspectRuntimeDependencies(options = {}) {
+  const env = options.env || process.env;
+  const shouldCheckApi = options.checkApi === true;
+  const checkTcpUrlImpl = options.checkTcpUrl || checkTcpUrl;
+  const checkRpcImpl = options.checkRpc || checkRpc;
+  const checkApiImpl = options.checkApiImpl || checkApi;
+  const checks = [];
+
+  if (env.DATABASE_URL) {
+    checks.push(checkTcpUrlImpl("postgres", env.DATABASE_URL));
+  }
+  if (env.REDIS_URL) {
+    checks.push(checkTcpUrlImpl("redis", env.REDIS_URL));
+  }
+  if (env.RPC_URL) {
+    checks.push(checkRpcImpl(env.RPC_URL, env.CHAIN_ID));
+  }
+  if (shouldCheckApi) {
+    checks.push(checkApiImpl(env.PORT || "4000"));
+  }
+
+  const results = await Promise.all(checks);
+  const failedNames = results
+    .filter((result) => !result.ok)
+    .map((result) => result.name);
+
+  return {
+    ok: failedNames.length === 0,
+    failedNames,
+    results,
+  };
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  inspectRuntimeDependencies,
+};

@@ -1,16 +1,20 @@
 import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
-import type { PlaceValidationBetResult } from "@arena/shared";
+import type {
+  PlaceValidationBetResult,
+  PrepareValidationBetResult,
+} from "@arena/shared";
 
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
-import { PlaceMarketBetDto } from "./dto/place-market-bet.dto";
-import { BetService } from "./services/bet.service";
+import { ConfirmMarketBetDto } from "./dto/confirm-market-bet.dto";
+import { PrepareMarketBetDto } from "./dto/prepare-market-bet.dto";
+import { ValidationBetExecutionService } from "./services/validation-bet-execution.service";
 import { ValidationViewService } from "./services/validation-view.service";
 
 @Controller("arena/validation")
 export class ArenaValidationController {
   constructor(
     private readonly validationViews: ValidationViewService,
-    private readonly bets: BetService,
+    private readonly betExecution: ValidationBetExecutionService,
   ) {}
 
   @Get("markets")
@@ -28,15 +32,15 @@ export class ArenaValidationController {
     return this.validationViews.getMarket(marketId, this.getUserId(request));
   }
 
-  @Post("markets/:marketId/bets")
-  async placeBet(
+  @Post("markets/:marketId/bets/prepare")
+  async prepareBet(
     @Param("marketId") marketId: string,
-    @Body() body: PlaceMarketBetDto,
+    @Body() body: PrepareMarketBetDto,
     @Req() request: RequestWithUser,
-  ): Promise<PlaceValidationBetResult> {
+  ): Promise<PrepareValidationBetResult> {
     const userId = this.getUserId(request);
     const chainId = Number(request.user?.chainId ?? 0);
-    const bet = await this.bets.placeBet({
+    return this.betExecution.prepare({
       propositionId: body.propositionId,
       marketId,
       userId,
@@ -45,24 +49,27 @@ export class ArenaValidationController {
       stakeAmount: body.stakeAmount,
       placedAt: body.placedAt,
     });
+  }
 
-    return {
-      marketView: await this.validationViews.getMarket(marketId, userId),
-      positionId: bet.id,
-      execution: {
-        mode: "wallet_authenticated_account_write",
-        stage: "position_recorded",
-        requiresWalletSignature: true,
-        usesDemoFlow: false,
-        chainId,
-        txHash: null,
-        submittedAt: bet.placedAt.toISOString(),
-        recordedAt: bet.placedAt.toISOString(),
-        statusLabel: "Position recorded",
-        detail:
-          "Arena validated the wallet-authenticated session and recorded the position in the live account write path.",
-      },
-    };
+  @Post("markets/:marketId/bets/confirm")
+  async confirmBet(
+    @Param("marketId") marketId: string,
+    @Body() body: ConfirmMarketBetDto,
+    @Req() request: RequestWithUser,
+  ): Promise<PlaceValidationBetResult> {
+    const userId = this.getUserId(request);
+    const chainId = Number(request.user?.chainId ?? 0);
+
+    return this.betExecution.confirm({
+      propositionId: body.propositionId,
+      marketId,
+      userId,
+      chainId,
+      selectedOption: body.selectedOption as 0 | 1,
+      stakeAmount: body.stakeAmount,
+      placedAt: body.placedAt,
+      txHash: body.txHash,
+    });
   }
 
   private getUserId(request: RequestWithUser): string {

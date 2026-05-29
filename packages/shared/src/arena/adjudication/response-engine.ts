@@ -128,9 +128,6 @@ export class ResponseEngine {
       };
     }
 
-    const oldLatest: Response = { ...latest, isLatest: false };
-    await this.deps.responses.update(oldLatest);
-
     const updatedTask: DispatchTask = {
       ...task,
       status: "submitted",
@@ -166,6 +163,11 @@ export class ResponseEngine {
 
     const persistedResponse = await this.deps.responses.create(response);
     await this.deps.reviews.create(review);
+
+    // 新响应创建成功后才将旧响应标记为非最新，
+    // 防止创建失败导致系统中没有 latest 响应的不一致状态
+    const oldLatest: Response = { ...latest, isLatest: false };
+    await this.deps.responses.update(oldLatest);
 
     return {
       response: persistedResponse,

@@ -168,4 +168,45 @@ describe("validation chain config and contract service", () => {
       /32-byte hex private key/i,
     );
   });
+
+  it("fails env validation when webhook bearer token mappings are malformed", () => {
+    assert.throws(
+      () =>
+        validateEnv({
+          NODE_ENV: "test",
+          PORT: 4000,
+          DATABASE_URL:
+            "postgresql://arena:arena@127.0.0.1:5432/arena?schema=public",
+          REDIS_URL: "redis://127.0.0.1:6379/0",
+          JWT_SECRET: "replace-with-a-long-random-secret",
+          AUTH_CHALLENGE_TTL: 300,
+          RPC_URL: "http://127.0.0.1:8545",
+          CHAIN_ID: 1337,
+          ARENA_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000001",
+          ARENA_VALIDATION_ENVIRONMENT: "local",
+          ARENA_VALIDATION_CONTRACT_ADDRESS:
+            "0x0000000000000000000000000000000000000002",
+          ARENA_VALIDATION_SYNC_CONFIRMATIONS: 1,
+          ARENA_VALIDATION_SYNC_BATCH_SIZE: 500,
+          REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS:
+            "delivery_policy:token_ok,missing_separator",
+          OPERATOR_WALLET_ADDRESSES: "",
+          ADMIN_WALLET_ADDRESSES: "",
+          SYSTEM_WALLET_ADDRESSES: "",
+        }),
+      /REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS/i,
+    );
+  });
+
+  it("parses webhook bearer token mappings from config", () => {
+    const config = createConfigService({
+      REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS:
+        "delivery_policy:token_one, retry_delivery:token_two ",
+    });
+
+    assert.deepEqual(config.requesterDeliveryWebhookBearerTokens, {
+      delivery_policy: "token_one",
+      retry_delivery: "token_two",
+    });
+  });
 });

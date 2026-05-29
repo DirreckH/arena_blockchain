@@ -103,6 +103,35 @@ export class AppConfigService {
     });
   }
 
+  get requesterDeliveryWebhookBearerTokens(): Record<string, string> {
+    const rawValue = this.configService.get(
+      "REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS",
+      {
+        infer: true,
+      },
+    );
+
+    return rawValue
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .reduce<Record<string, string>>((tokens, entry) => {
+        const separatorIndex = entry.indexOf(":");
+        if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
+          return tokens;
+        }
+
+        const key = entry.slice(0, separatorIndex).trim();
+        const token = entry.slice(separatorIndex + 1).trim();
+        if (key.length === 0 || token.length === 0) {
+          return tokens;
+        }
+
+        tokens[key] = token;
+        return tokens;
+      }, {});
+  }
+
   get operatorWalletAddresses(): string[] {
     return this.parseWalletList("OPERATOR_WALLET_ADDRESSES");
   }

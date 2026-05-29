@@ -32,4 +32,14 @@ export class ArenaInternalMonitoringController {
   getValidationChainHealth() {
     return this.monitoring.getValidationChainHealth();
   }
+
+  @Get("validation-chain/runtime-readiness")
+  getValidationChainRuntimeReadiness() {
+    return this.monitoring.getValidationChainRuntimeReadiness();
+  }
+
+  @Get("runtime-contract")
+  getRuntimeContract() {
+    return this.monitoring.getRuntimeContract();
+  }
 }

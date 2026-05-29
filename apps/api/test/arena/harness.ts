@@ -14,6 +14,7 @@ import type {
 } from "@prisma/client";
 import type { PinoLogger } from "nestjs-pino";
 
+import { AppConfigService } from "../../src/config/app-config.service";
 import { ArenaConflictError } from "../../src/arena/arena.errors";
 import { ArenaIdService } from "../../src/arena/arena-id.service";
 import { BetRepository } from "../../src/arena/repositories/bet.repository";
@@ -36,6 +37,7 @@ import { AccountPreferencesService } from "../../src/arena/services/account-pref
 import { ConsensusClosureService } from "../../src/arena/services/consensus-closure.service";
 import { DispatchEngineService } from "../../src/arena/services/dispatch-engine.service";
 import { DispatchTaskService } from "../../src/arena/services/dispatch-task.service";
+import { DiscussionService } from "../../src/arena/services/discussion.service";
 import { EffectiveSampleCounterService } from "../../src/arena/services/effective-sample-counter.service";
 import { FreezeRevealOrchestratorService } from "../../src/arena/services/freeze-reveal-orchestrator.service";
 import { InternalAuditService } from "../../src/arena/services/internal-audit.service";
@@ -48,6 +50,13 @@ import { PropositionDraftService } from "../../src/arena/services/proposition-dr
 import { PropositionLifecycleAutomationService } from "../../src/arena/services/proposition-lifecycle-automation.service";
 import { PropositionStateService } from "../../src/arena/services/proposition-state.service";
 import { QualityEngineService } from "../../src/arena/services/quality-engine.service";
+import { RequesterComparisonSetService } from "../../src/arena/services/requester-comparison-set.service";
+import { RequesterComparisonSetDeliveryAutomationService } from "../../src/arena/services/requester-comparison-set-delivery-automation.service";
+import { RequesterComparisonSetDeliveryPolicyService } from "../../src/arena/services/requester-comparison-set-delivery-policy.service";
+import { RequesterComparisonSetDeliveryRunService } from "../../src/arena/services/requester-comparison-set-delivery-run.service";
+import { RequesterComparisonSetDeliveryTransportService } from "../../src/arena/services/requester-comparison-set-delivery-transport.service";
+import { RequesterPropositionViewService } from "../../src/arena/services/requester-proposition-view.service";
+import { RequesterReportPresetService } from "../../src/arena/services/requester-report-preset.service";
 import { ResponseReviewService } from "../../src/arena/services/response-review.service";
 import { ResponseService } from "../../src/arena/services/response.service";
 import { RewardLedgerService } from "../../src/arena/services/reward-ledger.service";
@@ -55,11 +64,13 @@ import { ResultViewService } from "../../src/arena/services/result-view.service"
 import { RewardViewService } from "../../src/arena/services/reward-view.service";
 import { ReputationService } from "../../src/arena/services/reputation.service";
 import { TagService } from "../../src/arena/services/tag.service";
+import { ValidationRehearsalCheckpointService } from "../../src/arena/services/validation-rehearsal-checkpoint.service";
 import { ValidationSettlementService } from "../../src/arena/services/validation-settlement.service";
 import { WatchlistService } from "../../src/arena/services/watchlist.service";
 import type { ValidationChainAlertService } from "../../src/arena/validation-chain/validation-chain-alert.service";
 import type { ValidationChainCommandRuntimeService } from "../../src/arena/validation-chain/validation-chain-command-runtime.service";
 import { ValidationChainIdService } from "../../src/arena/validation-chain/validation-chain-id.service";
+import { ValidationContractMarketState } from "../../src/arena/validation-chain/validation-chain.types";
 import { PrismaService } from "../../src/database/prisma.service";
 
 type DispatchTaskRecord = Awaited<
@@ -219,6 +230,7 @@ class FakePropositionRepository {
       status?: Proposition["status"];
       category?: Proposition["category"];
       marketEnabled?: boolean;
+      createdByUserId?: string;
       createdFrom?: Date;
       createdTo?: Date;
     } = {},
@@ -235,6 +247,12 @@ class FakePropositionRepository {
           if (
             filters.marketEnabled !== undefined &&
             item.marketEnabled !== filters.marketEnabled
+          ) {
+            return false;
+          }
+          if (
+            filters.createdByUserId !== undefined &&
+            item.createdByUserId !== filters.createdByUserId
           ) {
             return false;
           }
@@ -919,6 +937,45 @@ class FakeBetRepository {
     return this.listByUserId(userId);
   }
 
+  async listUnsyncedProjectedBacklog(limit: number): Promise<Array<Bet & {
+    market: {
+      chainMarketId: string | null;
+      chainStatus: Market["chainStatus"];
+    };
+  }>> {
+    return clone(
+      this.store.bets
+        .filter((bet) => {
+          if (bet.chainSyncedAt !== null) {
+            return false;
+          }
+
+          const market = this.store.markets.find((item) => item.id === bet.marketId);
+          if (!market || market.chainMarketId === null) {
+            return false;
+          }
+
+          return market.chainStatus !== "resolved" && market.chainStatus !== "cancelled";
+        })
+        .sort((left, right) => left.placedAt.getTime() - right.placedAt.getTime())
+        .slice(0, limit)
+        .map((bet) => {
+          const market = this.store.markets.find((item) => item.id === bet.marketId);
+          if (!market) {
+            throw new Error(`Market ${bet.marketId} not found for bet ${bet.id}`);
+          }
+
+          return {
+            ...bet,
+            market: {
+              chainMarketId: market.chainMarketId,
+              chainStatus: market.chainStatus,
+            },
+          };
+        }),
+    );
+  }
+
   async update(id: string, data: any): Promise<Bet> {
     const record = this.store.bets.find((item) => item.id === id);
     if (!record) {
@@ -1093,6 +1150,35 @@ class FakeSystemKeyValueRepository {
     this.store.systemKeyValues.push(record);
     return clone(record);
   }
+
+  async listByKeyPrefix(keyPrefix: string): Promise<SystemKeyValue[]> {
+    return clone(
+      this.store.systemKeyValues
+        .filter(
+          (item) =>
+            item.key.startsWith(keyPrefix) && item.deletedAt === null,
+        )
+        .sort(
+          (left, right) =>
+            right.updatedAt.getTime() - left.updatedAt.getTime() ||
+            right.createdAt.getTime() - left.createdAt.getTime(),
+        ),
+    );
+  }
+
+  async softDeleteByKey(key: string): Promise<SystemKeyValue | null> {
+    const existing = this.store.systemKeyValues.find(
+      (item) => item.key === key && item.deletedAt === null,
+    );
+    if (!existing) {
+      return null;
+    }
+
+    applyDefinedFields(existing as Record<string, unknown>, {
+      deletedAt: now(),
+    });
+    return clone(existing);
+  }
 }
 
 class FakeInternalAuditEventRepository {
@@ -1162,6 +1248,35 @@ class FakeValidationChainEventRepository {
               event.marketChainId === input.marketChainId),
         )
         .map((event) => event.id),
+    );
+  }
+
+  async listByChainReferences(input: {
+    propositionChainId?: string | null;
+    marketChainId?: string | null;
+  }): Promise<ValidationChainEvent[]> {
+    return clone(
+      this.store.validationChainEvents
+        .filter(
+          (event) =>
+            (input.propositionChainId !== undefined &&
+              input.propositionChainId !== null &&
+              event.propositionChainId === input.propositionChainId) ||
+            (input.marketChainId !== undefined &&
+              input.marketChainId !== null &&
+              event.marketChainId === input.marketChainId),
+        )
+        .sort((left, right) => {
+          if (left.blockNumber !== right.blockNumber) {
+            return left.blockNumber - right.blockNumber;
+          }
+
+          if (left.transactionIndex !== right.transactionIndex) {
+            return left.transactionIndex - right.transactionIndex;
+          }
+
+          return left.logIndex - right.logIndex;
+        }),
     );
   }
 }
@@ -1302,6 +1417,7 @@ class FakeUserTagRepository {
 
 export interface ArenaHarness {
   store: ArenaStore;
+  config: AppConfigService;
   propositionService: PropositionStateService;
   propositionEngineService: PropositionEngineService;
   propositionDraftService: PropositionDraftService;
@@ -1327,6 +1443,15 @@ export interface ArenaHarness {
   internalMonitoringService: InternalMonitoringService;
   internalPropositionOpsService: InternalPropositionOpsService;
   internalRewardAuditService: InternalRewardAuditService;
+  requesterComparisonSetService: RequesterComparisonSetService;
+  requesterComparisonSetDeliveryPolicyService: RequesterComparisonSetDeliveryPolicyService;
+  requesterComparisonSetDeliveryRunService: RequesterComparisonSetDeliveryRunService;
+  requesterComparisonSetDeliveryTransportService: RequesterComparisonSetDeliveryTransportService;
+  requesterComparisonSetDeliveryAutomationService: RequesterComparisonSetDeliveryAutomationService;
+  requesterPropositionViewService: RequesterPropositionViewService;
+  requesterReportPresetService: RequesterReportPresetService;
+  discussionService: DiscussionService;
+  validationRehearsalCheckpointService: ValidationRehearsalCheckpointService;
   validationChainIdService: FakeValidationChainIdService;
   propositionRepository: FakePropositionRepository;
   dispatchTaskRepository: FakeDispatchTaskRepository;
@@ -1353,6 +1478,21 @@ export const createArenaHarness = (
 ): ArenaHarness => {
   const store = createEmptyStore();
   const prisma = new FakePrismaService(store) as unknown as PrismaService;
+  const config = {
+    chainId: 1,
+    validationEnvironment: "local",
+    rpcUrl: "http://127.0.0.1:8545",
+    arenaContractAddress: "0x0000000000000000000000000000000000000001",
+    validationContractAddress: "0x0000000000000000000000000000000000000002",
+    validationOperatorPrivateKey: "0x1111111111111111111111111111111111111111111111111111111111111111",
+    validationOraclePrivateKey: "0x2222222222222222222222222222222222222222222222222222222222222222",
+    validationPauserPrivateKey: "0x3333333333333333333333333333333333333333333333333333333333333333",
+    requesterDeliveryWebhookBearerTokens: {
+      delivery_policy: "token_delivery_policy",
+      retry_delivery: "token_retry_delivery",
+      automation_delivery: "token_automation_delivery",
+    },
+  } as Pick<AppConfigService, "chainId"> as AppConfigService;
   const ids = new TestArenaIdService() as unknown as ArenaIdService;
 
   const propositionRepository =
@@ -1412,6 +1552,34 @@ export const createArenaHarness = (
     ids,
     systemKeyValueRepository,
   );
+  const requesterReportPresetService = new RequesterReportPresetService(
+    prisma,
+    ids,
+    systemKeyValueRepository,
+  );
+  const requesterComparisonSetService = new RequesterComparisonSetService(
+    prisma,
+    ids,
+    systemKeyValueRepository,
+    requesterReportPresetService,
+  );
+  const requesterComparisonSetDeliveryPolicyService =
+    new RequesterComparisonSetDeliveryPolicyService(
+      prisma,
+      ids,
+      systemKeyValueRepository,
+      requesterComparisonSetService,
+    );
+  const requesterComparisonSetDeliveryRunService =
+    new RequesterComparisonSetDeliveryRunService(
+      prisma,
+      ids,
+      systemKeyValueRepository,
+      requesterComparisonSetService,
+      requesterComparisonSetDeliveryPolicyService,
+    );
+  const requesterComparisonSetDeliveryTransportService =
+    new RequesterComparisonSetDeliveryTransportService(config);
   const watchlistService = new WatchlistService(
     prisma,
     ids,
@@ -1424,6 +1592,14 @@ export const createArenaHarness = (
     ids,
     internalAuditEventRepository,
   );
+  const validationRehearsalCheckpointService =
+    new ValidationRehearsalCheckpointService(
+      prisma,
+      ids,
+      config,
+      propositionRepository,
+      systemKeyValueRepository,
+    );
   const logger: Pick<PinoLogger, "setContext" | "error" | "warn" | "info" | "debug"> = {
     setContext() {},
     error() {},
@@ -1527,6 +1703,7 @@ export const createArenaHarness = (
     options.validationChainRuntime,
   );
   const betService = new BetService(
+    config,
     prisma,
     ids,
     propositionRepository,
@@ -1541,6 +1718,7 @@ export const createArenaHarness = (
     marketService,
     propositionService,
     counterService,
+    validationRehearsalCheckpointService,
   );
   const propositionLifecycleAutomationService =
     new PropositionLifecycleAutomationService(
@@ -1565,12 +1743,182 @@ export const createArenaHarness = (
   );
   const internalMonitoringService = new InternalMonitoringService(
     prisma,
+    config,
+    {
+      async assertReady() {
+        return undefined;
+      },
+      getProvider() {
+        return {
+          async getNetwork() {
+            return {
+              chainId: 1,
+            };
+          },
+        };
+      },
+    } as any,
+    {
+      async ping() {
+        return "PONG";
+      },
+    } as any,
+    {
+      getLiveSnapshot() {
+        return {
+          status: "ok",
+          timestamp: "2026-04-24T00:36:00.000Z",
+        };
+      },
+      async getReadinessSnapshot() {
+        return {
+          status: "ok",
+          timestamp: "2026-04-24T00:36:00.000Z",
+          dependencies: [
+            { name: "database", status: "up" },
+            { name: "redis", status: "up" },
+            { name: "rpc", status: "up" },
+            { name: "scheduler_queue", status: "up" },
+          ],
+        };
+      },
+    } as any,
+    {
+      async getQueueOverview() {
+        return {
+          status: "ok",
+          timestamp: "2026-04-24T00:36:00.000Z",
+          redis: { status: "up" },
+          queues: [
+            {
+              name: "system",
+              status: "up",
+              policy: {
+                retryable: true,
+                attempts: 5,
+                backoffType: "exponential",
+                backoffDelayMs: 1000,
+              },
+              paused: false,
+              counts: {
+                waiting: 0,
+                active: 0,
+                delayed: 0,
+                completed: 0,
+                failed: 0,
+              },
+            },
+            {
+              name: "auth",
+              status: "up",
+              policy: {
+                retryable: false,
+                attempts: 1,
+              },
+              paused: false,
+              counts: {
+                waiting: 0,
+                active: 0,
+                delayed: 0,
+                completed: 0,
+                failed: 0,
+              },
+            },
+            {
+              name: "scheduler",
+              status: "up",
+              policy: {
+                retryable: true,
+                attempts: 5,
+                backoffType: "exponential",
+                backoffDelayMs: 1000,
+              },
+              paused: false,
+              counts: {
+                waiting: 0,
+                active: 0,
+                delayed: 0,
+                completed: 0,
+                failed: 0,
+              },
+            },
+          ],
+        };
+      },
+    } as any,
     propositionRepository,
     marketRepository,
     responseRepository,
     responseReviewRepository,
     userReputationRepository,
     counterService,
+    {
+      getArtifactPath() {
+        return require.resolve("../../src/arena/services/internal-proposition-ops.service");
+      },
+      async assertReady() {
+        return undefined;
+      },
+      async getMarketOrNull(chainMarketId: string) {
+        const market = store.markets.find((item) => item.chainMarketId === chainMarketId);
+        if (!market || market.chainStatus === null) {
+          return null;
+        }
+
+        const state =
+          market.chainStatus === "pre_live"
+            ? ValidationContractMarketState.PreLive
+            : market.chainStatus === "live"
+              ? ValidationContractMarketState.Live
+              : market.chainStatus === "frozen"
+                ? ValidationContractMarketState.Frozen
+                : market.chainStatus === "resolved"
+                  ? ValidationContractMarketState.Resolved
+                  : ValidationContractMarketState.Cancelled;
+
+        return {
+          state,
+        };
+      },
+      async getDeploymentReadiness() {
+        return {
+          contractAddress: "0x0000000000000000000000000000000000000002",
+          hasRuntimeCode: true,
+          runtimeBytecodeMatchesArtifact: true,
+          paused: false,
+          signers: [
+            {
+              role: "operator",
+              address: "0x00000000000000000000000000000000000000a1",
+              hasBalance: true,
+              hasRequiredRole: true,
+              balance: "1",
+            },
+            {
+              role: "oracle",
+              address: "0x00000000000000000000000000000000000000a2",
+              hasBalance: true,
+              hasRequiredRole: true,
+              balance: "1",
+            },
+            {
+              role: "pauser",
+              address: "0x00000000000000000000000000000000000000a3",
+              hasBalance: true,
+              hasRequiredRole: true,
+              balance: "1",
+            },
+          ],
+        };
+      },
+      getReadOnlyContract() {
+        return {
+          async paused() {
+            return false;
+          },
+        };
+      },
+    } as any,
     options.validationChainAlerts,
   );
   const internalPropositionOpsService = new InternalPropositionOpsService(
@@ -1580,12 +1928,15 @@ export const createArenaHarness = (
     responseReviewRepository,
     rewardLedgerRepository,
     marketRepository,
+    betRepository,
     validationChainEventRepository,
     counterService,
     propositionEngineService,
     propositionService,
     freezeRevealOrchestratorService,
     internalAuditService,
+    internalMonitoringService,
+    validationRehearsalCheckpointService,
     validationChainIdService,
   );
   const internalRewardAuditService = new InternalRewardAuditService(
@@ -1596,6 +1947,39 @@ export const createArenaHarness = (
     rewardLedgerRepository,
     rewardLedgerService,
     internalAuditService,
+  );
+  const requesterPropositionViewService = new RequesterPropositionViewService(
+    prisma,
+    ids,
+    systemKeyValueRepository,
+    propositionRepository,
+    internalAuditService,
+    counterService,
+    freezeRevealOrchestratorService,
+    marketRepository,
+    dispatchTaskRepository,
+    betRepository,
+    responseReviewRepository,
+    requesterReportPresetService,
+    requesterComparisonSetService,
+    requesterComparisonSetDeliveryPolicyService,
+    requesterComparisonSetDeliveryRunService,
+    requesterComparisonSetDeliveryTransportService,
+  );
+  const requesterComparisonSetDeliveryAutomationService =
+    new RequesterComparisonSetDeliveryAutomationService(
+      prisma,
+      requesterComparisonSetDeliveryPolicyService,
+      requesterComparisonSetDeliveryRunService,
+      requesterComparisonSetDeliveryTransportService,
+      requesterPropositionViewService,
+    );
+  const discussionService = new DiscussionService(
+    prisma as unknown as PrismaService,
+    ids as unknown as ArenaIdService,
+    systemKeyValueRepository as unknown as SystemKeyValueRepository,
+    marketRepository as unknown as MarketRepository,
+    propositionRepository as unknown as PropositionRepository,
   );
   const rewardViewService = new RewardViewService(
     propositionRepository,
@@ -1624,6 +2008,7 @@ export const createArenaHarness = (
 
   return {
     store,
+    config,
     propositionService,
     propositionEngineService,
     propositionDraftService,
@@ -1649,6 +2034,15 @@ export const createArenaHarness = (
     internalMonitoringService,
     internalPropositionOpsService,
     internalRewardAuditService,
+    requesterComparisonSetService,
+    requesterComparisonSetDeliveryPolicyService,
+    requesterComparisonSetDeliveryRunService,
+    requesterComparisonSetDeliveryTransportService,
+    requesterComparisonSetDeliveryAutomationService,
+    requesterPropositionViewService,
+    requesterReportPresetService,
+    discussionService,
+    validationRehearsalCheckpointService,
     validationChainIdService:
       validationChainIdService as unknown as FakeValidationChainIdService,
     propositionRepository: propositionRepository as unknown as FakePropositionRepository,

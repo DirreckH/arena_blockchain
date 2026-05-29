@@ -11,6 +11,7 @@ import type {
 } from "@arena/shared";
 
 import { PrismaService } from "../../database/prisma.service";
+import { ArenaNotFoundError } from "../arena.errors";
 import { ArenaIdService } from "../arena-id.service";
 import type { ArenaDbClient } from "../prisma.types";
 import { SystemKeyValueRepository } from "../repositories/system-key-value.repository";
@@ -141,6 +142,28 @@ export class AccountExportService {
       totalCount: storedExports.length,
       items: storedExports.map(toExportListItem),
     };
+  }
+
+  async getAccountExportForUser(
+    userId: string,
+    exportId: string,
+    db: ArenaDbClient = this.prisma,
+  ): Promise<RespondentAccountExportArtifactViewModel> {
+    const record = await this.systemKeyValues.findByKey(
+      this.buildStorageKey(userId),
+      db,
+    );
+    const storedExports = parseStoredExports(record?.valueJson ?? null);
+    const matched = storedExports.find((item) => item.exportId === exportId) ?? null;
+
+    if (!matched) {
+      throw new ArenaNotFoundError(
+        "account_export.not_found",
+        `Account export ${exportId} was not found`,
+      );
+    }
+
+    return toArtifact(matched);
   }
 
   async createAccountExportForUser(

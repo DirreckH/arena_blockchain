@@ -1,14 +1,26 @@
 import { Injectable } from "@nestjs/common";
-import type { DispatchTask, Proposition, ResponseReview, RewardLedger } from "@prisma/client";
+import type {
+  Bet,
+  DispatchTask,
+  Proposition,
+  ResponseReview,
+  RewardLedger,
+  ValidationChainEvent,
+} from "@prisma/client";
 import { ArenaNotFoundError, ArenaValidationError } from "../arena.errors";
 import {
   type ApprovePropositionControlInput,
   type EmergencyFreezePropositionControlInput,
   INTERNAL_AUDIT_ENTITY_TYPES,
+  type InternalPropositionEvidenceBundleViewModel,
   type InternalPropositionDetailViewModel,
   type InternalPropositionListFilters,
   type InternalPropositionListItemViewModel,
   type PropositionDispatchSummaryViewModel,
+  type PropositionValidationRehearsalCheckpointViewModel,
+  type PropositionValidationRehearsalStepId,
+  type PropositionValidationRehearsalStepStatus,
+  type PropositionValidationRehearsalViewModel,
   type PropositionReviewSummaryViewModel,
   type PropositionRewardSummaryViewModel,
   type RejectPropositionControlInput,
@@ -21,6 +33,7 @@ import type { ArenaDbClient } from "../prisma.types";
 import { withArenaTransaction } from "../arena-transaction.utils";
 import { toDate } from "../arena.utils";
 import { PrismaService } from "../../database/prisma.service";
+import { BetRepository } from "../repositories/bet.repository";
 import { DispatchTaskRepository } from "../repositories/dispatch-task.repository";
 import { MarketRepository } from "../repositories/market.repository";
 import { PropositionRepository } from "../repositories/proposition.repository";
@@ -31,10 +44,23 @@ import { buildValidationLifecycleSnapshot } from "../validation-lifecycle";
 import { EffectiveSampleCounterService } from "./effective-sample-counter.service";
 import { FreezeRevealOrchestratorService } from "./freeze-reveal-orchestrator.service";
 import { InternalAuditService } from "./internal-audit.service";
+import { InternalMonitoringService } from "./internal-monitoring.service";
 import { PropositionEngineService } from "./proposition-engine.service";
 import { PropositionStateService } from "./proposition-state.service";
+import { ValidationRehearsalCheckpointService } from "./validation-rehearsal-checkpoint.service";
 import { assertPropositionTransition } from "../state-machines/proposition-state.machine";
 import { ValidationChainIdService } from "../validation-chain/validation-chain-id.service";
+
+const VALIDATION_REHEARSAL_RUNBOOK_PATH =
+  "docs/contracts/arena-validation-chain-runbook.md";
+const VALIDATION_REHEARSAL_TARGET_OUTCOME =
+  "One proposition completes publish -> local bet -> on-chain placeBet -> manual or scheduled sync -> projection -> settlement against deployed validation infrastructure.";
+const VALIDATION_REHEARSAL_RUNTIME_CONTRACT_ROUTE =
+  "GET /arena/internal/monitoring/runtime-contract";
+const VALIDATION_REHEARSAL_CHAIN_MONITORING_ROUTE =
+  "GET /arena/internal/monitoring/validation-chain";
+const VALIDATION_REHEARSAL_DRIFT_ROUTE =
+  "GET /arena/internal/monitoring/validation-lifecycle-drift";
 
 const toIso = (value: Date | null): string | null =>
   value ? value.toISOString() : null;
@@ -83,12 +109,15 @@ export class InternalPropositionOpsService {
     private readonly reviews: ResponseReviewRepository,
     private readonly rewards: RewardLedgerRepository,
     private readonly markets: MarketRepository,
+    private readonly bets: BetRepository,
     private readonly validationChainEvents: ValidationChainEventRepository,
     private readonly counters: EffectiveSampleCounterService,
     private readonly propositionEngine: PropositionEngineService,
     private readonly propositionState: PropositionStateService,
     private readonly freezeReveal: FreezeRevealOrchestratorService,
     private readonly audits: InternalAuditService,
+    private readonly monitoring: InternalMonitoringService,
+    private readonly validationRehearsalCheckpoints: ValidationRehearsalCheckpointService,
     private readonly validationChainIds: ValidationChainIdService,
   ) {}
 
@@ -323,6 +352,20 @@ export class InternalPropositionOpsService {
     );
   }
 
+  async listValidationRehearsalCheckpoints(
+    propositionId: string,
+    db?: ArenaDbClient,
+  ): Promise<PropositionValidationRehearsalCheckpointViewModel[]> {
+    return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.getRequiredProposition(propositionId, tx);
+
+      return this.validationRehearsalCheckpoints.listCheckpointsForProposition(
+        propositionId,
+        tx,
+      );
+    });
+  }
+
   async exportPropositionAudit(
     propositionId: string,
     db?: ArenaDbClient,
@@ -331,6 +374,23 @@ export class InternalPropositionOpsService {
       ...(await this.buildDetailView(propositionId, tx)),
       exportedAt: new Date().toISOString(),
     }));
+  }
+
+  async exportPropositionEvidenceBundle(
+    propositionId: string,
+    db?: ArenaDbClient,
+  ): Promise<InternalPropositionEvidenceBundleViewModel> {
+    const [propositionExport, runtimeContract] = await Promise.all([
+      this.exportPropositionAudit(propositionId, db),
+      this.monitoring.getRuntimeContract(),
+    ]);
+
+    return {
+      propositionId,
+      exportedAt: new Date().toISOString(),
+      propositionExport,
+      runtimeContract,
+    };
   }
 
   private async buildDetailView(
@@ -378,6 +438,8 @@ export class InternalPropositionOpsService {
       validationChainMarketAuditEvents,
       validationChainCommandAuditEvents,
       validationChainEventIds,
+      bets,
+      runtimeReadiness,
     ] = await Promise.all([
       market
         ? this.audits.listByEntity("validation_market", market.id, db)
@@ -390,12 +452,37 @@ export class InternalPropositionOpsService {
         },
         db,
       ),
+      market ? this.bets.listByMarketId(market.id, db) : Promise.resolve([]),
+      this.monitoring.getValidationChainRuntimeReadiness(),
     ]);
     const validationChainEventAuditEvents = await this.audits.listByEntityIds(
       "validation_chain_event",
       validationChainEventIds,
       db,
     );
+    const validationChainEvents = await this.validationChainEvents.listByChainReferences(
+      {
+        propositionChainId: chainPropositionId,
+        marketChainId: chainMarketId,
+      },
+      db,
+    );
+    const rehearsalCheckpoints =
+      await this.validationRehearsalCheckpoints.listCheckpointsForProposition(
+        proposition.id,
+        db,
+      );
+    const validationRehearsal = this.buildValidationRehearsalView({
+      proposition,
+      validationLifecycle,
+      bets,
+      validationChainEvents,
+      rehearsalCheckpoints,
+      runtimeReadiness,
+      marketAuditEvents: validationChainMarketAuditEvents,
+      commandAuditEvents: validationChainCommandAuditEvents,
+      eventAuditEvents: validationChainEventAuditEvents,
+    });
 
     return {
       proposition: {
@@ -465,6 +552,8 @@ export class InternalPropositionOpsService {
         commandAuditEvents: sortAuditEventsDesc(validationChainCommandAuditEvents),
         eventAuditEvents: sortAuditEventsDesc(validationChainEventAuditEvents),
       },
+      validationRehearsal,
+      validationRehearsalCheckpoints: rehearsalCheckpoints,
       sampleCounter: counterSnapshot,
       closureReadiness,
       dispatchSummary: this.buildDispatchSummary(tasks),
@@ -562,6 +651,363 @@ export class InternalPropositionOpsService {
         reversedAt: toIso(entry.reversedAt),
       })),
     };
+  }
+
+  private buildValidationRehearsalView(input: {
+    proposition: Proposition;
+    validationLifecycle: ReturnType<typeof buildValidationLifecycleSnapshot>;
+    bets: Bet[];
+    validationChainEvents: ValidationChainEvent[];
+    rehearsalCheckpoints: PropositionValidationRehearsalCheckpointViewModel[];
+    runtimeReadiness: Awaited<
+      ReturnType<InternalMonitoringService["getValidationChainRuntimeReadiness"]>
+    >;
+    marketAuditEvents: Array<{ action: string; metadata: unknown; createdAt: string; id: string }>;
+    commandAuditEvents: Array<{ action: string; metadata: unknown; createdAt: string; id: string }>;
+    eventAuditEvents: Array<{ action: string; metadata: unknown; createdAt: string; id: string }>;
+  }): PropositionValidationRehearsalViewModel {
+    const checkpointByStepId =
+      new Map<PropositionValidationRehearsalStepId, PropositionValidationRehearsalCheckpointViewModel>();
+    for (const checkpoint of input.rehearsalCheckpoints) {
+      if (!checkpointByStepId.has(checkpoint.stepId)) {
+        checkpointByStepId.set(checkpoint.stepId, checkpoint);
+      }
+    }
+    const chainOpened =
+      input.validationLifecycle.chainStatus !== null &&
+      input.validationLifecycle.chainStatus !== "pre_live" &&
+      input.validationLifecycle.chainOpenedAt !== null;
+    const betPlacedEvent = input.validationChainEvents.find(
+      (event) => event.eventName === "BetPlaced",
+    );
+    const syncedBet = input.bets.find((bet) => bet.chainSyncedAt !== null);
+    const commandTerminal = input.commandAuditEvents
+      .filter(
+        (event) =>
+          event.action === "validation_chain.alert.command_terminal" ||
+          event.action === "validation_chain.alert.command_retry_exhausted",
+      )
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+      .at(0);
+    const projectorFailure = input.eventAuditEvents
+      .filter(
+        (event) =>
+          event.action === "validation_chain.project.failed" ||
+          event.action === "validation_chain.alert.projector_entity_missing",
+      )
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+      .at(0);
+    const marketCreatedAudit = input.marketAuditEvents.find((event) =>
+      event.action.startsWith("validation_chain.create_market."),
+    );
+    const hasTerminalBetProjection =
+      input.validationLifecycle.chainResolvedAt !== null &&
+      input.bets.some(
+        (bet) => bet.status === "settled" && bet.settlementOutcome !== null,
+      );
+
+    const preflightBlockingReasons: string[] = [];
+    if (!input.proposition.marketEnabled) {
+      preflightBlockingReasons.push("marketEnabled must be true");
+    }
+    if (input.proposition.structure !== "binary") {
+      preflightBlockingReasons.push("proposition structure must stay binary for MVP rehearsal");
+    }
+    if (input.proposition.rollingMode !== "non_rolling") {
+      preflightBlockingReasons.push("rollingMode must stay non_rolling for MVP rehearsal");
+    }
+
+    const publishBlockingReasons: string[] = [];
+    if (preflightBlockingReasons.length === 0) {
+      if (input.validationLifecycle.chainMarketId === null) {
+        publishBlockingReasons.push("chainMarketId has not been assigned");
+      }
+      if (!chainOpened) {
+        publishBlockingReasons.push("chain market has not opened yet");
+      }
+      if (!chainOpened && commandTerminal) {
+        const terminalCommand =
+          this.getStringMetadataValue(commandTerminal.metadata, "command") ?? "unknown";
+        publishBlockingReasons.push(
+          `latest command terminal audit: ${terminalCommand}`,
+        );
+      }
+    }
+
+    const betSyncBlockingReasons: string[] = [];
+    if (publishBlockingReasons.length === 0) {
+      if (input.bets.length === 0) {
+        betSyncBlockingReasons.push("no local validation bet has been persisted");
+      }
+      if (!syncedBet && !betPlacedEvent) {
+        betSyncBlockingReasons.push("no BetPlaced event has been persisted");
+      }
+      if (!syncedBet) {
+        betSyncBlockingReasons.push("no local validation bet has been projected from chain events");
+      }
+    }
+
+    const freezeResolveBlockingReasons: string[] = [];
+    if (betSyncBlockingReasons.length === 0) {
+      if (input.proposition.frozenAt === null) {
+        freezeResolveBlockingReasons.push("proposition has not frozen for reveal");
+      }
+      if (input.proposition.resultComputedAt === null || input.proposition.resultKind === null) {
+        freezeResolveBlockingReasons.push("official result has not been computed");
+      }
+      if (input.validationLifecycle.chainFrozenAt === null) {
+        freezeResolveBlockingReasons.push("chain market has not been frozen");
+      }
+      if (input.validationLifecycle.chainResolvedAt === null) {
+        freezeResolveBlockingReasons.push("chain market has not been resolved");
+      }
+    }
+
+    const projectionSettlementBlockingReasons: string[] = [];
+    if (freezeResolveBlockingReasons.length === 0) {
+      if (!hasTerminalBetProjection) {
+        projectionSettlementBlockingReasons.push(
+          "resolved bet settlement projection is not yet visible locally",
+        );
+      }
+      if (input.proposition.status !== "settled" || input.proposition.settledAt === null) {
+        projectionSettlementBlockingReasons.push("proposition has not completed local settlement");
+      }
+      if (
+        projectionSettlementBlockingReasons.length > 0 &&
+        projectorFailure
+      ) {
+        projectionSettlementBlockingReasons.push(
+          `latest projector failure audit: ${projectorFailure.action}`,
+        );
+      }
+    }
+
+    const stepDefinitions: Array<{
+      id: PropositionValidationRehearsalStepId;
+      summary: string;
+      commands: string[];
+      evidence: string[];
+      blockingReasons: string[];
+      manualCheckpoint: PropositionValidationRehearsalCheckpointViewModel | null;
+    }> = [
+      {
+        id: "preflight",
+        summary:
+          "Confirm this proposition still matches the MVP validation rehearsal shape before using it for environment-backed execution.",
+        commands: [
+          VALIDATION_REHEARSAL_RUNTIME_CONTRACT_ROUTE,
+          `GET /arena/internal/propositions/${input.proposition.id}`,
+          `GET /arena/internal/propositions/${input.proposition.id}/rehearsal-checkpoints`,
+        ],
+        evidence: [
+          `marketEnabled=${String(input.proposition.marketEnabled)}`,
+          `structure=${input.proposition.structure}`,
+          `rollingMode=${input.proposition.rollingMode}`,
+        ],
+        blockingReasons: preflightBlockingReasons,
+        manualCheckpoint: checkpointByStepId.get("preflight") ?? null,
+      },
+      {
+        id: "publish_and_open",
+        summary:
+          "Publish the proposition and confirm the validation market is created and opened on chain.",
+        commands: [
+          `GET /arena/internal/propositions/${input.proposition.id}`,
+          `POST /arena/internal/validation-chain/propositions/${input.proposition.id}/recover-command`,
+          VALIDATION_REHEARSAL_CHAIN_MONITORING_ROUTE,
+        ],
+        evidence: [
+          input.validationLifecycle.chainMarketId
+            ? `chainMarketId=${input.validationLifecycle.chainMarketId}`
+            : "chainMarketId=missing",
+          input.validationLifecycle.chainOpenedAt
+            ? `chainOpenedAt=${input.validationLifecycle.chainOpenedAt}`
+            : "chainOpenedAt=missing",
+          marketCreatedAudit
+            ? `marketAudit=${marketCreatedAudit.action}`
+            : "marketAudit=missing",
+        ],
+        blockingReasons: publishBlockingReasons,
+        manualCheckpoint: checkpointByStepId.get("publish_and_open") ?? null,
+      },
+      {
+        id: "local_bet_and_sync",
+        summary:
+          "Persist one local validation bet, observe the matching BetPlaced chain event, and confirm sync projects that write back locally.",
+        commands: [
+          "Validation contract placeBet(chainMarketId, option)",
+          "POST /arena/internal/validation-chain/sync",
+          input.validationLifecycle.marketId
+            ? `POST /arena/internal/validation-chain/markets/${input.validationLifecycle.marketId}/bets/:userId/reconcile`
+            : "POST /arena/internal/validation-chain/markets/:marketId/bets/:userId/reconcile",
+          "POST /arena/internal/validation-chain/backlog/reconcile",
+        ],
+        evidence: [
+          `localBetCount=${input.bets.length}`,
+          betPlacedEvent
+            ? `chainEvent=BetPlaced:${betPlacedEvent.transactionHash}`
+            : "chainEvent=BetPlaced:missing",
+          syncedBet
+            ? `syncedBet=${syncedBet.userId}:${toIso(syncedBet.chainSyncedAt) ?? "missing"}`
+            : "syncedBet=missing",
+          syncedBet ? "projectionEvidence=bet.chainSyncedAt" : "projectionEvidence=missing",
+        ],
+        blockingReasons: betSyncBlockingReasons,
+        manualCheckpoint: checkpointByStepId.get("local_bet_and_sync") ?? null,
+      },
+      {
+        id: "freeze_and_resolve",
+        summary:
+          "Advance the proposition through freeze and official result resolution, then confirm the chain market reaches frozen and resolved state.",
+        commands: [
+          `GET /arena/internal/propositions/${input.proposition.id}`,
+          `POST /arena/internal/validation-chain/propositions/${input.proposition.id}/recover-command`,
+          VALIDATION_REHEARSAL_DRIFT_ROUTE,
+        ],
+        evidence: [
+          input.proposition.frozenAt
+            ? `frozenAt=${toIso(input.proposition.frozenAt)}`
+            : "frozenAt=missing",
+          input.proposition.resultComputedAt
+            ? `resultComputedAt=${toIso(input.proposition.resultComputedAt)}`
+            : "resultComputedAt=missing",
+          input.validationLifecycle.chainFrozenAt
+            ? `chainFrozenAt=${input.validationLifecycle.chainFrozenAt}`
+            : "chainFrozenAt=missing",
+          input.validationLifecycle.chainResolvedAt
+            ? `chainResolvedAt=${input.validationLifecycle.chainResolvedAt}`
+            : "chainResolvedAt=missing",
+        ],
+        blockingReasons: freezeResolveBlockingReasons,
+        manualCheckpoint: checkpointByStepId.get("freeze_and_resolve") ?? null,
+      },
+      {
+        id: "projection_and_settlement",
+        summary:
+          "Confirm projection and local settlement converge on the resolved outcome without projector failures.",
+        commands: [
+          "POST /arena/internal/validation-chain/sync",
+          input.validationLifecycle.marketId
+            ? `POST /arena/internal/validation-chain/markets/${input.validationLifecycle.marketId}/replay-projection`
+            : "POST /arena/internal/validation-chain/markets/:marketId/replay-projection",
+          `GET /arena/internal/propositions/${input.proposition.id}`,
+        ],
+        evidence: [
+          input.proposition.settledAt
+            ? `propositionSettledAt=${toIso(input.proposition.settledAt)}`
+            : "propositionSettledAt=missing",
+          input.bets
+            .filter((bet) => bet.status === "settled" && bet.settlementOutcome !== null)
+            .map(
+              (bet) =>
+                `bet:${bet.userId}:settlementOutcome=${bet.settlementOutcome}:chainSyncedAt=${toIso(bet.chainSyncedAt) ?? "missing"}`,
+            )
+            .join(", ") || "settledBets=missing",
+          projectorFailure
+            ? `projectorFailure=${projectorFailure.action}`
+            : "projectorFailure=none",
+        ],
+        blockingReasons: projectionSettlementBlockingReasons,
+        manualCheckpoint: checkpointByStepId.get("projection_and_settlement") ?? null,
+      },
+    ];
+    const blockedStepIndex = stepDefinitions.findIndex(
+      (step) => step.blockingReasons.length > 0,
+    );
+    const steps = stepDefinitions.map((step, index) =>
+      this.buildValidationRehearsalStep({
+        ...step,
+        status:
+          blockedStepIndex === -1
+            ? "complete"
+            : index < blockedStepIndex
+              ? "complete"
+              : index === blockedStepIndex
+                ? "blocked"
+                : "pending",
+      }),
+    );
+
+    const blockingStep = steps.find((step) => step.status === "blocked");
+    const pendingStep = steps.find((step) => step.status === "pending");
+    const currentStep = blockingStep ?? pendingStep ?? null;
+    const completedStepCount = steps.filter((step) => step.status === "complete").length;
+    const latestCheckpoint = input.rehearsalCheckpoints.at(0) ?? null;
+
+    return {
+      status: blockingStep ? "blocked" : "ready",
+      targetOutcome: VALIDATION_REHEARSAL_TARGET_OUTCOME,
+      runbookPath: VALIDATION_REHEARSAL_RUNBOOK_PATH,
+      blockingDependencies: blockingStep ? [blockingStep.id] : [],
+      summary: {
+        completedStepCount,
+        remainingStepCount: Math.max(0, steps.length - completedStepCount),
+        currentStepId: currentStep?.id ?? null,
+        currentStepStatus: currentStep?.status ?? null,
+        nextCommands: currentStep?.commands ?? [],
+        blockingReasons: currentStep?.status === "blocked"
+          ? currentStep.blockingReasons
+          : [],
+        latestCheckpointAt: latestCheckpoint?.recordedAt ?? null,
+        latestCheckpointStepId: latestCheckpoint?.stepId ?? null,
+        latestCheckpointStatus: latestCheckpoint?.status ?? null,
+      },
+      environmentReadiness: {
+        status: input.runtimeReadiness.status,
+        checkedAt: input.runtimeReadiness.checkedAt,
+        validationEnvironment: input.runtimeReadiness.validationEnvironment,
+        chainId: input.runtimeReadiness.chainId,
+        runbookPath: input.runtimeReadiness.runbookPath,
+        blockingDependencies: input.runtimeReadiness.dependencies
+          .filter((dependency) => dependency.status !== "up")
+          .map((dependency) => dependency.name),
+        preflightCommands: input.runtimeReadiness.preflightCommands,
+        operatorActions: input.runtimeReadiness.operatorActions,
+      },
+      steps,
+    };
+  }
+
+  private buildValidationRehearsalStep(input: {
+    id: PropositionValidationRehearsalStepId;
+    status: PropositionValidationRehearsalStepStatus;
+    summary: string;
+    commands: string[];
+    evidence: string[];
+    blockingReasons: string[];
+    manualCheckpoint: PropositionValidationRehearsalCheckpointViewModel | null;
+  }): PropositionValidationRehearsalViewModel["steps"][number] {
+    return {
+      id: input.id,
+      status: input.status,
+      summary: input.summary,
+      commands: input.commands,
+      evidence: input.manualCheckpoint
+        ? [
+            ...input.evidence,
+            `manualCheckpoint.status=${input.manualCheckpoint.status}`,
+            `manualCheckpoint.recordedAt=${input.manualCheckpoint.recordedAt}`,
+            ...(input.manualCheckpoint.txHash
+              ? [`manualCheckpoint.txHash=${input.manualCheckpoint.txHash}`]
+              : []),
+          ]
+        : input.evidence,
+      blockingReasons: input.status === "blocked" ? input.blockingReasons : [],
+      manualCheckpoint: input.manualCheckpoint,
+    };
+  }
+
+  private getStringMetadataValue(
+    metadata: unknown,
+    key: string,
+  ): string | null {
+    if (!metadata || typeof metadata !== "object") {
+      return null;
+    }
+
+    const value = (metadata as Record<string, unknown>)[key];
+    return typeof value === "string" ? value : null;
   }
 
   private async getRequiredProposition(

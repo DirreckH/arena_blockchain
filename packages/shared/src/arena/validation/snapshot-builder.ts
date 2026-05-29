@@ -1,6 +1,7 @@
 import type {
   CurrentUserPositionViewModel,
   MarketPublicSnapshot,
+  ValidationExecutionReadinessViewModel,
   ValidationMarketViewModel,
 } from "../dto.js";
 import { buildPublicProgressViewModel } from "../application/public-progress.js";
@@ -69,6 +70,68 @@ const sanitizeCurrentUserPosition = (
   };
 };
 
+const buildExecutionReadiness = (
+  input: BuildValidationMarketViewInput,
+): ValidationExecutionReadinessViewModel | undefined => {
+  const chainId = Number((input as { chainId?: number }).chainId ?? 0);
+  const contractAddress =
+    typeof (input as { contractAddress?: string }).contractAddress === "string"
+      ? ((input as { contractAddress?: string }).contractAddress as string)
+      : "";
+  const chainMarketId = input.market.chainMarketId ?? null;
+  const chainStatus = input.market.chainStatus ?? null;
+
+  if (chainId <= 0 || contractAddress.length === 0) {
+    return undefined;
+  }
+
+  if (input.proposition.status !== "live" || input.market.status !== "live") {
+    return {
+      ready: false,
+      reasonCode: "market_not_live",
+      detail: "Arena only allows validation bets while the proposition and market are live.",
+      chainId,
+      contractAddress,
+      chainMarketId,
+      chainStatus,
+    };
+  }
+
+  if (!chainMarketId) {
+    return {
+      ready: false,
+      reasonCode: "chain_market_missing",
+      detail: "The validation market has not been prepared on chain yet.",
+      chainId,
+      contractAddress,
+      chainMarketId,
+      chainStatus,
+    };
+  }
+
+  if (chainStatus !== "live") {
+    return {
+      ready: false,
+      reasonCode: "chain_market_not_live",
+      detail: "The validation market is not open for on-chain betting yet.",
+      chainId,
+      contractAddress,
+      chainMarketId,
+      chainStatus,
+    };
+  }
+
+  return {
+    ready: true,
+    reasonCode: "ready",
+    detail: "The validation market is ready for a wallet-submitted on-chain bet.",
+    chainId,
+    contractAddress,
+    chainMarketId,
+    chainStatus,
+  };
+};
+
 export const buildMarketPublicSnapshot = (
   input: SnapshotBuilderInput,
 ): MarketPublicSnapshot => {
@@ -103,6 +166,7 @@ export const buildValidationMarketViewModel = (
   input: BuildValidationMarketViewInput,
 ): ValidationMarketViewModel => {
   const snapshot = buildMarketPublicSnapshot(input);
+  const executionReadiness = buildExecutionReadiness(input);
 
   return {
     marketId: input.market.id,
@@ -114,11 +178,12 @@ export const buildValidationMarketViewModel = (
     marketStatus: snapshot.marketStatus,
     timeProgressPercent: snapshot.timeProgressPercent,
     bettingClosesAt: snapshot.bettingClosesAt,
-    canBet: snapshot.canBet,
+    canBet: executionReadiness?.ready ?? snapshot.canBet,
     publicProgress: snapshot.publicProgress,
     currentUserPosition: sanitizeCurrentUserPosition(
       input.currentUserPosition,
       input.market.status,
     ),
+    executionReadiness,
   };
 };

@@ -4,7 +4,7 @@ export interface HealthSnapshot {
 }
 
 export interface ReadinessDependency {
-  name: "database" | "redis" | "rpc";
+  name: "database" | "redis" | "rpc" | "scheduler_queue";
   status: "up" | "down";
   details?: string;
 }

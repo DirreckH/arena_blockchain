@@ -117,7 +117,7 @@ pnpm web:dev
 
 ```powershell
 pnpm install
-Copy-Item .env.example .env
+pnpm run validation:bootstrap:local
 pnpm deps:up
 pnpm exec hardhat compile
 pnpm exec hardhat node
@@ -134,6 +134,8 @@ pnpm web:dev
 ```
 
 validation-chain 的完整部署、角色授权和 preflight 检查放在后面的“详细启动”里。
+这个本地 bootstrap 脚本会直接生成一份面向 Hardhat 本地链的开发 `.env`，包含
+Postgres / Redis / RPC 默认连接和本地 validation signer 配置，避免第一次联调还要手填初始环境。
 
 ## 🌱 项目出发点
 

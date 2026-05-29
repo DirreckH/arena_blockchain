@@ -4,6 +4,7 @@ import type { HealthSnapshot, ReadinessSnapshot } from "@arena/shared";
 
 import { BlockchainService } from "../blockchain/blockchain.service";
 import { PrismaService } from "../database/prisma.service";
+import { AppQueueService } from "../queue/queue.service";
 import { RedisService } from "../queue/redis.service";
 
 @Injectable()
@@ -14,6 +15,7 @@ export class HealthService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly blockchain: BlockchainService,
+    private readonly queueService: AppQueueService,
   ) {}
 
   getLiveSnapshot(): HealthSnapshot {
@@ -32,6 +34,7 @@ export class HealthService {
       this.probeDependency("rpc", async () => {
         await this.blockchain.assertReady();
       }),
+      this.probeSchedulerQueue(),
     ]);
 
     const status = dependencies.every((dependency) => dependency.status === "up")
@@ -88,6 +91,56 @@ export class HealthService {
       if (timer) {
         clearTimeout(timer);
       }
+    }
+  }
+
+  private async probeSchedulerQueue(): Promise<
+    ReadinessSnapshot["dependencies"][number]
+  > {
+    try {
+      const overview = await this.queueService.getQueueOverview();
+      const schedulerQueue =
+        overview.queues.find((queue) => queue.name === "scheduler") ?? null;
+
+      if (!schedulerQueue) {
+        return {
+          name: "scheduler_queue",
+          status: "down",
+          details: "Scheduler queue overview is missing",
+        };
+      }
+
+      if (schedulerQueue.status !== "up") {
+        return {
+          name: "scheduler_queue",
+          status: "down",
+          details:
+            schedulerQueue.details ??
+            "Scheduler queue is unavailable",
+        };
+      }
+
+      if (schedulerQueue.paused) {
+        return {
+          name: "scheduler_queue",
+          status: "down",
+          details: "Scheduler queue is paused",
+        };
+      }
+
+      return {
+        name: "scheduler_queue",
+        status: "up",
+      };
+    } catch (error) {
+      return {
+        name: "scheduler_queue",
+        status: "down",
+        details:
+          error instanceof Error
+            ? error.message
+            : "Unknown scheduler queue readiness error",
+      };
     }
   }
 }

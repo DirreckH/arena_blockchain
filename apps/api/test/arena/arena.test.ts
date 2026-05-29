@@ -13,6 +13,7 @@ import { ArenaInternalReputationController } from "../../src/arena/internal-repu
 import { ArenaInternalRewardsController } from "../../src/arena/internal-rewards.controller";
 import { ArenaInternalTagsController } from "../../src/arena/internal-tags.controller";
 import { ArenaInternalValidationChainController } from "../../src/arena/internal-validation-chain.controller";
+import { ArenaDiscussionController } from "../../src/arena/discussion.controller";
 import { ArenaPublicController } from "../../src/arena/public.controller";
 import { ArenaPublicDiscoveryController } from "../../src/arena/public-discovery.controller";
 import { ArenaRespondentAccountController } from "../../src/arena/respondent-account.controller";
@@ -30,13 +31,21 @@ import { assertRewardLedgerTransition } from "../../src/arena/state-machines/rew
 import { AdjudicationViewService } from "../../src/arena/services/adjudication-view.service";
 import { AccountViewService } from "../../src/arena/services/account-view.service";
 import { PublicDiscoveryService } from "../../src/arena/services/public-discovery.service";
+import { PublicRespondentLeaderboardService } from "../../src/arena/services/public-respondent-leaderboard.service";
+import { PublicIntegrityViewService } from "../../src/arena/services/public-integrity-view.service";
+import { PublicResultViewService } from "../../src/arena/services/public-result-view.service";
 import { ResultViewService } from "../../src/arena/services/result-view.service";
 import { RewardViewService } from "../../src/arena/services/reward-view.service";
 import { ValidationViewService } from "../../src/arena/services/validation-view.service";
 import { ValidationChainOperatorCommandService } from "../../src/arena/validation-chain/validation-chain-operator-command.service";
+import { ValidationChainBetReconciliationService } from "../../src/arena/validation-chain/validation-chain-bet-reconciliation.service";
+import { ValidationChainCommandRecoveryService } from "../../src/arena/validation-chain/validation-chain-command-recovery.service";
 import { ValidationChainOracleService } from "../../src/arena/validation-chain/validation-chain-oracle.service";
 import { ValidationChainPauserService } from "../../src/arena/validation-chain/validation-chain-pauser.service";
+import { ValidationChainManualSyncService } from "../../src/arena/validation-chain/validation-chain-manual-sync.service";
+import { ValidationChainProjectionReplayService } from "../../src/arena/validation-chain/validation-chain-projection-replay.service";
 import {
+  VALIDATION_CHAIN_STREAM_KEY,
   ValidationChainContractError,
   ValidationContractMarketState,
 } from "../../src/arena/validation-chain/validation-chain.types";
@@ -330,6 +339,33 @@ async function createReviewedResponseForProposition(
   });
 
   return response;
+}
+
+function createPublicController(harness: ReturnType<typeof createArenaHarness>) {
+  const publicResultViews = new PublicResultViewService(
+    harness.propositionRepository as any,
+    harness.marketRepository as any,
+    harness.counterRepository as any,
+    harness.responseRepository as any,
+    harness.responseReviewRepository as any,
+  );
+
+  return new ArenaPublicController(
+    harness.counterService,
+    new ValidationViewService(
+      harness.config as any,
+      harness.propositionRepository as any,
+      harness.counterRepository as any,
+      harness.marketRepository as any,
+      harness.betRepository as any,
+    ),
+    publicResultViews,
+    new PublicIntegrityViewService(
+      harness.propositionRepository as any,
+      harness.counterService as any,
+      publicResultViews as any,
+    ),
+  );
 }
 
 async function createParticipationHistory(
@@ -2583,15 +2619,7 @@ test("public controller keeps live reads progress-only and adds published result
     marketEnabled: true,
     minEffectiveSample: 1,
   });
-  const publicController = new ArenaPublicController(
-    harness.counterService,
-    new ValidationViewService(
-      harness.propositionRepository as any,
-      harness.counterRepository as any,
-      harness.marketRepository as any,
-      harness.betRepository as any,
-    ),
-  );
+  const publicController = createPublicController(harness);
 
   const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
     propositionId: proposition.id,
@@ -2660,6 +2688,317 @@ test("public controller keeps live reads progress-only and adds published result
   assert.equal(settledMarketView.publicProgress.lastPublishedResult?.winningOption, 0);
 });
 
+test("public controller lists settled results for public verification without leaking pre-settlement state", async () => {
+  const harness = createArenaHarness();
+  const settledProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Public settled verification proposition",
+    category: "politics",
+  });
+  const liveProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 1,
+    title: "Still live public proposition",
+    category: "sports",
+  });
+  const settledMarket = await harness.marketRepository.findByPropositionId(
+    settledProposition.id,
+  );
+  assert.ok(settledMarket);
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: settledProposition.id,
+    userId: "public_result_user_a",
+    minuteOffset: 40,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: settledProposition.id,
+    userId: "public_result_user_b",
+    minuteOffset: 41,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: settledProposition.id,
+    userId: "public_result_user_c",
+    minuteOffset: 42,
+    reviewStatus: "partial_valid",
+  });
+  await harness.counterService.rebuildCounterForProposition(settledProposition.id);
+
+  await harness.betService.placeBet({
+    propositionId: settledProposition.id,
+    marketId: settledMarket.id,
+    userId: "public_result_bettor",
+    selectedOption: 0,
+    stakeAmount: "25",
+    placedAt: "2026-04-18T10:08:10.000Z",
+  });
+
+  await harness.freezeRevealOrchestratorService.finalizeRevealPreparation({
+    propositionId: settledProposition.id,
+    now: "2026-04-18T10:08:30.000Z",
+    updatedByUserId: "admin_1",
+  });
+  await harness.marketRepository.update(
+    settledMarket.id,
+    {
+      resolutionTxHash: "0xsettledresult000000000000000000000000000000000000000000000000000001",
+    },
+  );
+  await harness.validationSettlementService.settleValidationMarket({
+    propositionId: settledProposition.id,
+    settledAt: "2026-04-18T10:09:00.000Z",
+  });
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: liveProposition.id,
+    userId: "public_result_live_user",
+    minuteOffset: 43,
+    reviewStatus: "valid",
+  });
+  await harness.counterService.rebuildCounterForProposition(liveProposition.id);
+
+  const publicController = createPublicController(harness);
+
+  const settledResults = await publicController.listSettledResults();
+
+  assert.equal(settledResults.totalCount, 1);
+  assert.equal(settledResults.items[0]?.propositionId, settledProposition.id);
+  assert.equal(settledResults.items[0]?.title, "Public settled verification proposition");
+  assert.equal(settledResults.items[0]?.category, "politics");
+  assert.equal(settledResults.items[0]?.winningOption, 0);
+  assert.equal(settledResults.items[0]?.winningOptionLabel, "A");
+  assert.equal(settledResults.items[0]?.resultKind, "resolved");
+  assert.equal(settledResults.items[0]?.validSampleCount, 3);
+  assert.equal(settledResults.items[0]?.winMarginPercent, 100);
+  assert.equal(
+    settledResults.items[0]?.settlementTxHash,
+    "0xsettledresult000000000000000000000000000000000000000000000000000001",
+  );
+  assert.equal(settledResults.items[0]?.onChain, true);
+  assert.equal(
+    settledResults.items.some((item) => item.propositionId === liveProposition.id),
+    false,
+  );
+  assert.equal("option0Votes" in (settledResults.items[0] ?? {}), false);
+  assert.equal("option1Votes" in (settledResults.items[0] ?? {}), false);
+  assert.equal("reviewedResponses" in (settledResults.items[0] ?? {}), false);
+});
+
+test("public integrity overview aggregates live progress and settled archive without leaking operator-only fields", async () => {
+  const harness = createArenaHarness();
+  const collectingProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 3,
+    title: "Public integrity collecting proposition",
+    category: "ai",
+  });
+  const readyProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Public integrity ready proposition",
+    category: "politics",
+  });
+  const settledProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Public integrity settled proposition",
+    category: "sports",
+  });
+  const settledMarket = await harness.marketRepository.findByPropositionId(
+    settledProposition.id,
+  );
+  assert.ok(settledMarket);
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: collectingProposition.id,
+    userId: "integrity_collecting_user",
+    minuteOffset: 60,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: readyProposition.id,
+    userId: "integrity_ready_user_a",
+    minuteOffset: 61,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: readyProposition.id,
+    userId: "integrity_ready_user_b",
+    minuteOffset: 62,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: settledProposition.id,
+    userId: "integrity_settled_user_a",
+    minuteOffset: 63,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: settledProposition.id,
+    userId: "integrity_settled_user_b",
+    minuteOffset: 64,
+    reviewStatus: "valid",
+  });
+
+  await harness.counterService.rebuildCounterForProposition(collectingProposition.id);
+  await harness.counterService.rebuildCounterForProposition(readyProposition.id);
+  await harness.counterService.rebuildCounterForProposition(settledProposition.id);
+
+  await harness.betService.placeBet({
+    propositionId: settledProposition.id,
+    marketId: settledMarket.id,
+    userId: "integrity_settled_bettor",
+    selectedOption: 0,
+    stakeAmount: "18",
+    placedAt: "2026-04-18T11:11:00.000Z",
+  });
+
+  await harness.freezeRevealOrchestratorService.finalizeRevealPreparation({
+    propositionId: settledProposition.id,
+    now: "2026-04-18T11:11:30.000Z",
+    updatedByUserId: "admin_1",
+  });
+  await harness.marketRepository.update(settledMarket.id, {
+    resolutionTxHash:
+      "0xpublicintegrity0000000000000000000000000000000000000000000000000001",
+  });
+  await harness.validationSettlementService.settleValidationMarket({
+    propositionId: settledProposition.id,
+    settledAt: "2026-04-18T11:12:00.000Z",
+  });
+
+  const publicController = createPublicController(harness);
+  const overview = await publicController.getIntegrityOverview();
+
+  assert.equal(typeof overview.generatedAt, "string");
+  assert.equal(overview.live.totalCount, 2);
+  assert.equal(overview.live.reachedSampleThresholdCount, 1);
+  assert.equal(overview.live.marketEnabledCount, 2);
+  assert.equal(
+    overview.live.items.some(
+      (item) =>
+        item.propositionId === collectingProposition.id &&
+        item.effectiveSampleCount === 1 &&
+        item.requiredSampleCount === 3 &&
+        item.reachedSampleThreshold === false &&
+        item.category === "ai",
+    ),
+    true,
+  );
+  assert.equal(
+    overview.live.items.some(
+      (item) =>
+        item.propositionId === readyProposition.id &&
+        item.effectiveSampleCount === 2 &&
+        item.requiredSampleCount === 2 &&
+        item.reachedSampleThreshold === true &&
+        item.category === "politics",
+    ),
+    true,
+  );
+  assert.equal(
+    overview.live.phaseBreakdown.some(
+      (bucket) => bucket.phase === "live" && bucket.count === 2,
+    ),
+    true,
+  );
+  assert.equal(overview.archive.settledCount, 1);
+  assert.equal(overview.archive.onChainCount, 1);
+  assert.equal(overview.archive.averageValidSampleCount, 2);
+  assert.equal(
+    overview.archive.latestSettledAt,
+    "2026-04-18T11:12:00.000Z",
+  );
+  assert.equal(overview.archive.recentItems[0]?.propositionId, settledProposition.id);
+  assert.equal(overview.archive.recentItems[0]?.settlementTxHash, "0xpublicintegrity0000000000000000000000000000000000000000000000000001");
+  assert.equal(overview.focus, null);
+
+  const focusedOverview = await publicController.getIntegrityOverview(
+    settledProposition.id,
+  );
+  assert.equal(focusedOverview.focus?.propositionId, settledProposition.id);
+  assert.equal(focusedOverview.focus?.visible, true);
+  assert.equal(focusedOverview.focus?.source, "archive");
+  assert.equal(
+    focusedOverview.focus?.archiveItem?.propositionId,
+    settledProposition.id,
+  );
+  assert.equal(focusedOverview.focus?.liveItem, null);
+
+  const liveFocusedOverview = await publicController.getIntegrityOverview(
+    collectingProposition.id,
+  );
+  assert.equal(liveFocusedOverview.focus?.propositionId, collectingProposition.id);
+  assert.equal(liveFocusedOverview.focus?.visible, true);
+  assert.equal(liveFocusedOverview.focus?.source, "live");
+  assert.equal(
+    liveFocusedOverview.focus?.liveItem?.propositionId,
+    collectingProposition.id,
+  );
+  assert.equal(liveFocusedOverview.focus?.archiveItem, null);
+
+  const missingFocusedOverview = await publicController.getIntegrityOverview(
+    "missing-proposition",
+  );
+  assert.equal(missingFocusedOverview.focus?.propositionId, "missing-proposition");
+  assert.equal(missingFocusedOverview.focus?.visible, false);
+  assert.equal(missingFocusedOverview.focus?.source, null);
+  assert.equal(missingFocusedOverview.focus?.liveItem, null);
+  assert.equal(missingFocusedOverview.focus?.archiveItem, null);
+
+  assert.equal("reviewedResponses" in (overview.live.items[0] ?? {}), false);
+  assert.equal("flags" in (overview.live.items[0] ?? {}), false);
+  assert.equal("resolutionTxHash" in (overview.live.items[0] ?? {}), false);
+});
+
+test("public controller searches public markets by title category and option labels without leaking private data", async () => {
+  const harness = createArenaHarness();
+  const policyProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Public transit support pulse",
+    category: "politics",
+    options: ["Support", "Oppose"],
+  });
+  const sportsProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Regional derby crowd energy",
+    category: "sports",
+    options: ["Loud", "Muted"],
+  });
+  const aiProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Model audit satisfaction",
+    category: "ai",
+    options: ["Satisfied", "Not satisfied"],
+  });
+
+  const publicController = createPublicController(harness);
+
+  const titleMatches = await publicController.searchMarkets({ q: "transit" } as never);
+  const optionMatches = await publicController.searchMarkets({ q: "satisfied" } as never);
+  const categoryMatches = await publicController.searchMarkets({ q: "sports" } as never);
+  const emptyQueryMatches = await publicController.searchMarkets({ q: "   " } as never);
+
+  assert.deepEqual(
+    titleMatches.map((market) => market.propositionId),
+    [policyProposition.id],
+  );
+  assert.deepEqual(
+    optionMatches.map((market) => market.propositionId),
+    [aiProposition.id],
+  );
+  assert.deepEqual(
+    categoryMatches.map((market) => market.propositionId),
+    [sportsProposition.id],
+  );
+  assert.equal(emptyQueryMatches.length >= 3, true);
+  assert.equal("marketBias" in (titleMatches[0] ?? {}), false);
+  assert.equal("reviewOutcomeByOption" in (optionMatches[0] ?? {}), false);
+});
+
 test("public discovery controller serves home ranking latest topics and category directory from live market data", async () => {
   const harness = createArenaHarness();
 
@@ -2708,6 +3047,7 @@ test("public discovery controller serves home ranking latest topics and category
   const discoveryController = new ArenaPublicDiscoveryController(
     new PublicDiscoveryService(
       new ValidationViewService(
+        harness.config as any,
         harness.propositionRepository as any,
         harness.counterRepository as any,
         harness.marketRepository as any,
@@ -2719,6 +3059,7 @@ test("public discovery controller serves home ranking latest topics and category
   const home = await discoveryController.getHome();
   const hot = await discoveryController.getRanking("hot");
   const latest = await discoveryController.getLatestTopics();
+  const categoryIndex = await discoveryController.getCategoryDirectoryIndex();
   const politicsDirectory = await discoveryController.getCategoryDirectory("politics");
 
   assert.equal(home.featuredMarketIds.length >= 1, true);
@@ -2729,7 +3070,29 @@ test("public discovery controller serves home ranking latest topics and category
   assert.equal("marketBias" in (hot.items[0] ?? {}), false);
   assert.equal(latest.items.length >= 3, true);
   assert.equal(latest.items.some((item) => item.id === "latest"), true);
-  assert.equal(politicsDirectory?.title, "Politics");
+  assert.equal(
+    categoryIndex.items.some(
+      (item) =>
+        item.slug === "politics" &&
+        item.pathname === "/zh/politics" &&
+        item.label === "公共政策" &&
+        item.title === "政治" &&
+        item.directoryLabel === "公共政策" &&
+        item.description === "政府、立法与公共治理",
+    ),
+    true,
+  );
+  assert.equal(
+    categoryIndex.items.some(
+      (item) =>
+        item.slug === "sports-live" &&
+        item.pathname === "/zh/sports/live" &&
+        item.label === "体育" &&
+        item.directoryLabel === "体育结果",
+    ),
+    true,
+  );
+  assert.equal(politicsDirectory?.title, "政治");
   assert.equal(
     politicsDirectory?.marketIds.includes(
       (
@@ -2737,6 +3100,283 @@ test("public discovery controller serves home ranking latest topics and category
       )!.id,
     ),
     true,
+  );
+});
+
+test("public discovery closing-soon buckets are ordered by nearest reveal window and exclude settled or expired markets", async () => {
+  const harness = createArenaHarness();
+  const now = new Date();
+  const publishedAt = new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString();
+
+  const createRecentLiveProposition = async (input: {
+    title: string;
+    category: "politics" | "sports" | "ai" | "general";
+    minDurationSeconds: number;
+    maxDurationSeconds: number;
+    liveOffsetMs: number;
+  }) => {
+    const draft = await harness.propositionEngineService.createProposition({
+      ...propositionDraftInput,
+      title: input.title,
+      category: input.category,
+      marketEnabled: true,
+      minDurationSeconds: input.minDurationSeconds,
+      maxDurationSeconds: input.maxDurationSeconds,
+    });
+    const scheduled =
+      await harness.propositionEngineService.approveOrScheduleProposition({
+        propositionId: draft.id,
+        publishedAt,
+        updatedByUserId: "admin_1",
+      });
+
+    return harness.propositionEngineService.publishLiveProposition({
+      propositionId: scheduled.id,
+      liveAt: new Date(now.getTime() + input.liveOffsetMs).toISOString(),
+      updatedByUserId: "admin_1",
+    });
+  };
+
+  const urgent = await createRecentLiveProposition({
+    title: "Closing soon urgent proposition",
+    category: "politics",
+    minDurationSeconds: 300,
+    maxDurationSeconds: 2 * 60 * 60,
+    liveOffsetMs: -30 * 60 * 1000,
+  });
+  const upcoming = await createRecentLiveProposition({
+    title: "Closing soon upcoming proposition",
+    category: "ai",
+    minDurationSeconds: 300,
+    maxDurationSeconds: 8 * 60 * 60,
+    liveOffsetMs: 0,
+  });
+  const laterUpcoming = await createRecentLiveProposition({
+    title: "Closing soon later proposition",
+    category: "sports",
+    minDurationSeconds: 300,
+    maxDurationSeconds: 14 * 60 * 60,
+    liveOffsetMs: 0,
+  });
+  const expired = await createRecentLiveProposition({
+    title: "Closing soon expired proposition",
+    category: "general",
+    minDurationSeconds: 300,
+    maxDurationSeconds: 10 * 60,
+    liveOffsetMs: -45 * 60 * 1000,
+  });
+  const settled = await createRecentLiveProposition({
+    title: "Closing soon settled proposition",
+    category: "politics",
+    minDurationSeconds: 300,
+    maxDurationSeconds: 90 * 60,
+    liveOffsetMs: -20 * 60 * 1000,
+  });
+
+  await harness.propositionRepository.update(settled.id, {
+    status: "settled",
+    settledAt: new Date(now.getTime() - 5 * 60 * 1000),
+    resultKind: "resolved",
+    winningOption: 0,
+    voidReason: null,
+    resultComputedAt: new Date(now.getTime() - 6 * 60 * 1000),
+  });
+
+  const urgentMarket = await harness.marketRepository.findByPropositionId(urgent.id);
+  const upcomingMarket = await harness.marketRepository.findByPropositionId(upcoming.id);
+  const laterUpcomingMarket = await harness.marketRepository.findByPropositionId(laterUpcoming.id);
+  const expiredMarket = await harness.marketRepository.findByPropositionId(expired.id);
+  const settledMarket = await harness.marketRepository.findByPropositionId(settled.id);
+
+  assert.ok(urgentMarket);
+  assert.ok(upcomingMarket);
+  assert.ok(laterUpcomingMarket);
+  assert.ok(expiredMarket);
+  assert.ok(settledMarket);
+
+  const discoveryController = new ArenaPublicDiscoveryController(
+    new PublicDiscoveryService(
+      new ValidationViewService(
+        harness.config as any,
+        harness.propositionRepository as any,
+        harness.counterRepository as any,
+        harness.marketRepository as any,
+        harness.betRepository as any,
+      ),
+    ),
+  );
+
+  const closingSoon = await discoveryController.getClosingSoon();
+
+  assert.equal(closingSoon.urgentWindowMs, 3 * 60 * 60 * 1000);
+  assert.deepEqual(closingSoon.urgent.map((item) => item.marketId), [urgentMarket.id]);
+  assert.deepEqual(
+    closingSoon.upcoming.map((item) => item.marketId),
+    [upcomingMarket.id, laterUpcomingMarket.id],
+  );
+  assert.equal(closingSoon.urgent.every((item) => item.differenceMs > 0), true);
+  assert.equal(
+    closingSoon.upcoming.every((item) => item.differenceMs > closingSoon.urgentWindowMs),
+    true,
+  );
+  assert.equal(
+    closingSoon.upcoming[0]!.differenceMs <= closingSoon.upcoming[1]!.differenceMs,
+    true,
+  );
+  assert.equal(
+    closingSoon.urgent.some((item) => item.marketId === expiredMarket.id),
+    false,
+  );
+  assert.equal(
+    closingSoon.upcoming.some((item) => item.marketId === settledMarket.id),
+    false,
+  );
+});
+
+test("public respondent leaderboard only includes indexing-enabled public respondents and exposes masked aggregate rows", async () => {
+  const harness = createArenaHarness();
+
+  const politicsA = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Public leaderboard politics A",
+    category: "politics",
+  });
+  const politicsB = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Public leaderboard politics B",
+    category: "politics",
+  });
+  const aiA = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Public leaderboard ai A",
+    category: "ai",
+  });
+  const aiB = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Public leaderboard ai B",
+    category: "ai",
+  });
+
+  const publicUser = "0x1111111111111111111111111111111111111111";
+  const memberOnlyUser = "0x2222222222222222222222222222222222222222";
+  const notIndexedUser = "0x3333333333333333333333333333333333333333";
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: politicsA.id,
+    userId: publicUser,
+    minuteOffset: 510,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: politicsB.id,
+    userId: publicUser,
+    minuteOffset: 511,
+    reviewStatus: "partial_valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: aiA.id,
+    userId: publicUser,
+    minuteOffset: 512,
+    reviewStatus: "valid",
+  });
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: politicsA.id,
+    userId: memberOnlyUser,
+    minuteOffset: 520,
+    reviewStatus: "invalid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: aiB.id,
+    userId: memberOnlyUser,
+    minuteOffset: 521,
+    reviewStatus: "valid",
+  });
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: politicsA.id,
+    userId: notIndexedUser,
+    minuteOffset: 530,
+    reviewStatus: "valid",
+  });
+
+  const publicDefaults = await harness.accountPreferencesService.getAccountPreferencesForUser(publicUser);
+  await harness.accountPreferencesService.updateAccountPreferencesForUser(publicUser, {
+    ...publicDefaults,
+    profile: {
+      ...publicDefaults.profile,
+      profileVisibility: "public",
+    },
+    privacy: {
+      ...publicDefaults.privacy,
+      allowActivityIndexing: true,
+    },
+  });
+
+  const memberDefaults = await harness.accountPreferencesService.getAccountPreferencesForUser(memberOnlyUser);
+  await harness.accountPreferencesService.updateAccountPreferencesForUser(memberOnlyUser, {
+    ...memberDefaults,
+    profile: {
+      ...memberDefaults.profile,
+      profileVisibility: "members",
+    },
+    privacy: {
+      ...memberDefaults.privacy,
+      allowActivityIndexing: true,
+    },
+  });
+
+  const notIndexedDefaults = await harness.accountPreferencesService.getAccountPreferencesForUser(notIndexedUser);
+  await harness.accountPreferencesService.updateAccountPreferencesForUser(notIndexedUser, {
+    ...notIndexedDefaults,
+    profile: {
+      ...notIndexedDefaults.profile,
+      profileVisibility: "public",
+    },
+    privacy: {
+      ...notIndexedDefaults.privacy,
+      allowActivityIndexing: false,
+    },
+  });
+
+  const service = new PublicRespondentLeaderboardService(
+    harness.propositionRepository as any,
+    harness.dispatchTaskRepository as any,
+    harness.responseRepository as any,
+    harness.responseReviewRepository as any,
+    harness.userReputationRepository as any,
+    harness.userTagRepository as any,
+    harness.accountPreferencesService as any,
+    harness.systemKeyValueRepository as any,
+  );
+
+  const leaderboard = await service.getLeaderboard();
+  const politicsCategory = leaderboard.categories.find((category) => category.id === "public-policy");
+  const aiCategory = leaderboard.categories.find((category) => category.id === "ai-research");
+
+  assert.ok(politicsCategory);
+  assert.ok(aiCategory);
+  assert.equal(politicsCategory!.rows.length, 1);
+  assert.equal(aiCategory!.rows.length, 1);
+  assert.equal(politicsCategory!.rows[0]!.userId, publicUser);
+  assert.equal(politicsCategory!.rows[0]!.handle, "respondent-1111");
+  assert.equal(politicsCategory!.rows[0]!.walletShort, "0x1111…1111");
+  assert.equal(politicsCategory!.rows[0]!.reviewedCount, 2);
+  assert.equal(politicsCategory!.rows[0]!.acceptedCount, 2);
+  assert.equal(politicsCategory!.rows[0]!.responseRatePercent, 100);
+  assert.equal(politicsCategory!.rows[0]!.topTag.length > 0, true);
+  assert.equal(aiCategory!.rows[0]!.userId, publicUser);
+  assert.equal(
+    politicsCategory!.rows.some((row) => row.userId === memberOnlyUser),
+    false,
+  );
+  assert.equal(
+    politicsCategory!.rows.some((row) => row.userId === notIndexedUser),
+    false,
   );
 });
 
@@ -4026,6 +4666,27 @@ test("revealing propositions auto settle after projected chain resolution when v
   assert.deepEqual(result.propositionIds, [proposition.id]);
   assert.equal(settled?.status, "settled");
   assert.equal(settledMarket?.status, "settled");
+  const propositionDetail =
+    await harness.internalPropositionOpsService.getPropositionDetail(
+      proposition.id,
+    );
+
+  assert.equal(
+    propositionDetail.validationRehearsalCheckpoints.some(
+      (checkpoint) =>
+        checkpoint.stepId === "projection_and_settlement" &&
+        checkpoint.reason ===
+          "validation_rehearsal.auto.local_settlement_converged" &&
+        checkpoint.status === "complete",
+    ),
+    true,
+  );
+  assert.equal(
+    propositionDetail.validationRehearsal.steps.find(
+      (step) => step.id === "projection_and_settlement",
+    )?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.local_settlement_converged",
+  );
 });
 
 test("runDuePropositionTransitions processes publish reveal and settlement in one pass", async () => {
@@ -4315,6 +4976,17 @@ test("validation lifecycle drift monitoring surfaces propositions blocked on cha
     now: "2026-04-18T10:06:30.000Z",
     updatedByUserId: "admin_1",
   });
+  const revealMarket = await harness.marketRepository.findByPropositionId(
+    revealDrift.id,
+  );
+  assert.ok(revealMarket);
+  await harness.marketRepository.update(revealMarket.id, {
+    chainMarketId: `chain_market_${revealMarket.id}`,
+    chainPropositionId: `chain_prop_${revealDrift.id}`,
+    chainStatus: "live",
+    chainOpenedAt: new Date("2026-04-18T10:05:30.000Z"),
+    chainSyncedAt: new Date("2026-04-18T10:05:31.000Z"),
+  });
 
   const settledDrift = await createLiveProposition(harness, {
     minEffectiveSample: 1,
@@ -4378,14 +5050,339 @@ test("validation lifecycle drift monitoring surfaces propositions blocked on cha
   assert.ok(liveItem);
   assert.equal(liveItem?.driftReason, "chain_market_not_created");
   assert.equal(liveItem?.propositionStatus, "live");
+  assert.equal(liveItem?.onChainState, null);
+  assert.equal(liveItem?.operatorGuidance.kind, "queue_recovery");
+  assert.equal(liveItem?.operatorGuidance.recoveryReason, "create_open_missing_market");
+  assert.deepEqual(liveItem?.operatorGuidance.plannedCommands, [
+    "create_market",
+    "open_market",
+  ]);
 
   assert.ok(revealItem);
   assert.equal(revealItem?.driftReason, "chain_market_not_frozen");
   assert.equal(revealItem?.propositionStatus, "revealing");
+  assert.equal(revealItem?.onChainState, "live");
+  assert.equal(revealItem?.operatorGuidance.kind, "queue_recovery");
+  assert.equal(revealItem?.operatorGuidance.recoveryReason, "freeze_resolve_live_market");
+  assert.deepEqual(revealItem?.operatorGuidance.plannedCommands, [
+    "freeze_market",
+    "resolve_market",
+  ]);
 
   assert.ok(settledItem);
   assert.equal(settledItem?.driftReason, "chain_market_not_resolved");
   assert.equal(settledItem?.propositionStatus, "settled");
+  assert.equal(settledItem?.onChainState, "frozen");
+  assert.equal(settledItem?.operatorGuidance.kind, "queue_recovery");
+  assert.equal(settledItem?.operatorGuidance.recoveryReason, "resolve_settled_market");
+  assert.deepEqual(settledItem?.operatorGuidance.plannedCommands, [
+    "resolve_market",
+  ]);
+});
+
+test("validation lifecycle drift monitoring marks unsafe pre-live settlement drift as manual intervention", async () => {
+  const harness = createArenaHarness();
+  const monitoring = new ArenaInternalMonitoringController(
+    harness.internalMonitoringService,
+  );
+
+  const proposition = await createLiveProposition(harness, {
+    minEffectiveSample: 1,
+    marketEnabled: true,
+    title: "Unsafe pre-live drift",
+  });
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: proposition.id,
+    userId: "unsafe_pre_live_user",
+    minuteOffset: 260,
+    reviewStatus: "valid",
+  });
+  await harness.counterService.rebuildCounterForProposition(proposition.id);
+  await harness.betService.placeBet({
+    propositionId: proposition.id,
+    marketId: market.id,
+    userId: "unsafe_pre_live_bettor",
+    selectedOption: 0,
+    stakeAmount: "15",
+    placedAt: "2026-04-18T10:05:47.000Z",
+  });
+  await harness.freezeRevealOrchestratorService.finalizeRevealPreparation({
+    propositionId: proposition.id,
+    now: "2026-04-18T10:06:30.000Z",
+    updatedByUserId: "admin_1",
+  });
+  await harness.marketRepository.update(market.id, {
+    chainMarketId: `chain_market_${market.id}`,
+    chainPropositionId: `chain_prop_${proposition.id}`,
+    chainStatus: "pre_live",
+    chainSyncedAt: new Date("2026-04-18T10:06:41.000Z"),
+  });
+
+  const items = await monitoring.listValidationLifecycleDrift();
+  const driftItem = items.find((item) => item.propositionId === proposition.id);
+
+  assert.ok(driftItem);
+  assert.equal(driftItem?.driftReason, "chain_market_not_frozen");
+  assert.equal(driftItem?.onChainState, "pre_live");
+  assert.equal(driftItem?.operatorGuidance.kind, "manual_intervention");
+  assert.equal(driftItem?.operatorGuidance.recoveryReason, null);
+  assert.equal(
+    driftItem?.operatorGuidance.operatorActions.includes(
+      "docs/contracts/arena-validation-chain-runbook.md#unsafe-pre-live-drift-policy",
+    ),
+    true,
+  );
+});
+
+test("validation-chain runtime readiness monitoring exposes deployment preflight state", async () => {
+  const monitoring = new ArenaInternalMonitoringController({
+    async listSampleShortage() {
+      return [];
+    },
+    async listQualityAnomalies() {
+      return [];
+    },
+    async listValidationLifecycleDrift() {
+      return [];
+    },
+    async getValidationChainHealth() {
+      return null;
+    },
+    async getValidationChainRuntimeReadiness() {
+      return {
+        status: "degraded",
+        checkedAt: "2026-05-24T12:00:00.000Z",
+        validationEnvironment: "staging",
+        chainId: 8453,
+        rpcUrl: "https://rpc.example",
+        arenaContractAddress: "0x0000000000000000000000000000000000000001",
+        validationContractAddress: "0x0000000000000000000000000000000000000002",
+        dependencies: [
+          { name: "env", status: "up" },
+          { name: "database", status: "up" },
+          { name: "redis", status: "up" },
+          { name: "rpc", status: "down", details: "timeout" },
+          { name: "validation_contract_code", status: "up" },
+          { name: "validation_contract_bytecode", status: "up" },
+          { name: "validation_operator_signer", status: "up" },
+          { name: "validation_oracle_signer", status: "up" },
+          { name: "validation_pauser_signer", status: "up" },
+        ],
+        requiredEnvKeys: ["DATABASE_URL", "REDIS_URL", "RPC_URL"],
+        optionalEnvKeys: ["ARENA_VALIDATION_OPERATOR_ADDRESS"],
+        preflightCommands: ["pnpm run validation:env:check"],
+        runbookPath: "docs/contracts/arena-validation-chain-runbook.md",
+        operatorActions: [
+          {
+            dependency: "rpc",
+            summary: "Restore RPC connectivity and confirm the configured chain id matches the provider.",
+            envKeys: ["RPC_URL", "CHAIN_ID"],
+            commands: ["pnpm run validation:deps:check", "pnpm run validation:chain:check"],
+          },
+        ],
+      };
+    },
+  } as any);
+
+  const snapshot = await monitoring.getValidationChainRuntimeReadiness();
+
+  assert.equal(snapshot.status, "degraded");
+  assert.equal(snapshot.validationEnvironment, "staging");
+  assert.equal(snapshot.dependencies.find((item) => item.name === "rpc")?.status, "down");
+  assert.equal(snapshot.runbookPath, "docs/contracts/arena-validation-chain-runbook.md");
+  assert.equal(snapshot.operatorActions[0]?.dependency, "rpc");
+});
+
+test("internal monitoring runtime contract aggregates deployment-facing backend checks", async () => {
+  const monitoring = new ArenaInternalMonitoringController({
+    async listSampleShortage() {
+      return [];
+    },
+    async listQualityAnomalies() {
+      return [];
+    },
+    async listValidationLifecycleDrift() {
+      return [];
+    },
+    async getValidationChainHealth() {
+      return null;
+    },
+    async getValidationChainRuntimeReadiness() {
+      return {
+        status: "degraded",
+        checkedAt: "2026-05-24T12:00:00.000Z",
+        validationEnvironment: "staging",
+        chainId: 8453,
+        rpcUrl: "https://rpc.example",
+        arenaContractAddress: "0x0000000000000000000000000000000000000001",
+        validationContractAddress: "0x0000000000000000000000000000000000000002",
+        dependencies: [
+          { name: "env", status: "up" },
+          { name: "database", status: "up" },
+          { name: "redis", status: "up" },
+          { name: "rpc", status: "down", details: "timeout" },
+          { name: "validation_contract", status: "up" },
+          { name: "validation_contract_code", status: "up" },
+          { name: "validation_contract_bytecode", status: "up" },
+          { name: "validation_operator_signer", status: "up" },
+          { name: "validation_oracle_signer", status: "up" },
+          { name: "validation_pauser_signer", status: "up" },
+        ],
+        requiredEnvKeys: ["DATABASE_URL", "REDIS_URL", "RPC_URL"],
+        optionalEnvKeys: ["ARENA_VALIDATION_OPERATOR_ADDRESS"],
+        preflightCommands: ["pnpm run validation:env:check"],
+        runbookPath: "docs/contracts/arena-validation-chain-runbook.md",
+        operatorActions: [
+          {
+            dependency: "rpc",
+            summary: "Restore RPC connectivity and confirm the configured chain id matches the provider.",
+            envKeys: ["RPC_URL", "CHAIN_ID"],
+            commands: ["pnpm run validation:deps:check", "pnpm run validation:chain:check"],
+          },
+        ],
+      };
+    },
+    async getRuntimeContract() {
+      return {
+        status: "degraded",
+        generatedAt: "2026-05-24T12:00:00.000Z",
+        environment: {
+          nodeEnv: "production",
+          validationEnvironment: "staging",
+          port: 4000,
+        },
+        health: {
+          live: {
+            status: "ok",
+            timestamp: "2026-05-24T12:00:00.000Z",
+          },
+          readiness: {
+            status: "degraded",
+            timestamp: "2026-05-24T12:00:00.000Z",
+            dependencies: [
+              { name: "database", status: "up" },
+              { name: "redis", status: "up" },
+              { name: "rpc", status: "up" },
+              { name: "scheduler_queue", status: "down", details: "scheduler paused" },
+            ],
+          },
+          queues: {
+            status: "degraded",
+            timestamp: "2026-05-24T12:00:00.000Z",
+            redis: { status: "up" },
+            queues: [
+              {
+                name: "scheduler",
+                status: "down",
+                paused: true,
+                details: "scheduler paused",
+                policy: {
+                  retryable: true,
+                  attempts: 5,
+                  backoffType: "exponential",
+                  backoffDelayMs: 1000,
+                },
+              },
+            ],
+          },
+        },
+        validationChain: {
+          status: "degraded",
+          checkedAt: "2026-05-24T12:00:00.000Z",
+          validationEnvironment: "staging",
+          chainId: 8453,
+          rpcUrl: "https://rpc.example",
+          arenaContractAddress: "0x0000000000000000000000000000000000000001",
+          validationContractAddress: "0x0000000000000000000000000000000000000002",
+          dependencies: [
+            { name: "rpc", status: "down", details: "timeout" },
+          ],
+          requiredEnvKeys: ["DATABASE_URL", "REDIS_URL", "RPC_URL"],
+          optionalEnvKeys: ["ARENA_VALIDATION_OPERATOR_ADDRESS"],
+          preflightCommands: ["pnpm run validation:env:check"],
+          runbookPath: "docs/contracts/arena-validation-chain-runbook.md",
+          operatorActions: [
+            {
+              dependency: "rpc",
+              summary: "Restore RPC connectivity and confirm the configured chain id matches the provider.",
+              envKeys: ["RPC_URL", "CHAIN_ID"],
+              commands: ["pnpm run validation:deps:check", "pnpm run validation:chain:check"],
+            },
+          ],
+        },
+        validationRehearsal: {
+          status: "blocked",
+          targetOutcome:
+            "One proposition completes publish -> local bet -> on-chain placeBet -> manual or scheduled sync -> projection -> settlement against deployed validation infrastructure.",
+          runbookPath: "docs/contracts/arena-validation-chain-runbook.md",
+          blockingDependencies: ["scheduler_queue", "rpc"],
+          steps: [
+            {
+              id: "preflight",
+              summary: "Clear backend, queue, database, Redis, RPC, signer, and contract blockers before attempting an environment-backed validation rehearsal.",
+              commands: ["GET /arena/internal/monitoring/runtime-contract"],
+              evidence: ["GET /health/ready"],
+            },
+          ],
+        },
+        commands: {
+          install: ["pnpm install", "pnpm run deps:up"],
+          dev: ["pnpm run api:dev"],
+          typecheck: ["pnpm run api:typecheck"],
+          unitTest: ["pnpm --filter @arena/shared test"],
+          integrationTest: ["pnpm --filter @arena/api test:arena"],
+        e2eOrSmoke: ["pnpm run validation:test"],
+        productionBuild: ["pnpm run backend:build"],
+        validationLocalPrepare: ["pnpm run validation:prepare:local"],
+        databaseMigrate: ["pnpm run api:prisma:deploy", "pnpm run validation:db:deploy"],
+        preflight: ["pnpm run validation:preflight"],
+      },
+        releaseReadiness: {
+          status: "blocked",
+          blockingDependencies: ["scheduler_queue", "rpc"],
+          completedGateCount: 2,
+          totalGateCount: 3,
+        },
+        releaseChecklist: [
+          {
+            id: "env",
+            status: "ready",
+            summary: "Populate required backend and validation-chain environment variables.",
+            blockingDependencies: [],
+            commands: ["pnpm run validation:env:check"],
+          },
+          {
+            id: "readiness",
+            status: "blocked",
+            summary: "Verify public and validation runtime readiness before accepting traffic.",
+            blockingDependencies: ["scheduler_queue"],
+            commands: ["GET /health/ready", "GET /arena/internal/monitoring/validation-chain/runtime-readiness"],
+          },
+        ],
+      };
+    },
+  } as any);
+
+  const snapshot = await monitoring.getRuntimeContract();
+
+  assert.equal(snapshot.status, "degraded");
+  assert.equal(snapshot.environment.nodeEnv, "production");
+  assert.equal(snapshot.health.readiness.dependencies.some((item) => item.name === "scheduler_queue"), true);
+  assert.equal(snapshot.validationChain.runbookPath, "docs/contracts/arena-validation-chain-runbook.md");
+  assert.equal(snapshot.validationRehearsal.status, "blocked");
+  assert.equal(snapshot.commands.preflight.includes("pnpm run validation:preflight"), true);
+  assert.deepEqual(snapshot.commands.validationLocalPrepare, [
+    "pnpm run validation:prepare:local",
+  ]);
+  assert.equal(snapshot.releaseReadiness.status, "blocked");
+  assert.equal(snapshot.releaseChecklist.some((item) => item.id === "readiness"), true);
+  assert.equal(
+    snapshot.releaseChecklist.find((item) => item.id === "readiness")?.status,
+    "blocked",
+  );
 });
 
 test("internal validation chain controller exposes manual command controls with audit trail", async () => {
@@ -4424,10 +5421,139 @@ test("internal validation chain controller exposes manual command controls with 
     contract as any,
     harness.internalAuditService,
   );
+  const syncWorker = {
+    async syncNow() {
+      return {
+        streamKey: VALIDATION_CHAIN_STREAM_KEY,
+        latestBlock: 120,
+        safeToBlock: 118,
+        processedEvents: 4,
+        fromBlock: 101,
+        toBlock: 118,
+      };
+    },
+  };
+  const sync = new ValidationChainManualSyncService(
+    {
+      async syncOnce() {
+        return syncWorker.syncNow();
+      },
+    } as any,
+    harness.internalAuditService,
+  );
+  const betReconciliation = {
+    async reconcileBet() {
+      return {
+        betId: "bet_manual_chain_user",
+        marketId: market.id,
+        propositionId: proposition.id,
+        userId: "manual_chain_user",
+        localBet: {
+          selectedOption: 1,
+          stakeAmount: "40",
+          status: "placed",
+          claimed: false,
+          chainSyncedAt: "2026-04-24T00:31:00.000Z",
+          placedAt: "2026-04-24T00:20:00.000Z",
+        },
+        onChainPosition: {
+          exists: true,
+          selectedOption: 1,
+          stakeAmount: "40",
+          claimed: false,
+          claimableAmount: "0",
+        },
+        comparison: {
+          positionExists: true,
+          optionMatches: true,
+          amountMatches: true,
+          claimedMatches: true,
+          claimableAmount: "0",
+        },
+      };
+    },
+    async reconcileUnsyncedBets(input: { limit?: number }) {
+      return {
+        processedAt: "2026-04-24T00:30:00.000Z",
+        requestedLimit: input.limit ?? 20,
+        processedCount: 0,
+        matchedCount: 0,
+        mismatchedCount: 0,
+        failedCount: 0,
+        items: [],
+      };
+    },
+  };
+  const projectionReplay = {
+    async replayMarketProjection() {
+      return {
+        marketId: "market_1",
+        propositionId: proposition.id,
+        chainMarketId: `chain_market_${market.id}`,
+        chainPropositionId: `chain_prop_${proposition.id}`,
+        processedAt: "2026-04-24T00:35:00.000Z",
+        replayedEventCount: 2,
+        replayedEvents: [],
+        propositionStatus: "settled",
+        propositionSettledAt: "2026-04-24T00:35:00.000Z",
+        finalMarketProjection: {
+          chainStatus: "resolved",
+          chainOpenedAt: null,
+          chainFrozenAt: null,
+          chainResolvedAt: null,
+          chainCancelledAt: null,
+          chainResultKind: "resolved",
+          chainWinningOption: 0,
+          chainVoidReason: null,
+          resolutionTxHash: "0xreplay",
+          cancelTxHash: null,
+          chainSyncedAt: "2026-04-24T00:35:00.000Z",
+        },
+        finalBetProjections: [
+          {
+            betId: "bet_projection_1",
+            marketId: market.id,
+            propositionId: proposition.id,
+            userId: "manual_chain_user",
+            status: "settled",
+            claimed: true,
+            settlementOutcome: "won",
+            grossPayout: "40",
+            refundAmount: null,
+            claimTxHash: "0xclaimreplay",
+            refundTxHash: null,
+            chainSyncedAt: "2026-04-24T00:35:30.000Z",
+          },
+        ],
+      };
+    },
+  };
   const controller = new ArenaInternalValidationChainController(
     commands,
     oracle,
     pauser,
+    sync,
+    betReconciliation as any,
+    projectionReplay as any,
+    {
+      async recoverQueuedCommands() {
+        return {
+          propositionId: proposition.id,
+          marketId: market.id,
+          chainMarketId: `chain_market_${market.id}`,
+          chainPropositionId: `chain_prop_${proposition.id}`,
+          queuedAt: "2026-04-24T00:32:00.000Z",
+          propositionStatus: "revealing",
+          marketStatus: "frozen_for_reveal",
+          localChainStatus: "live",
+          onChainState: "live",
+          driftReason: "chain_market_not_frozen",
+          recoveryReason: "freeze_resolve_live_market",
+          plannedCommands: ["freeze_market", "resolve_market"],
+        };
+      },
+    } as any,
+    harness.validationRehearsalCheckpointService,
   );
 
   const proposition = await createLiveProposition(harness, {
@@ -4500,6 +5626,48 @@ test("internal validation chain controller exposes manual command controls with 
   assert.equal(resolved.chainPropositionId, `chain_prop_${proposition.id}`);
   assert.equal(paused.contractAddress, "0xvalidationcontract");
   assert.equal(unpaused.contractAddress, "0xvalidationcontract");
+  const syncSnapshot = await controller.syncValidationChain(
+    {
+      reason: "manual_chain_sync",
+      note: "runbook_recovery",
+    } as any,
+    { user: { sub: "operator_chain" } } as any,
+  );
+  assert.equal(syncSnapshot.streamKey, VALIDATION_CHAIN_STREAM_KEY);
+  assert.equal(syncSnapshot.processedEvents, 4);
+  const backlogSnapshot = await controller.reconcileUnsyncedValidationBets(
+    {
+      reason: "manual_chain_backlog_reconcile",
+      note: "batch_triage",
+      limit: 5,
+    } as any,
+    { user: { sub: "operator_chain" } } as any,
+  );
+  assert.equal(backlogSnapshot.processedCount, 0);
+  assert.equal(backlogSnapshot.requestedLimit, 5);
+  const replaySnapshot = await controller.replayValidationMarketProjection(
+    market.id,
+    {
+      reason: "manual_chain_projection_replay",
+      note: "rebuild_projection",
+    } as any,
+    { user: { sub: "operator_chain" } } as any,
+  );
+  assert.equal(replaySnapshot.marketId, "market_1");
+  assert.equal(replaySnapshot.replayedEventCount, 2);
+  const recoverySnapshot = await controller.recoverValidationChainCommands(
+    proposition.id,
+    {
+      reason: "manual_chain_command_recovery",
+      note: "queue_recovery",
+    } as any,
+    { user: { sub: "operator_chain" } } as any,
+  );
+  assert.equal(recoverySnapshot.marketId, market.id);
+  assert.deepEqual(recoverySnapshot.plannedCommands, [
+    "freeze_market",
+    "resolve_market",
+  ]);
   assert.deepEqual(
     harness.store.internalAuditEvents.map((event) => event.action).sort(),
     [
@@ -4508,8 +5676,246 @@ test("internal validation chain controller exposes manual command controls with 
       "validation_chain.open_market.submitted",
       "validation_chain.pause.submitted",
       "validation_chain.resolve_market.submitted",
+      "validation_chain.sync.manual.completed",
       "validation_chain.unpause.submitted",
     ],
+  );
+  const checkpoints =
+    await harness.internalPropositionOpsService.listValidationRehearsalCheckpoints(
+      proposition.id,
+    );
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+
+  assert.deepEqual(
+    checkpoints.map((item) => ({
+      stepId: item.stepId,
+      reason: item.reason,
+      txHash: item.txHash,
+    })),
+    [
+      {
+        stepId: "freeze_and_resolve",
+        reason: "validation_rehearsal.auto.resolve_market_submitted",
+        txHash: resolved.txHash,
+      },
+      {
+        stepId: "freeze_and_resolve",
+        reason: "validation_rehearsal.auto.freeze_market_submitted",
+        txHash: frozen.txHash,
+      },
+      {
+        stepId: "publish_and_open",
+        reason: "validation_rehearsal.auto.open_market_submitted",
+        txHash: opened.txHash,
+      },
+      {
+        stepId: "publish_and_open",
+        reason: "validation_rehearsal.auto.create_market_submitted",
+        txHash: created.txHash,
+      },
+      {
+        stepId: "projection_and_settlement",
+        reason: "validation_rehearsal.auto.projection_settlement_converged",
+        txHash: "0xreplay",
+      },
+    ],
+  );
+  assert.equal(detail.validationRehearsalCheckpoints.length, 5);
+  assert.equal(
+    detail.validationRehearsal.steps.find((step) => step.id === "publish_and_open")
+      ?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.open_market_submitted",
+  );
+  assert.equal(
+    detail.validationRehearsal.steps.find((step) => step.id === "freeze_and_resolve")
+      ?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.resolve_market_submitted",
+  );
+  assert.equal(
+    detail.validationRehearsal.steps.find(
+      (step) => step.id === "projection_and_settlement",
+    )?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.projection_settlement_converged",
+  );
+  assert.equal(
+    detail.validationRehearsal.steps.find(
+      (step) => step.id === "projection_and_settlement",
+    )?.manualCheckpoint?.status,
+    "complete",
+  );
+  const matchedReconciliation = await controller.reconcileValidationBet(
+    market.id,
+    "manual_chain_user",
+    {
+      reason: "manual_chain_bet_reconcile",
+      note: "post_sync_verification",
+    } as any,
+    { user: { sub: "operator_chain" } } as any,
+  );
+  const detailAfterReconciliation =
+    await harness.internalPropositionOpsService.getPropositionDetail(
+      proposition.id,
+    );
+
+  assert.equal(matchedReconciliation.propositionId, proposition.id);
+  assert.equal(matchedReconciliation.comparison.amountMatches, true);
+  assert.equal(detailAfterReconciliation.validationRehearsalCheckpoints.length, 6);
+  assert.equal(
+    detailAfterReconciliation.validationRehearsal.steps.find(
+      (step) => step.id === "local_bet_and_sync",
+    )?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.bet_reconciliation_matched",
+  );
+});
+
+test("manual validation chain sync records requested and failed audit context", async () => {
+  const harness = createArenaHarness();
+  const syncWorker = {
+    async syncOnce() {
+      throw new Error("rpc timeout");
+    },
+  };
+  const service = new ValidationChainManualSyncService(
+    syncWorker as any,
+    harness.internalAuditService,
+  );
+
+  await assert.rejects(
+    () =>
+      service.syncNow({
+        actorUserId: "operator_chain",
+        reason: "manual_sync_retry",
+        note: "after_rpc_recovery",
+      }),
+    (error: unknown) =>
+      error instanceof Error && error.message === "rpc timeout",
+  );
+
+  assert.deepEqual(
+    harness.store.internalAuditEvents.map((event) => ({
+      entityType: event.entityType,
+      entityId: event.entityId,
+      action: event.action,
+      actorUserId: event.actorUserId,
+      reason: event.reason,
+      note: event.note,
+      metadata: event.metadataJson,
+    })),
+    [
+      {
+        entityType: "validation_chain_stream",
+        entityId: VALIDATION_CHAIN_STREAM_KEY,
+        action: "validation_chain.sync.manual.failed",
+        actorUserId: "operator_chain",
+        reason: "manual_sync_retry",
+        note: "after_rpc_recovery",
+        metadata: {
+          error: "rpc timeout",
+        },
+      },
+    ],
+  );
+});
+
+test("projection replay automatic rehearsal checkpoint stays blocked until local proposition settlement completes", async () => {
+  const harness = createArenaHarness();
+  const controller = new ArenaInternalValidationChainController(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {
+      async reconcileBet() {
+        throw new Error("not used");
+      },
+      async reconcileUnsyncedBets() {
+        throw new Error("not used");
+      },
+    } as any,
+    {
+      async replayMarketProjection() {
+        return {
+          marketId: proposition.id.replace("proposition", "market"),
+          propositionId: proposition.id,
+          chainMarketId: `chain_market_${proposition.id}`,
+          chainPropositionId: `chain_prop_${proposition.id}`,
+          processedAt: "2026-04-24T00:35:00.000Z",
+          replayedEventCount: 3,
+          replayedEvents: [],
+          propositionStatus: "revealing",
+          propositionSettledAt: null,
+          finalMarketProjection: {
+            chainStatus: "resolved",
+            chainOpenedAt: null,
+            chainFrozenAt: null,
+            chainResolvedAt: "2026-04-24T00:30:00.000Z",
+            chainCancelledAt: null,
+            chainResultKind: "resolved",
+            chainWinningOption: 0,
+            chainVoidReason: null,
+            resolutionTxHash: "0xreplayblocked",
+            cancelTxHash: null,
+            chainSyncedAt: "2026-04-24T00:31:00.000Z",
+          },
+          finalBetProjections: [
+            {
+              betId: "bet_projection_blocked",
+              marketId: proposition.id.replace("proposition", "market"),
+              propositionId: proposition.id,
+              userId: "blocked_projection_user",
+              status: "settled",
+              claimed: true,
+              settlementOutcome: "won",
+              grossPayout: "25",
+              refundAmount: null,
+              claimTxHash: "0xclaimblocked",
+              refundTxHash: null,
+              chainSyncedAt: "2026-04-24T00:31:00.000Z",
+            },
+          ],
+        };
+      },
+    } as any,
+    {} as any,
+    harness.validationRehearsalCheckpointService,
+  );
+
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Projection replay blocked until settlement",
+  });
+
+  const replay = await controller.replayValidationMarketProjection(
+    proposition.id.replace("proposition", "market"),
+    {
+      reason: "manual_chain_projection_replay",
+      note: "await_local_settlement",
+    } as any,
+    { user: { sub: "operator_chain" } } as any,
+  );
+  const checkpoints =
+    await harness.internalPropositionOpsService.listValidationRehearsalCheckpoints(
+      proposition.id,
+    );
+
+  assert.equal(replay.propositionStatus, "revealing");
+  assert.equal(replay.propositionSettledAt, null);
+  assert.equal(checkpoints.length, 1);
+  assert.equal(checkpoints[0]?.stepId, "projection_and_settlement");
+  assert.equal(
+    checkpoints[0]?.reason,
+    "validation_rehearsal.auto.projection_settlement_incomplete",
+  );
+  assert.equal(checkpoints[0]?.status, "blocked");
+  assert.equal(
+    checkpoints[0]?.evidence.includes("propositionStatus=revealing"),
+    true,
+  );
+  assert.equal(
+    checkpoints[0]?.evidence.includes("propositionSettledAt=missing"),
+    true,
   );
 });
 
@@ -4549,10 +5955,84 @@ test("internal validation chain cancel requires explicit actor and valid chain s
     contract as any,
     harness.internalAuditService,
   );
+  const sync = {
+    async syncNow() {
+      return {
+        streamKey: VALIDATION_CHAIN_STREAM_KEY,
+        latestBlock: 120,
+        safeToBlock: 118,
+        processedEvents: 4,
+        fromBlock: 101,
+        toBlock: 118,
+      };
+    },
+  };
   const controller = new ArenaInternalValidationChainController(
     commands,
     oracle,
     pauser,
+    sync as any,
+    {
+      async reconcileUnsyncedBets() {
+        return {
+          processedAt: "2026-04-24T00:30:00.000Z",
+          requestedLimit: 20,
+          processedCount: 0,
+          matchedCount: 0,
+          mismatchedCount: 0,
+          failedCount: 0,
+          items: [],
+        };
+      },
+    } as any,
+    {
+      async replayMarketProjection() {
+        return {
+          marketId: "market_1",
+          propositionId: proposition.id,
+          chainMarketId: `chain_market_${market.id}`,
+          chainPropositionId: `chain_prop_${proposition.id}`,
+          processedAt: "2026-04-24T00:35:00.000Z",
+          replayedEventCount: 0,
+          replayedEvents: [],
+          propositionStatus: "live",
+          propositionSettledAt: null,
+          finalMarketProjection: {
+            chainStatus: null,
+            chainOpenedAt: null,
+            chainFrozenAt: null,
+            chainResolvedAt: null,
+            chainCancelledAt: null,
+            chainResultKind: null,
+            chainWinningOption: null,
+            chainVoidReason: null,
+            resolutionTxHash: null,
+            cancelTxHash: null,
+            chainSyncedAt: null,
+          },
+          finalBetProjections: [],
+        };
+      },
+    } as any,
+    {
+      async recoverQueuedCommands() {
+        return {
+          propositionId: proposition.id,
+          marketId: market.id,
+          chainMarketId: `chain_market_${market.id}`,
+          chainPropositionId: `chain_prop_${proposition.id}`,
+          queuedAt: "2026-04-24T00:32:00.000Z",
+          propositionStatus: "live",
+          marketStatus: "live",
+          localChainStatus: null,
+          onChainState: null,
+          driftReason: "chain_market_not_created",
+          recoveryReason: "create_open_missing_market",
+          plannedCommands: ["create_market", "open_market"],
+        };
+      },
+    } as any,
+    harness.validationRehearsalCheckpointService,
   );
 
   const proposition = await createLiveProposition(harness, {
@@ -4794,6 +6274,477 @@ test("internal proposition detail includes validation chain event failure activi
   );
 });
 
+test("internal proposition detail includes completed validation rehearsal progress", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Validation rehearsal progress proposition",
+  });
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+
+  const bettor = "0x00000000000000000000000000000000000000b1";
+  await harness.betService.placeBet({
+    propositionId: proposition.id,
+    marketId: market.id,
+    userId: bettor,
+    selectedOption: 0,
+    stakeAmount: "25",
+    placedAt: "2026-04-18T10:05:45.000Z",
+  });
+
+  await harness.marketRepository.update(market.id, {
+    chainMarketId: `chain_market_${market.id}`,
+    chainPropositionId: `chain_prop_${proposition.id}`,
+    chainStatus: "resolved",
+    chainOpenedAt: new Date("2026-04-18T10:05:20.000Z"),
+    chainFrozenAt: new Date("2026-04-18T10:06:15.000Z"),
+    chainResolvedAt: new Date("2026-04-18T10:07:00.000Z"),
+    chainResultKind: "resolved",
+    chainWinningOption: 0,
+    resolutionTxHash: `0x${"6".repeat(64)}`,
+    chainSyncedAt: new Date("2026-04-18T10:07:02.000Z"),
+  });
+  await harness.betRepository.update(harness.store.bets[0]!.id, {
+    status: "settled",
+    settlementOutcome: "won",
+    grossPayout: "25",
+    pnl: "0",
+    claimed: false,
+    chainSyncedAt: new Date("2026-04-18T10:05:50.000Z"),
+  });
+  await harness.propositionRepository.update(proposition.id, {
+    status: "settled",
+    frozenAt: new Date("2026-04-18T10:06:10.000Z"),
+    revealStartedAt: new Date("2026-04-18T10:06:20.000Z"),
+    resultComputedAt: new Date("2026-04-18T10:06:40.000Z"),
+    resultKind: "resolved",
+    winningOption: 0,
+    settledAt: new Date("2026-04-18T10:07:05.000Z"),
+  });
+
+  harness.store.validationChainEvents.push(
+    {
+      id: "validation_event_bet_placed",
+      chainId: 31337,
+      contractAddress: "0xvalidationcontract",
+      blockNumber: 21,
+      blockHash: `0x${"7".repeat(64)}`,
+      transactionHash: `0x${"8".repeat(64)}`,
+      transactionIndex: 0,
+      logIndex: 1,
+      eventName: "BetPlaced",
+      marketChainId: `chain_market_${market.id}`,
+      propositionChainId: `chain_prop_${proposition.id}`,
+      payloadJson: {
+        marketId: `chain_market_${market.id}`,
+        propositionId: `chain_prop_${proposition.id}`,
+        user: bettor,
+        selectedOption: 0,
+        amount: "25",
+        blockTimestamp: 1_713_434_750,
+      },
+      processedAt: new Date("2026-04-18T10:05:50.000Z"),
+    },
+    {
+      id: "validation_event_market_resolved_progress",
+      chainId: 31337,
+      contractAddress: "0xvalidationcontract",
+      blockNumber: 22,
+      blockHash: `0x${"9".repeat(64)}`,
+      transactionHash: `0x${"a".repeat(64)}`,
+      transactionIndex: 0,
+      logIndex: 2,
+      eventName: "MarketResolved",
+      marketChainId: `chain_market_${market.id}`,
+      propositionChainId: `chain_prop_${proposition.id}`,
+      payloadJson: {
+        marketId: `chain_market_${market.id}`,
+        propositionId: `chain_prop_${proposition.id}`,
+        resultKind: "resolved",
+        winningOption: 0,
+        voidReason: null,
+        resolvedAt: 1_713_434_820,
+        oracle: "0xoracle",
+        blockTimestamp: 1_713_434_822,
+      },
+      processedAt: new Date("2026-04-18T10:07:02.000Z"),
+    },
+  );
+
+  await harness.internalAuditService.record({
+    entityType: "validation_chain_command",
+    entityId: proposition.id,
+    action: "validation_chain.command.enqueued",
+    actorUserId: "system_scheduler",
+    reason: "validation_chain.runtime.publish_live",
+    metadata: {
+      command: "create_market",
+      queueJobId: "validation-chain:create",
+    },
+    createdAt: new Date("2026-04-18T10:05:05.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_market",
+    entityId: market.id,
+    action: "validation_chain.create_market.submitted",
+    actorUserId: "operator_chain",
+    reason: "manual_chain_create",
+    metadata: {
+      propositionId: proposition.id,
+      marketId: market.id,
+      chainPropositionId: `chain_prop_${proposition.id}`,
+      chainMarketId: `chain_market_${market.id}`,
+      txHash: `0x${"b".repeat(64)}`,
+    },
+    createdAt: new Date("2026-04-18T10:05:10.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_chain_stream",
+    entityId: VALIDATION_CHAIN_STREAM_KEY,
+    action: "validation_chain.sync.manual.completed",
+    actorUserId: "operator_chain",
+    reason: "manual_sync_progress",
+    metadata: {
+      processedEvents: 2,
+      fromBlock: 20,
+      toBlock: 22,
+    },
+    createdAt: new Date("2026-04-18T10:05:55.000Z"),
+  });
+
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+
+  assert.equal(detail.validationRehearsal.status, "ready");
+  assert.equal(detail.validationRehearsal.summary.completedStepCount, 5);
+  assert.equal(detail.validationRehearsal.summary.remainingStepCount, 0);
+  assert.equal(detail.validationRehearsal.summary.currentStepId, null);
+  assert.equal(
+    typeof detail.validationRehearsal.environmentReadiness.status,
+    "string",
+  );
+  assert.equal(
+    Array.isArray(
+      detail.validationRehearsal.environmentReadiness.blockingDependencies,
+    ),
+    true,
+  );
+  assert.deepEqual(
+    detail.validationRehearsal.steps.map((step) => ({
+      id: step.id,
+      status: step.status,
+    })),
+    [
+      { id: "preflight", status: "complete" },
+      { id: "publish_and_open", status: "complete" },
+      { id: "local_bet_and_sync", status: "complete" },
+      { id: "freeze_and_resolve", status: "complete" },
+      { id: "projection_and_settlement", status: "complete" },
+    ],
+  );
+  assert.equal(
+    detail.validationRehearsal.steps[2]?.evidence.some((item) =>
+      item.includes("BetPlaced"),
+    ),
+    true,
+  );
+  assert.equal(
+    detail.validationRehearsal.steps[1]?.commands.includes(
+      `POST /arena/internal/validation-chain/propositions/${proposition.id}/recover-command`,
+    ),
+    true,
+  );
+  assert.equal(
+    detail.validationRehearsal.steps[4]?.evidence.some((item) =>
+      item.includes("settlementOutcome=won"),
+    ),
+    true,
+  );
+});
+
+test("internal proposition detail marks validation rehearsal as blocked at the current incomplete step", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Blocked validation rehearsal proposition",
+  });
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+
+  await harness.marketRepository.update(market.id, {
+    chainMarketId: `chain_market_${market.id}`,
+    chainPropositionId: `chain_prop_${proposition.id}`,
+    chainStatus: "pre_live",
+    chainSyncedAt: new Date("2026-04-18T10:05:15.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_market",
+    entityId: market.id,
+    action: "validation_chain.create_market.submitted",
+    actorUserId: "operator_chain",
+    reason: "manual_chain_create",
+    metadata: {
+      propositionId: proposition.id,
+      marketId: market.id,
+      chainPropositionId: `chain_prop_${proposition.id}`,
+      chainMarketId: `chain_market_${market.id}`,
+      txHash: `0x${"c".repeat(64)}`,
+    },
+    createdAt: new Date("2026-04-18T10:05:10.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_chain_command",
+    entityId: proposition.id,
+    action: "validation_chain.alert.command_terminal",
+    actorUserId: null,
+    reason: "validation_chain.command.retry_exhausted",
+    metadata: {
+      command: "open_market",
+      error: "rpc timeout",
+    },
+    createdAt: new Date("2026-04-18T10:05:25.000Z"),
+  });
+
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+
+  assert.equal(detail.validationRehearsal.status, "blocked");
+  assert.equal(detail.validationRehearsal.summary.completedStepCount, 1);
+  assert.equal(detail.validationRehearsal.summary.currentStepId, "publish_and_open");
+  assert.equal(detail.validationRehearsal.summary.currentStepStatus, "blocked");
+  assert.equal(
+    typeof detail.validationRehearsal.environmentReadiness.status,
+    "string",
+  );
+  assert.equal(
+    detail.validationRehearsal.summary.nextCommands.includes(
+      `POST /arena/internal/validation-chain/propositions/${proposition.id}/recover-command`,
+    ),
+    true,
+  );
+  assert.deepEqual(
+    detail.validationRehearsal.steps.map((step) => ({
+      id: step.id,
+      status: step.status,
+    })),
+    [
+      { id: "preflight", status: "complete" },
+      { id: "publish_and_open", status: "blocked" },
+      { id: "local_bet_and_sync", status: "pending" },
+      { id: "freeze_and_resolve", status: "pending" },
+      { id: "projection_and_settlement", status: "pending" },
+    ],
+  );
+  assert.equal(
+    detail.validationRehearsal.steps[1]?.blockingReasons.includes(
+      "latest command terminal audit: open_market",
+    ),
+    true,
+  );
+  assert.equal(detail.validationRehearsal.blockingDependencies.includes("publish_and_open"), true);
+});
+
+test("validation rehearsal checkpoints persist operator evidence and surface on internal proposition detail", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Validation rehearsal checkpoint proposition",
+  });
+
+  const checkpoint =
+    await harness.validationRehearsalCheckpointService.recordCheckpoint({
+      propositionId: proposition.id,
+      stepId: "publish_and_open",
+      status: "complete",
+      reason: "manual_stage_rehearsal",
+      note: "market created and opened against staging contract",
+      evidence: [
+        "tx:0x1234",
+        "operator-confirmed open_market completion",
+      ],
+      txHash: `0x${"d".repeat(64)}`,
+      blockNumber: 42,
+      actorUserId: "operator_chain",
+      recordedAt: "2026-04-18T10:05:45.000Z",
+    });
+
+  assert.equal(checkpoint.stepId, "publish_and_open");
+  assert.equal(checkpoint.status, "complete");
+  assert.equal(checkpoint.txHash, `0x${"d".repeat(64)}`);
+
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+  const publishStep = detail.validationRehearsal.steps.find(
+    (step) => step.id === "publish_and_open",
+  );
+
+  assert.ok(publishStep);
+  assert.equal(publishStep.manualCheckpoint?.reason, "manual_stage_rehearsal");
+  assert.equal(detail.validationRehearsalCheckpoints.length, 1);
+  assert.equal(
+    detail.validationRehearsal.summary.latestCheckpointStepId,
+    "publish_and_open",
+  );
+  assert.equal(
+    detail.validationRehearsal.summary.latestCheckpointStatus,
+    "complete",
+  );
+  assert.equal(
+    detail.validationRehearsalCheckpoints[0]?.stepId,
+    "publish_and_open",
+  );
+  assert.equal(
+    publishStep.evidence.some((item) =>
+      item.includes("manualCheckpoint.txHash"),
+    ),
+    true,
+  );
+  assert.equal(
+    publishStep.commands.includes(
+      `POST /arena/internal/validation-chain/propositions/${proposition.id}/recover-command`,
+    ),
+    true,
+  );
+});
+
+test("validation rehearsal checkpoints can be listed directly for operator execution audit", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Validation rehearsal checkpoint list proposition",
+  });
+
+  await harness.validationRehearsalCheckpointService.recordCheckpoint({
+    propositionId: proposition.id,
+    stepId: "publish_and_open",
+    status: "complete",
+    reason: "manual_stage_open_complete",
+    evidence: ["tx:0xaaa1"],
+    actorUserId: "operator_chain",
+    recordedAt: "2026-04-18T10:05:45.000Z",
+  });
+  await harness.validationRehearsalCheckpointService.recordCheckpoint({
+    propositionId: proposition.id,
+    stepId: "freeze_and_resolve",
+    status: "blocked",
+    reason: "awaiting_oracle_result",
+    note: "result not submitted yet",
+    evidence: ["oracle pending"],
+    actorUserId: "operator_chain",
+    recordedAt: "2026-04-18T10:12:00.000Z",
+  });
+
+  const checkpoints =
+    await harness.internalPropositionOpsService.listValidationRehearsalCheckpoints(
+      proposition.id,
+    );
+
+  assert.equal(checkpoints.length, 2);
+  assert.deepEqual(
+    checkpoints.map((item) => ({
+      stepId: item.stepId,
+      status: item.status,
+      reason: item.reason,
+    })),
+    [
+      {
+        stepId: "freeze_and_resolve",
+        status: "blocked",
+        reason: "awaiting_oracle_result",
+      },
+      {
+        stepId: "publish_and_open",
+        status: "complete",
+        reason: "manual_stage_open_complete",
+      },
+    ],
+  );
+});
+
+test("validation rehearsal checkpoint history preserves repeated step attempts while detail uses the latest step checkpoint", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Validation rehearsal repeated step checkpoint proposition",
+  });
+
+  await harness.validationRehearsalCheckpointService.recordCheckpoint({
+    propositionId: proposition.id,
+    stepId: "publish_and_open",
+    status: "blocked",
+    reason: "initial_publish_attempt_blocked",
+    note: "awaiting operator retry",
+    evidence: ["rpc timeout"],
+    actorUserId: "operator_chain",
+    recordedAt: "2026-04-18T10:05:45.000Z",
+  });
+  await harness.validationRehearsalCheckpointService.recordCheckpoint({
+    propositionId: proposition.id,
+    stepId: "publish_and_open",
+    status: "complete",
+    reason: "retry_publish_attempt_complete",
+    note: "market opened after retry",
+    evidence: ["tx:0xbbb2"],
+    txHash: `0x${"b".repeat(64)}`,
+    actorUserId: "operator_chain",
+    recordedAt: "2026-04-18T10:09:15.000Z",
+  });
+
+  const checkpoints =
+    await harness.internalPropositionOpsService.listValidationRehearsalCheckpoints(
+      proposition.id,
+    );
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+  const publishStep = detail.validationRehearsal.steps.find(
+    (step) => step.id === "publish_and_open",
+  );
+
+  assert.equal(checkpoints.length, 2);
+  assert.deepEqual(
+    checkpoints.map((item) => ({
+      stepId: item.stepId,
+      status: item.status,
+      reason: item.reason,
+    })),
+    [
+      {
+        stepId: "publish_and_open",
+        status: "complete",
+        reason: "retry_publish_attempt_complete",
+      },
+      {
+        stepId: "publish_and_open",
+        status: "blocked",
+        reason: "initial_publish_attempt_blocked",
+      },
+    ],
+  );
+  assert.ok(publishStep);
+  assert.equal(
+    publishStep.manualCheckpoint?.reason,
+    "retry_publish_attempt_complete",
+  );
+  assert.equal(
+    publishStep.manualCheckpoint?.txHash,
+    `0x${"b".repeat(64)}`,
+  );
+  assert.equal(
+    detail.validationRehearsal.summary.latestCheckpointStepId,
+    "publish_and_open",
+  );
+  assert.equal(
+    detail.validationRehearsal.summary.latestCheckpointStatus,
+    "complete",
+  );
+  assert.equal(detail.validationRehearsalCheckpoints.length, 2);
+});
+
 test("reward audit detail and retriggered correction preserve ledger history", async () => {
   const harness = createArenaHarness();
   const controller = new ArenaInternalRewardsController(
@@ -4898,7 +6849,52 @@ test("internal proposition export returns complete audit summary sections", asyn
     exported.validationLifecycle.driftReason,
     "chain_market_not_frozen",
   );
+  assert.equal(exported.validationRehearsal.summary.currentStepId, "publish_and_open");
+  assert.equal(
+    typeof exported.validationRehearsal.environmentReadiness.status,
+    "string",
+  );
+  assert.equal(Array.isArray(exported.validationRehearsalCheckpoints), true);
+  assert.equal(exported.validationRehearsalCheckpoints.length, 0);
   assert.equal(exported.auditEvents.length, 1);
+});
+
+test("internal proposition evidence bundle combines proposition export with runtime contract snapshot", async () => {
+  const harness = createArenaHarness();
+  const controller = new ArenaInternalPropositionsController(
+    harness.internalPropositionOpsService,
+  );
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Evidence bundle proposition",
+  });
+
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+  await harness.marketRepository.update(market.id, {
+    chainMarketId: `chain_market_${market.id}`,
+    chainPropositionId: `chain_prop_${proposition.id}`,
+    chainStatus: "pre_live",
+    chainSyncedAt: new Date(arenaTime(231, 10)),
+  });
+
+  const bundle = await controller.exportPropositionEvidenceBundle(proposition.id);
+
+  assert.equal(bundle.propositionId, proposition.id);
+  assert.equal(typeof bundle.exportedAt, "string");
+  assert.equal(bundle.propositionExport.proposition.id, proposition.id);
+  assert.equal(bundle.propositionExport.market?.chainMarketId, `chain_market_${market.id}`);
+  assert.equal(typeof bundle.runtimeContract.status, "string");
+  assert.equal(
+    Array.isArray(bundle.runtimeContract.commands.validationLocalPrepare),
+    true,
+  );
+  assert.equal(
+    bundle.runtimeContract.commands.validationLocalPrepare.includes(
+      "pnpm run validation:prepare:local",
+    ),
+    true,
+  );
 });
 
 test("public and respondent surfaces do not expose internal ops audit fields", async () => {
@@ -4913,15 +6909,7 @@ test("public and respondent surfaces do not expose internal ops audit fields", a
     reviewStatus: "valid",
   });
 
-  const publicController = new ArenaPublicController(
-    harness.counterService,
-    new ValidationViewService(
-      harness.propositionRepository as any,
-      harness.counterRepository as any,
-      harness.marketRepository as any,
-      harness.betRepository as any,
-    ),
-  );
+  const publicController = createPublicController(harness);
   const rewardsController = new ArenaRespondentRewardsController(
     new RewardViewService(
       harness.propositionRepository as any,
@@ -5702,6 +7690,209 @@ test("respondent account exports create and list real export records for the cur
   assert.equal(listed.items[0]?.includeSettlementAttachment, true);
 });
 
+test("respondent account exports return stored artifact detail for the current user", async () => {
+  const harness = createArenaHarness();
+  const controller = new ArenaRespondentAccountController(
+    new AccountViewService(
+      new RewardViewService(
+        harness.propositionRepository as any,
+        harness.rewardLedgerService as any,
+      ),
+      harness.reputationService,
+      harness.tagService,
+      new ResultViewService(
+        harness.propositionRepository as any,
+        harness.counterRepository as any,
+        harness.rewardLedgerService as any,
+        harness.marketRepository as any,
+        harness.betRepository as any,
+      ),
+    ),
+    harness.accountPreferencesService,
+    harness.watchlistService,
+    harness.accountExportService,
+  );
+
+  const request = {
+    user: {
+      sub: "account_export_detail_user",
+    },
+  } as any;
+
+  await createReviewedResponse(harness, {
+    userId: "account_export_detail_user",
+    category: "ai",
+    minuteOffset: 3,
+    reviewStatus: "valid",
+  });
+
+  const exported = await controller.createOwnAccountExport({}, request);
+  const detail = await controller.getOwnAccountExport(
+    exported.exportId,
+    request,
+  );
+
+  assert.equal(detail.exportId, exported.exportId);
+  assert.equal(detail.fileName, exported.fileName);
+  assert.equal(detail.overview.userId, "account_export_detail_user");
+  assert.equal(detail.preferences.userId, "account_export_detail_user");
+  assert.equal(detail.status, "completed");
+});
+
+test("discussion stays hidden before settlement and opens after settlement", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    title: "Discussion boundary proposition",
+    marketEnabled: true,
+  });
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+
+  const controller = new ArenaDiscussionController(harness.discussionService);
+
+  const hiddenThread = await controller.getMarketDiscussion(market.id);
+  assert.equal(hiddenThread.availability, "pre_settlement_hidden");
+  assert.equal(hiddenThread.totalCount, 0);
+  assert.deepEqual(hiddenThread.comments, []);
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: proposition.id,
+    userId: "discussion_settle_user_1",
+    minuteOffset: 291,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: proposition.id,
+    userId: "discussion_settle_user_2",
+    minuteOffset: 292,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: proposition.id,
+    userId: "discussion_settle_user_3",
+    minuteOffset: 293,
+    reviewStatus: "valid",
+  });
+  await harness.counterService.rebuildCounterForProposition(proposition.id);
+  await harness.betService.placeBet({
+    propositionId: proposition.id,
+    marketId: market.id,
+    userId: "discussion_settle_bettor",
+    chainId: 1,
+    selectedOption: 0,
+    stakeAmount: "10",
+    placedAt: arenaTime(293, 30),
+  });
+  await harness.freezeRevealOrchestratorService.finalizeRevealPreparation({
+    propositionId: proposition.id,
+    now: arenaTime(294),
+    updatedByUserId: "admin_1",
+  });
+  await harness.validationSettlementService.settleValidationMarket({
+    propositionId: proposition.id,
+    settledAt: arenaTime(295),
+  });
+
+  const openedThread = await controller.getMarketDiscussion(market.id);
+  assert.equal(openedThread.availability, "settled");
+  assert.equal(openedThread.totalCount, 0);
+});
+
+test("discussion controller persists settled comments newest-first", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    title: "Discussion write proposition",
+    marketEnabled: true,
+  });
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: proposition.id,
+    userId: "discussion_writer_user_1",
+    minuteOffset: 301,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: proposition.id,
+    userId: "discussion_writer_user_2",
+    minuteOffset: 302,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: proposition.id,
+    userId: "discussion_writer_user_3",
+    minuteOffset: 303,
+    reviewStatus: "valid",
+  });
+  await harness.counterService.rebuildCounterForProposition(proposition.id);
+  await harness.betService.placeBet({
+    propositionId: proposition.id,
+    marketId: market.id,
+    userId: "discussion_writer_bettor",
+    chainId: 1,
+    selectedOption: 0,
+    stakeAmount: "10",
+    placedAt: arenaTime(303, 30),
+  });
+  await harness.freezeRevealOrchestratorService.finalizeRevealPreparation({
+    propositionId: proposition.id,
+    now: arenaTime(304),
+    updatedByUserId: "admin_1",
+  });
+  await harness.validationSettlementService.settleValidationMarket({
+    propositionId: proposition.id,
+    settledAt: arenaTime(305),
+  });
+
+  const controller = new ArenaDiscussionController(harness.discussionService);
+  const firstThread = await controller.createComment(
+    market.id,
+    {
+      propositionId: proposition.id,
+      body: "结算后我更认同 A，因为有效样本已经闭环。",
+      optionIndex: 0,
+      createdAt: arenaTime(306),
+    },
+    {
+      user: {
+        sub: "discussion_author_a",
+      },
+    } as any,
+  );
+
+  assert.equal(firstThread.totalCount, 1);
+  assert.equal(firstThread.comments[0]?.optionIndex, 0);
+  assert.equal(
+    firstThread.comments[0]?.body,
+    "结算后我更认同 A，因为有效样本已经闭环。",
+  );
+
+  const secondThread = await controller.createComment(
+    market.id,
+    {
+      propositionId: proposition.id,
+      body: "我更关注结算后披露的证据标准，而不是盘中方向。",
+      createdAt: arenaTime(307),
+    },
+    {
+      user: {
+        sub: "discussion_author_b",
+      },
+    } as any,
+  );
+
+  assert.equal(secondThread.totalCount, 2);
+  assert.equal(
+    secondThread.comments[0]?.body,
+    "我更关注结算后披露的证据标准，而不是盘中方向。",
+  );
+  assert.equal(
+    secondThread.comments[1]?.body,
+    "结算后我更认同 A，因为有效样本已经闭环。",
+  );
+});
+
 test("internal controllers remain protected by role guard while public controller stays open", () => {
   const guard = new RolesGuard(new Reflector());
   const internalController = new ArenaInternalPropositionsController({} as any);
@@ -5709,8 +7900,18 @@ test("internal controllers remain protected by role guard while public controlle
     {} as any,
     {} as any,
     {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
   );
-  const publicController = new ArenaPublicController({} as any, {} as any);
+  const publicController = new ArenaPublicController(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+  );
 
   const buildContext = (controllerClass: any, handler: Function, user?: unknown) =>
     ({

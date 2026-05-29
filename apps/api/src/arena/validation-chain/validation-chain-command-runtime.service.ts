@@ -18,6 +18,8 @@ import { ValidationChainContractService } from "./validation-chain-contract.serv
 import { ValidationChainIdService } from "./validation-chain-id.service";
 import { ValidationChainOperatorCommandService } from "./validation-chain-operator-command.service";
 import { ValidationChainOracleService } from "./validation-chain-oracle.service";
+import { ValidationRehearsalCheckpointService } from "../services/validation-rehearsal-checkpoint.service";
+import type { ValidationChainCommandResult } from "./validation-chain.types";
 
 const OPEN_MARKET_DELAY_MS = 5_000;
 const RESOLVE_MARKET_DELAY_MS = 5_000;
@@ -34,6 +36,7 @@ export class ValidationChainCommandRuntimeService {
     private readonly operator: ValidationChainOperatorCommandService,
     private readonly oracle: ValidationChainOracleService,
     private readonly alerts: ValidationChainAlertService,
+    private readonly rehearsalCheckpoints: ValidationRehearsalCheckpointService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(ValidationChainCommandRuntimeService.name);
@@ -98,8 +101,10 @@ export class ValidationChainCommandRuntimeService {
   async executeQueuedCommand(
     payload: ValidationChainCommandJobPayload,
   ): Promise<void> {
+    let result: ValidationChainCommandResult;
+
     try {
-      await this.executeCommand(payload);
+      result = await this.executeCommand(payload);
     } catch (error) {
       const disposition = await this.classifyError(payload.command, payload.propositionId, error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -128,7 +133,10 @@ export class ValidationChainCommandRuntimeService {
         note: payload.note,
         error: errorMessage,
       });
+      return;
     }
+
+    await this.recordAutomaticRehearsalCheckpoint(payload, result);
   }
 
   private async enqueueCommand(input: Omit<
@@ -182,20 +190,53 @@ export class ValidationChainCommandRuntimeService {
 
   private async executeCommand(
     payload: ValidationChainCommandJobPayload,
-  ): Promise<void> {
+  ): Promise<ValidationChainCommandResult> {
     switch (payload.command) {
       case "create_market":
-        await this.operator.createMarket(payload);
-        return;
+        return this.operator.createMarket(payload);
       case "open_market":
-        await this.operator.openMarket(payload);
-        return;
+        return this.operator.openMarket(payload);
       case "freeze_market":
-        await this.operator.freezeMarket(payload);
-        return;
+        return this.operator.freezeMarket(payload);
       case "resolve_market":
-        await this.oracle.resolveMarket(payload);
-        return;
+        return this.oracle.resolveMarket(payload);
+    }
+  }
+
+  private async recordAutomaticRehearsalCheckpoint(
+    payload: ValidationChainCommandJobPayload,
+    result: ValidationChainCommandResult,
+  ): Promise<void> {
+    const automaticCheckpoint = AUTOMATIC_REHEARSAL_CHECKPOINT_BY_COMMAND[payload.command];
+
+    try {
+      await this.rehearsalCheckpoints.recordCheckpoint({
+        propositionId: result.propositionId,
+        stepId: automaticCheckpoint.stepId,
+        status: "complete",
+        reason: automaticCheckpoint.reason,
+        note: payload.note,
+        evidence: [
+          `command=${payload.command}`,
+          `marketId=${result.marketId}`,
+          `chainMarketId=${result.chainMarketId}`,
+          `chainPropositionId=${result.chainPropositionId}`,
+          `attemptedAt=${result.attemptedAt}`,
+        ],
+        txHash: result.txHash,
+        actorUserId: payload.actorUserId,
+        recordedAt: result.attemptedAt,
+      });
+    } catch (error) {
+      this.logger.warn(
+        {
+          propositionId: payload.propositionId,
+          command: payload.command,
+          txHash: result.txHash,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Failed to persist validation rehearsal checkpoint after successful queued command",
+      );
     }
   }
 
@@ -296,3 +337,22 @@ export class ValidationChainCommandRuntimeService {
     return onChainMarket?.state ?? null;
   }
 }
+
+const AUTOMATIC_REHEARSAL_CHECKPOINT_BY_COMMAND = {
+  create_market: {
+    stepId: "publish_and_open",
+    reason: "validation_rehearsal.auto.create_market_submitted",
+  },
+  open_market: {
+    stepId: "publish_and_open",
+    reason: "validation_rehearsal.auto.open_market_submitted",
+  },
+  freeze_market: {
+    stepId: "freeze_and_resolve",
+    reason: "validation_rehearsal.auto.freeze_market_submitted",
+  },
+  resolve_market: {
+    stepId: "freeze_and_resolve",
+    reason: "validation_rehearsal.auto.resolve_market_submitted",
+  },
+} as const;

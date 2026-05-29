@@ -19,7 +19,7 @@ const {
 const DEFAULT_ADMIN_ROLE = ethers.constants.HashZero;
 
 async function main() {
-  const envState = loadEnvFile();
+  const envState = loadEnvFile(undefined, { override: true });
   info(
     envState.exists
       ? `Loaded .env from ${envState.envPath}`

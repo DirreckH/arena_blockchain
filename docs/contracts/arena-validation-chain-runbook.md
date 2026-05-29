@@ -279,6 +279,33 @@ having count(*) > 1;
 - terminal payload / local state errors 需要人工介入。
 - noop duplicate command 不应阻塞运行。
 
+### unsafe pre-live drift policy
+
+当本地 proposition / market 已经跨过 `frozen`、`revealing` 或 `settled` 边界，但链上 market 仍停留在 `pre_live` 时，不要再尝试把该链上 market 重新 `open`。
+
+这类状态意味着：
+
+- 本地 adjudication 或 settlement 语义已经前进
+- 链上 market 还没有真正进入 live / frozen / resolved 生命周期
+- 自动 reopen 会破坏 “freeze 之后不再重新开放方向性写入” 的 MVP 信任边界
+
+Operator 处理原则：
+
+1. 先确认 drift 来源：
+   - `GET /arena/internal/monitoring/validation-lifecycle-drift`
+   - `GET /arena/internal/monitoring/validation-chain`
+   - `GET /arena/internal/monitoring/runtime-contract`
+2. 不要对该 proposition 做 reopen 型恢复。
+   - `POST /arena/internal/validation-chain/propositions/:propositionId/recover-command` 在这类状态下应只作为诊断入口，不应被绕过后强行 reopen
+3. 优先判断是否需要取消链上 market。
+   - 若链上 market 只是 `pre_live` 且尚未承载真实 live 市场语义，优先走 `POST /arena/internal/validation-chain/propositions/:propositionId/cancel-market`
+4. 取消或确认链上最终状态后，再执行本地修复动作：
+   - `POST /arena/internal/validation-chain/sync`
+   - `POST /arena/internal/validation-chain/markets/:marketId/replay-projection`
+5. 若取消链上 market 会与本地 settled 结果产生业务冲突，升级为人工 incident review，不要继续自动补命令。
+
+这条策略的核心不是“尽量补齐链状态”，而是优先守住 freeze 之后不重新开放的产品边界。
+
 ## 6. 当前明确后置能力
 
 当前不支持：

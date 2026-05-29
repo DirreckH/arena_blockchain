@@ -5,6 +5,9 @@ import { PinoLogger } from "nestjs-pino";
 
 import { PrismaService } from "../../database/prisma.service";
 import { InternalAuditService } from "../services/internal-audit.service";
+import { ValidationRehearsalCheckpointService } from "../services/validation-rehearsal-checkpoint.service";
+import type { ArenaDbClient } from "../prisma.types";
+import { MarketRepository } from "../repositories/market.repository";
 import { ValidationChainCursorRepository } from "../repositories/validation-chain-cursor.repository";
 import { ValidationChainEventRepository } from "../repositories/validation-chain-event.repository";
 import {
@@ -32,8 +35,10 @@ export class ValidationChainSyncWorker {
     private readonly contract: ValidationChainContractService,
     private readonly cursors: ValidationChainCursorRepository,
     private readonly events: ValidationChainEventRepository,
+    private readonly markets: MarketRepository,
     private readonly projector: ValidationChainProjectionService,
     private readonly audit: InternalAuditService,
+    private readonly rehearsalCheckpoints: ValidationRehearsalCheckpointService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(ValidationChainSyncWorker.name);
@@ -171,6 +176,7 @@ export class ValidationChainSyncWorker {
 
       if (eventResult.inserted) {
         await this.projector.projectEvent(eventResult.event, tx);
+        await this.recordAutomaticRehearsalCheckpoint(eventResult.event, tx);
       }
 
       await this.cursors.updateProcessedCheckpoint(VALIDATION_CHAIN_STREAM_KEY, {
@@ -180,6 +186,54 @@ export class ValidationChainSyncWorker {
         syncStatus: "syncing",
       }, tx);
     });
+  }
+
+  private async recordAutomaticRehearsalCheckpoint(
+    event: ValidationChainEvent,
+    tx: ArenaDbClient,
+  ): Promise<void> {
+    if (event.eventName !== "BetPlaced") {
+      return;
+    }
+
+    const market =
+      (event.marketChainId
+        ? await this.markets.findByChainMarketId(event.marketChainId, tx)
+        : null) ??
+      (event.propositionChainId
+        ? await this.markets.findByChainPropositionId(
+            event.propositionChainId,
+            tx,
+          )
+        : null);
+
+    if (!market) {
+      return;
+    }
+
+    const payload = event.payloadJson as unknown as ValidationChainBetPlacedPayload;
+    await this.rehearsalCheckpoints.recordCheckpoint(
+      {
+        propositionId: market.propositionId,
+        stepId: "local_bet_and_sync",
+        status: "complete",
+        reason: "validation_rehearsal.auto.bet_projection_synced",
+        evidence: [
+          `marketChainId=${event.marketChainId ?? "missing"}`,
+          `chainPropositionId=${event.propositionChainId ?? "missing"}`,
+          `marketId=${market.id}`,
+          `userId=${payload.user.toLowerCase()}`,
+          `selectedOption=${String(payload.selectedOption)}`,
+          `stakeAmount=${payload.amount}`,
+          `transactionHash=${event.transactionHash}`,
+          `blockNumber=${String(event.blockNumber)}`,
+        ],
+        txHash: event.transactionHash,
+        blockNumber: event.blockNumber,
+        recordedAt: event.processedAt.toISOString(),
+      },
+      tx,
+    );
   }
 
   private async getCachedBlock(

@@ -126,6 +126,26 @@ test("validation surface returns progress-only market views and placeBetForUser 
   assert.equal("odds" in listViews[0], false);
   assert.equal("winningOption" in listViews[0], false);
 
+  const prepared = await harness.validationSurface.prepareBetForUser({
+    propositionId: proposition.id,
+    marketId: market.id,
+    userId: "user-1",
+    chainId: TEST_CHAIN_ID,
+    selectedOption: 0,
+    stakeAmount: "150",
+    placedAt: "2026-04-16T00:03:30.000Z",
+  });
+
+  assert.equal(prepared.marketView.marketId, market.id);
+  assert.equal(prepared.execution.mode, "wallet_direct_contract_write");
+  assert.equal(prepared.execution.stage, "session_validated");
+  assert.equal(prepared.execution.chainId, TEST_CHAIN_ID);
+  assert.equal(prepared.transaction.chainId, TEST_CHAIN_ID);
+  assert.equal(prepared.transaction.selectedOption, 0);
+  assert.equal(prepared.transaction.stakeAmount, "150");
+  assert.equal(typeof prepared.transaction.to, "string");
+  assert.equal(typeof prepared.transaction.data, "string");
+
   const placed = await harness.validationSurface.placeBetForUser({
     propositionId: proposition.id,
     marketId: market.id,

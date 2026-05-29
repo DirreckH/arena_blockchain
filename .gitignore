@@ -32,3 +32,6 @@ artifacts
 cache
 .embedded-postgres/
 deployment.validation.json
+.codex-artifacts/
+.playwright-mcp/
+tmp-home-shot.png

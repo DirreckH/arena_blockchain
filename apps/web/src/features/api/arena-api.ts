@@ -6,6 +6,7 @@ import type {
   DeleteOwnedComparisonSetExportResultViewModel,
   DeleteRequesterComparisonSetDeliveryPolicyResultViewModel,
   JwtIdentity,
+  RequesterDeliveryCredentialDirectoryViewModel,
   CreateArenaDiscussionCommentInput,
   PrepareValidationBetResult,
   PlaceValidationBetResult,
@@ -17,6 +18,7 @@ import type {
   RequesterComparisonSetDeliveryRunRetryResultViewModel,
   RequesterComparisonSetDeliveryPolicyRunResultViewModel,
   RequesterComparisonSetListViewModel,
+  RequesterPropositionBudgetLedgerViewModel,
   RequesterOwnedComparisonSetExportArtifactViewModel,
   RequesterOwnedComparisonSetExportListViewModel,
   RequesterOwnedPropositionAnalyticsComparisonViewModel,
@@ -145,6 +147,7 @@ export type PropositionDraftRecord = {
 export type RequesterOwnedPropositionRecentRecord = RequesterOwnedPropositionRecentItemViewModel
 export type RequesterOwnedPropositionOverviewRecord = RequesterOwnedPropositionOverviewViewModel
 export type RequesterOwnedPropositionDetailRecord = RequesterOwnedPropositionDetailViewModel
+export type RequesterPropositionBudgetLedgerRecord = RequesterPropositionBudgetLedgerViewModel
 export type RequesterOwnedSettledPropositionReportRecord = RequesterOwnedSettledPropositionReportViewModel
 export type RequesterOwnedPropositionExportRecord = RequesterOwnedPropositionExportArtifactViewModel
 export type RequesterOwnedPropositionExportListRecord = RequesterOwnedPropositionExportListViewModel
@@ -158,6 +161,7 @@ export type RequesterComparisonSetDeliveryPolicyHealthRecord = RequesterComparis
 export type RequesterComparisonSetDeliveryPolicyRunRecord = RequesterComparisonSetDeliveryPolicyRunResultViewModel
 export type RequesterComparisonSetDeliveryRunListRecord = RequesterComparisonSetDeliveryRunListViewModel
 export type RequesterComparisonSetDeliveryRunRetryRecord = RequesterComparisonSetDeliveryRunRetryResultViewModel
+export type RequesterDeliveryCredentialDirectoryRecord = RequesterDeliveryCredentialDirectoryViewModel
 export type CreateRequesterComparisonSetDeliveryPolicyInputRecord = CreateRequesterComparisonSetDeliveryPolicyInputViewModel
 export type UpdateRequesterComparisonSetDeliveryPolicyInputRecord = UpdateRequesterComparisonSetDeliveryPolicyInputViewModel
 export type DeleteRequesterComparisonSetDeliveryPolicyResultRecord = DeleteRequesterComparisonSetDeliveryPolicyResultViewModel
@@ -186,7 +190,7 @@ type RequestOptions = {
   token?: string | null
 }
 
-const DEFAULT_API_BASE_URL = 'http://localhost:3000'
+const DEFAULT_API_BASE_URL = 'http://127.0.0.1:4000'
 
 function resolveApiBaseUrl() {
   const configured =
@@ -551,6 +555,15 @@ export const arenaApi = {
       { token },
     )
   },
+  getOwnedPropositionBudgetLedger(propositionId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getOwnedPropositionBudgetLedger(propositionId))
+    }
+    return requestJson<RequesterPropositionBudgetLedgerRecord>(
+      `/arena/propositions/mine/${propositionId}/budget-ledger`,
+      { token },
+    )
+  },
   getOwnedPropositionReport(propositionId: string, token: string) {
     if (maybeUseDemoToken(token)) {
       return Promise.resolve(demoBackend.getOwnedPropositionReport(propositionId))
@@ -605,15 +618,21 @@ export const arenaApi = {
       { token },
     )
   },
-  createRequesterComparisonSetExport(comparisonSetId: string, token: string) {
+  createRequesterComparisonSetExport(
+    comparisonSetId: string,
+    token: string,
+    body?: {
+      format?: 'json' | 'csv'
+    },
+  ) {
     if (maybeUseDemoToken(token)) {
-      return Promise.resolve(demoBackend.createRequesterComparisonSetExport(comparisonSetId))
+      return Promise.resolve(demoBackend.createRequesterComparisonSetExport(comparisonSetId, body))
     }
     return requestJson<RequesterComparisonSetExportRecord>(
       `/arena/propositions/mine/comparison-sets/${comparisonSetId}/exports`,
       {
         method: 'POST',
-        body: {},
+        body: body ?? {},
         token,
       },
     )
@@ -676,6 +695,15 @@ export const arenaApi = {
         method: 'DELETE',
         token,
       },
+    )
+  },
+  listRequesterDeliveryCredentials(token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listRequesterDeliveryCredentials())
+    }
+    return requestJson<RequesterDeliveryCredentialDirectoryRecord>(
+      '/arena/propositions/mine/delivery-credentials',
+      { token },
     )
   },
   listRequesterComparisonSetDeliveryPolicies(comparisonSetId: string, token: string) {
@@ -873,6 +901,7 @@ export const arenaApi = {
   createOwnedPropositionExport(
     body: {
       presetId?: string
+      format?: 'json' | 'csv'
     },
     token: string,
   ) {

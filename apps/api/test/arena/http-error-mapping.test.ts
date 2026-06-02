@@ -59,6 +59,7 @@ import { PublicDiscoveryService } from "../../src/arena/services/public-discover
 import { QualityEngineService } from "../../src/arena/services/quality-engine.service";
 import { RequesterComparisonSetService } from "../../src/arena/services/requester-comparison-set.service";
 import { RequesterComparisonSetDeliveryPolicyService } from "../../src/arena/services/requester-comparison-set-delivery-policy.service";
+import { RequesterComparisonSetDeliveryTransportService } from "../../src/arena/services/requester-comparison-set-delivery-transport.service";
 import { ResultViewService } from "../../src/arena/services/result-view.service";
 import { RequesterPropositionViewService } from "../../src/arena/services/requester-proposition-view.service";
 import { RequesterReportPresetService } from "../../src/arena/services/requester-report-preset.service";
@@ -426,6 +427,7 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
         pollIntervalMs: 15000,
         cursorStaleThresholdMs: 60000,
         isCursorStalled: false,
+        schedulerWorker: null,
         recentAlerts: [],
         metrics: {
           recentRetryExhaustedCount: 0,
@@ -881,6 +883,10 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
       {
         provide: RequesterComparisonSetDeliveryPolicyService,
         useValue: harness.requesterComparisonSetDeliveryPolicyService,
+      },
+      {
+        provide: RequesterComparisonSetDeliveryTransportService,
+        useValue: harness.requesterComparisonSetDeliveryTransportService,
       },
       { provide: ResponseService, useValue: harness.responseService },
       { provide: EffectiveSampleCounterService, useValue: harness.counterService },
@@ -2614,6 +2620,274 @@ test("internal response review route finalizes pending review state for operator
   });
 });
 
+test("internal response review claim and release routes expose workflow state for operators", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const proposition = await createLiveProposition(harness, {
+      title: "HTTP response claim proposition",
+      createdByUserId: "review_owner",
+    });
+    const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+      propositionId: proposition.id,
+      userIds: ["claim_user"],
+      assignedAt: "2026-04-18T10:06:00.000Z",
+      expiresAt: "2026-04-18T10:16:00.000Z",
+    });
+    assert.ok(task);
+    const submitted = await harness.responseService.submitResponse({
+      propositionId: proposition.id,
+      taskId: task.id,
+      userId: "claim_user",
+      selectedOption: 0,
+      confirmationOption: 0,
+      clientStartedAt: "2026-04-18T10:06:10.000Z",
+      clientSubmittedAt: "2026-04-18T10:06:20.000Z",
+      submittedAt: "2026-04-18T10:06:20.000Z",
+      understandingAck: true,
+    });
+    const claimedAt = new Date().toISOString();
+    const releasedAt = new Date(Date.now() + 1_000).toISOString();
+
+    const initialState = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/review-state`,
+      {
+        user: {
+          userId: "operator_claim_owner",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(initialState.status, HttpStatus.OK);
+    assert.equal(initialState.body.responseId, submitted.id);
+    assert.equal(initialState.body.reviewStatus, "pending_review");
+    assert.equal(initialState.body.workflowState, "unclaimed");
+    assert.equal(initialState.body.claimedByUserId, null);
+
+    const claimResponse = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/claim`,
+      {
+        method: "POST",
+        user: {
+          userId: "operator_claim_owner",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          claimedAt,
+          note: "start_review_triage",
+        },
+      },
+    );
+
+    assert.equal(claimResponse.status, HttpStatus.CREATED);
+    assert.equal(claimResponse.body.responseId, submitted.id);
+    assert.equal(claimResponse.body.reviewStatus, "pending_review");
+    assert.equal(claimResponse.body.workflowState, "claimed");
+    assert.equal(claimResponse.body.claimedByUserId, "operator_claim_owner");
+    assert.equal(claimResponse.body.claimedAt, claimedAt);
+    assert.equal(claimResponse.body.claimStaleAfterSeconds, 15 * 60);
+    assert.equal(claimResponse.body.isClaimStale, false);
+
+    const claimedState = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/review-state`,
+      {
+        user: {
+          userId: "operator_claim_owner",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(claimedState.status, HttpStatus.OK);
+    assert.equal(claimedState.body.workflowState, "claimed");
+    assert.equal(claimedState.body.claimedByUserId, "operator_claim_owner");
+
+    const releaseResponse = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/release`,
+      {
+        method: "POST",
+        user: {
+          userId: "operator_claim_owner",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          releasedAt,
+          note: "handoff_review",
+        },
+      },
+    );
+
+    assert.equal(releaseResponse.status, HttpStatus.CREATED);
+    assert.equal(releaseResponse.body.responseId, submitted.id);
+    assert.equal(releaseResponse.body.reviewStatus, "pending_review");
+    assert.equal(releaseResponse.body.workflowState, "released");
+    assert.equal(releaseResponse.body.claimedByUserId, "operator_claim_owner");
+    assert.equal(releaseResponse.body.releasedByUserId, "operator_claim_owner");
+    assert.equal(releaseResponse.body.releasedAt, releasedAt);
+    assert.equal(releaseResponse.body.isClaimStale, false);
+
+    const releasedState = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/review-state`,
+      {
+        user: {
+          userId: "operator_claim_owner",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(releasedState.status, HttpStatus.OK);
+    assert.equal(releasedState.body.workflowState, "released");
+    assert.equal(releasedState.body.releasedByUserId, "operator_claim_owner");
+    assert.equal(releasedState.body.releasedAt, releasedAt);
+  });
+});
+
+test("internal response review claim route returns 409 when another operator holds the active claim", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const proposition = await createLiveProposition(harness, {
+      title: "HTTP response claim conflict proposition",
+      createdByUserId: "review_owner",
+    });
+    const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+      propositionId: proposition.id,
+      userIds: ["claim_conflict_user"],
+      assignedAt: "2026-04-18T10:06:00.000Z",
+      expiresAt: "2026-04-18T10:16:00.000Z",
+    });
+    assert.ok(task);
+    const submitted = await harness.responseService.submitResponse({
+      propositionId: proposition.id,
+      taskId: task.id,
+      userId: "claim_conflict_user",
+      selectedOption: 0,
+      confirmationOption: 0,
+      clientStartedAt: "2026-04-18T10:06:10.000Z",
+      clientSubmittedAt: "2026-04-18T10:06:20.000Z",
+      submittedAt: "2026-04-18T10:06:20.000Z",
+      understandingAck: true,
+    });
+    const firstClaimedAt = new Date().toISOString();
+
+    const firstClaim = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/claim`,
+      {
+        method: "POST",
+        user: {
+          userId: "operator_claim_a",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          claimedAt: firstClaimedAt,
+        },
+      },
+    );
+
+    assert.equal(firstClaim.status, HttpStatus.CREATED);
+
+    const conflictingClaim = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/claim`,
+      {
+        method: "POST",
+        user: {
+          userId: "operator_claim_b",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          claimedAt: new Date(Date.now() + 1_000).toISOString(),
+        },
+      },
+    );
+
+    assert.equal(conflictingClaim.status, HttpStatus.CONFLICT);
+    assert.equal(conflictingClaim.body.success, false);
+    assert.equal(
+      conflictingClaim.body.error.code,
+      "response_review.claim_conflict",
+    );
+    assert.equal(
+      conflictingClaim.body.error.message,
+      "Pending response review is already claimed by another operator",
+    );
+  });
+});
+
+test("internal response review route returns 409 when another operator tries to finalize an active claim", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const proposition = await createLiveProposition(harness, {
+      title: "HTTP response review claim conflict proposition",
+      createdByUserId: "review_owner",
+    });
+    const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+      propositionId: proposition.id,
+      userIds: ["review_conflict_user"],
+      assignedAt: "2026-04-18T10:06:00.000Z",
+      expiresAt: "2026-04-18T10:16:00.000Z",
+    });
+    assert.ok(task);
+    const submitted = await harness.responseService.submitResponse({
+      propositionId: proposition.id,
+      taskId: task.id,
+      userId: "review_conflict_user",
+      selectedOption: 0,
+      confirmationOption: 0,
+      clientStartedAt: "2026-04-18T10:06:10.000Z",
+      clientSubmittedAt: "2026-04-18T10:06:20.000Z",
+      submittedAt: "2026-04-18T10:06:20.000Z",
+      understandingAck: true,
+    });
+
+    const claimResponse = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/claim`,
+      {
+        method: "POST",
+        user: {
+          userId: "operator_review_owner",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          claimedAt: new Date().toISOString(),
+        },
+      },
+    );
+
+    assert.equal(claimResponse.status, HttpStatus.CREATED);
+
+    const reviewResponse = await requestJson(
+      baseUrl,
+      `/arena/internal/responses/${submitted.id}/review`,
+      {
+        method: "POST",
+        user: {
+          userId: "operator_review_other",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          reviewedAt: new Date(Date.now() + 1_000).toISOString(),
+        },
+      },
+    );
+
+    assert.equal(reviewResponse.status, HttpStatus.CONFLICT);
+    assert.equal(reviewResponse.body.success, false);
+    assert.equal(
+      reviewResponse.body.error.code,
+      "response_review.review_claim_conflict",
+    );
+    assert.equal(
+      reviewResponse.body.error.message,
+      "Pending response review is already claimed by another operator",
+    );
+  });
+});
+
 test("internal response review route returns 404 for missing responses", async () => {
   await withHttpArenaApp(async ({ baseUrl }) => {
     const response = await requestJson(
@@ -2935,6 +3209,10 @@ test("creator proposition detail stays non-directional before settlement and exp
     assert.equal(preSettlementDetailResponse.body.revealSettlement.voidReason, null);
     assert.equal(preSettlementDetailResponse.body.revealSettlement.resultComputedAt, null);
     assert.equal(preSettlementDetailResponse.body.revealSettlement.lastPublicResult, null);
+    assert.equal(preSettlementDetailResponse.body.budgetSummary.configuredAmount, "1000");
+    assert.equal(preSettlementDetailResponse.body.budgetSummary.reservedAmount, "0");
+    assert.equal(preSettlementDetailResponse.body.budgetSummary.spentAmount, "20");
+    assert.equal(preSettlementDetailResponse.body.budgetSummary.remainingAmount, "980");
 
     const preSettlementReportResponse = await requestJson(
       baseUrl,
@@ -2980,7 +3258,31 @@ test("creator proposition detail stays non-directional before settlement and exp
     assert.equal(settledReportResponse.body.sample.effectiveSampleCount, 1);
     assert.equal(settledReportResponse.body.reviewSummary.validCount, 1);
     assert.equal(settledReportResponse.body.dispatchSummary.submittedCount, 1);
+    assert.equal(settledReportResponse.body.budgetSummary.configuredAmount, "1000");
+    assert.equal(settledReportResponse.body.budgetSummary.spentAmount, "20");
+    assert.equal(settledReportResponse.body.budgetSummary.remainingAmount, "980");
     assert.equal(typeof settledReportResponse.body.generatedAt, "string");
+
+    const budgetLedgerResponse = await requestJson(
+      baseUrl,
+      `/arena/propositions/mine/${live.id}/budget-ledger`,
+      {
+        user: {
+          userId: "creator_report",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+
+    assert.equal(budgetLedgerResponse.status, HttpStatus.OK);
+    assert.equal(budgetLedgerResponse.body.propositionId, live.id);
+    assert.equal(budgetLedgerResponse.body.summary.configuredAmount, "1000");
+    assert.equal(budgetLedgerResponse.body.summary.spentAmount, "20");
+    assert.equal(budgetLedgerResponse.body.summary.remainingAmount, "980");
+    assert.equal(budgetLedgerResponse.body.items.length, 1);
+    assert.equal(budgetLedgerResponse.body.items[0].entryType, "spent");
+    assert.equal(budgetLedgerResponse.body.items[0].spentAmount, "20");
+    assert.equal(budgetLedgerResponse.body.items[0].isCurrent, true);
 
     const otherCreatorReportResponse = await requestJson(
       baseUrl,
@@ -2994,6 +3296,22 @@ test("creator proposition detail stays non-directional before settlement and exp
     );
     assert.equal(otherCreatorReportResponse.status, HttpStatus.NOT_FOUND);
     assert.equal(otherCreatorReportResponse.body.error.code, "proposition.not_found");
+
+    const otherCreatorBudgetLedgerResponse = await requestJson(
+      baseUrl,
+      `/arena/propositions/mine/${live.id}/budget-ledger`,
+      {
+        user: {
+          userId: "creator_report_other",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+    assert.equal(otherCreatorBudgetLedgerResponse.status, HttpStatus.NOT_FOUND);
+    assert.equal(
+      otherCreatorBudgetLedgerResponse.body.error.code,
+      "proposition.not_found",
+    );
   });
 });
 
@@ -3638,6 +3956,155 @@ test("creator proposition export endpoints create and list real owned propositio
 
     assert.equal(otherUserDetailResponse.status, HttpStatus.NOT_FOUND);
     assert.equal(otherUserDetailResponse.body.error.code, "proposition_export.not_found");
+  });
+});
+
+test("creator proposition export endpoints can persist csv artifacts from preset default format", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const settled = await createLiveProposition(harness, {
+      title: "Requester export CSV settled proposition",
+      createdByUserId: "creator_export_csv",
+      marketEnabled: true,
+      minEffectiveSample: 1,
+      category: "ai",
+    });
+    const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+      propositionId: settled.id,
+      userIds: ["creator_export_csv_participant"],
+      assignedAt: arenaTime(393, 10),
+      expiresAt: arenaTime(393, 20),
+    });
+    assert.ok(task);
+    const response = await harness.responseService.submitResponse({
+      propositionId: settled.id,
+      taskId: task.id,
+      userId: "creator_export_csv_participant",
+      selectedOption: 1,
+      confirmationOption: 1,
+      clientStartedAt: arenaTime(393, 11),
+      clientSubmittedAt: arenaTime(393, 12),
+      understandingAck: true,
+      submittedAt: arenaTime(393, 12),
+    });
+    await harness.responseReviewService.finalizeReviewResult({
+      responseId: response.id,
+      status: "valid",
+      reviewedAt: arenaTime(393, 13),
+      reviewedByUserId: "reviewer_export_csv",
+      qualityScore: 100,
+      flags: [],
+      reasonCodes: [...defaultReasonCodesByStatus.valid],
+    });
+    await harness.counterService.rebuildCounterForProposition(settled.id);
+    const market = await harness.marketRepository.findByPropositionId(settled.id);
+    assert.ok(market);
+    await harness.betService.placeBet({
+      propositionId: settled.id,
+      marketId: market.id,
+      userId: "creator_export_csv_trader",
+      selectedOption: 1,
+      stakeAmount: "41",
+      placedAt: arenaTime(393, 14),
+    });
+    await harness.freezeRevealOrchestratorService.finalizeRevealPreparation({
+      propositionId: settled.id,
+      now: arenaTime(393, 15),
+      updatedByUserId: "operator_export_csv",
+    });
+    await harness.validationSettlementService.settleValidationMarket({
+      propositionId: settled.id,
+      settledAt: arenaTime(393, 16),
+    });
+
+    const presetResponse = await requestJson(
+      baseUrl,
+      "/arena/propositions/mine/report-presets",
+      {
+        method: "POST",
+        user: {
+          userId: "creator_export_csv",
+          roles: [SystemRole.User],
+        },
+        body: {
+          name: "CSV export preset",
+          windowDays: 30,
+          categories: ["ai"],
+          marketEnabledOnly: true,
+          statusScope: "settled",
+          defaultExportFormat: "csv",
+        },
+      },
+    );
+
+    assert.equal(presetResponse.status, HttpStatus.CREATED);
+
+    const createResponse = await requestJson(
+      baseUrl,
+      "/arena/propositions/mine/exports",
+      {
+        method: "POST",
+        user: {
+          userId: "creator_export_csv",
+          roles: [SystemRole.User],
+        },
+        body: {
+          presetId: presetResponse.body.presetId,
+        },
+      },
+    );
+
+    assert.equal(createResponse.status, HttpStatus.CREATED);
+    assert.equal(createResponse.body.format, "csv");
+    assert.equal(createResponse.body.fileName.endsWith(".csv"), true);
+    assert.equal(createResponse.body.serialized.mediaType, "text/csv");
+    assert.equal(
+      createResponse.body.serialized.fileName,
+      createResponse.body.fileName,
+    );
+    assert.match(
+      createResponse.body.serialized.content,
+      /propositionId,title,category,status,resultKind,winningOptionLabel,settledAt,effectiveSampleCount,reviewedResponseCount,validCount,partialValidCount,invalidCount/u,
+    );
+    assert.match(
+      createResponse.body.serialized.content,
+      new RegExp(settled.id, "u"),
+    );
+
+    const detailResponse = await requestJson(
+      baseUrl,
+      `/arena/propositions/mine/exports/${createResponse.body.exportId}`,
+      {
+        user: {
+          userId: "creator_export_csv",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+
+    assert.equal(detailResponse.status, HttpStatus.OK);
+    assert.equal(detailResponse.body.format, "csv");
+    assert.equal(detailResponse.body.serialized.mediaType, "text/csv");
+    assert.equal(
+      detailResponse.body.serialized.content,
+      createResponse.body.serialized.content,
+    );
+
+    const listResponse = await requestJson(
+      baseUrl,
+      "/arena/propositions/mine/exports",
+      {
+        user: {
+          userId: "creator_export_csv",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+
+    assert.equal(listResponse.status, HttpStatus.OK);
+    assert.equal(listResponse.body.totalCount, 1);
+    assert.equal(listResponse.body.items[0].exportId, createResponse.body.exportId);
+    assert.equal(listResponse.body.items[0].format, "csv");
+    assert.equal(listResponse.body.items[0].fileName.endsWith(".csv"), true);
   });
 });
 
@@ -5565,6 +6032,168 @@ test("creator requester comparison set exports create, list, and detail persiste
   });
 });
 
+test("creator requester comparison set exports can persist csv artifacts when explicitly requested", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const settledAi = await createLiveProposition(harness, {
+      title: "Comparison export CSV settled AI proposition",
+      createdByUserId: "creator_comparison_export_csv",
+      marketEnabled: true,
+      minEffectiveSample: 1,
+      category: "ai",
+    });
+    const [settledAiTask] =
+      await harness.dispatchEngineService.createDispatchTasksForProposition({
+        propositionId: settledAi.id,
+        userIds: ["creator_comparison_export_csv_participant_a"],
+        assignedAt: arenaTime(454, 10),
+        expiresAt: arenaTime(454, 20),
+      });
+    assert.ok(settledAiTask);
+    const settledAiResponse = await harness.responseService.submitResponse({
+      propositionId: settledAi.id,
+      taskId: settledAiTask.id,
+      userId: "creator_comparison_export_csv_participant_a",
+      selectedOption: 0,
+      confirmationOption: 0,
+      clientStartedAt: arenaTime(454, 11),
+      clientSubmittedAt: arenaTime(454, 12),
+      understandingAck: true,
+      submittedAt: arenaTime(454, 12),
+    });
+    await harness.responseReviewService.finalizeReviewResult({
+      responseId: settledAiResponse.id,
+      status: "valid",
+      reviewedAt: arenaTime(454, 13),
+      reviewedByUserId: "reviewer_comparison_export_csv",
+      qualityScore: 100,
+      flags: [],
+      reasonCodes: [...defaultReasonCodesByStatus.valid],
+    });
+    await harness.counterService.rebuildCounterForProposition(settledAi.id);
+    const settledAiMarket = await harness.marketRepository.findByPropositionId(settledAi.id);
+    assert.ok(settledAiMarket);
+    await harness.betService.placeBet({
+      propositionId: settledAi.id,
+      marketId: settledAiMarket.id,
+      userId: "creator_comparison_export_csv_trader_a",
+      selectedOption: 0,
+      stakeAmount: "17",
+      placedAt: arenaTime(454, 14),
+    });
+    await harness.freezeRevealOrchestratorService.finalizeRevealPreparation({
+      propositionId: settledAi.id,
+      now: arenaTime(454, 15),
+      updatedByUserId: "operator_comparison_export_csv",
+    });
+    await harness.validationSettlementService.settleValidationMarket({
+      propositionId: settledAi.id,
+      settledAt: arenaTime(454, 16),
+    });
+
+    const settledPresetResponse = await requestJson(
+      baseUrl,
+      "/arena/propositions/mine/report-presets",
+      {
+        method: "POST",
+        user: {
+          userId: "creator_comparison_export_csv",
+          roles: [SystemRole.User],
+        },
+        body: {
+          name: "CSV comparison preset",
+          windowDays: 30,
+          categories: ["ai"],
+          marketEnabledOnly: true,
+          statusScope: "settled",
+          defaultExportFormat: "json",
+        },
+      },
+    );
+    assert.equal(settledPresetResponse.status, HttpStatus.CREATED);
+
+    const comparisonSetResponse = await requestJson(
+      baseUrl,
+      "/arena/propositions/mine/comparison-sets",
+      {
+        method: "POST",
+        user: {
+          userId: "creator_comparison_export_csv",
+          roles: [SystemRole.User],
+        },
+        body: {
+          name: "CSV comparison export set",
+          presetIds: [settledPresetResponse.body.presetId],
+        },
+      },
+    );
+    assert.equal(comparisonSetResponse.status, HttpStatus.CREATED);
+
+    const createResponse = await requestJson(
+      baseUrl,
+      `/arena/propositions/mine/comparison-sets/${comparisonSetResponse.body.comparisonSetId}/exports`,
+      {
+        method: "POST",
+        user: {
+          userId: "creator_comparison_export_csv",
+          roles: [SystemRole.User],
+        },
+        body: {
+          format: "csv",
+        },
+      },
+    );
+
+    assert.equal(createResponse.status, HttpStatus.CREATED);
+    assert.equal(createResponse.body.format, "csv");
+    assert.equal(createResponse.body.fileName.endsWith(".csv"), true);
+    assert.equal(createResponse.body.serialized.mediaType, "text/csv");
+    assert.match(
+      createResponse.body.serialized.content,
+      /rank,presetId,presetName,createdCount,settledCount,unresolvedCount,totalEffectiveSampleCount,totalReviewedResponseCount,totalBetCount,totalBetStakeAmount,uniqueTraderCount/u,
+    );
+    assert.match(
+      createResponse.body.serialized.content,
+      /CSV comparison preset/u,
+    );
+
+    const listResponse = await requestJson(
+      baseUrl,
+      `/arena/propositions/mine/comparison-sets/${comparisonSetResponse.body.comparisonSetId}/exports`,
+      {
+        user: {
+          userId: "creator_comparison_export_csv",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+
+    assert.equal(listResponse.status, HttpStatus.OK);
+    assert.equal(listResponse.body.totalCount, 1);
+    assert.equal(listResponse.body.items[0].format, "csv");
+    assert.equal(listResponse.body.items[0].fileName.endsWith(".csv"), true);
+
+    const detailResponse = await requestJson(
+      baseUrl,
+      `/arena/propositions/mine/comparison-sets/${comparisonSetResponse.body.comparisonSetId}/exports/${createResponse.body.exportId}`,
+      {
+        user: {
+          userId: "creator_comparison_export_csv",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+
+    assert.equal(detailResponse.status, HttpStatus.OK);
+    assert.equal(detailResponse.body.format, "csv");
+    assert.equal(detailResponse.body.serialized.mediaType, "text/csv");
+    assert.equal(
+      detailResponse.body.serialized.content,
+      createResponse.body.serialized.content,
+    );
+    assert.equal(detailResponse.body.report.rows.length, 1);
+  });
+});
+
 test("deleting a requester comparison set export removes only the targeted artifact and preserves the export substrate", async () => {
   await withHttpArenaApp(async ({ baseUrl, harness }) => {
     const settledAi = await createLiveProposition(harness, {
@@ -6279,6 +6908,46 @@ test("creator requester comparison set delivery policy CRUD and manual run creat
     } finally {
       await webhookServer.close();
     }
+  });
+});
+
+test("requester delivery credential directory route lists safe configured bindings without exposing secrets", async () => {
+  await withHttpArenaApp(async ({ baseUrl }) => {
+    const response = await requestJson(
+      baseUrl,
+      "/arena/propositions/mine/delivery-credentials",
+      {
+        user: {
+          userId: "creator_delivery_credentials",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+
+    assert.equal(response.status, HttpStatus.OK);
+    assert.deepEqual(response.body, {
+      totalCount: 3,
+      items: [
+        {
+          credentialKey: "automation_delivery",
+          label: "automation_delivery",
+          transportType: "webhook",
+          authenticationKind: "bearer",
+        },
+        {
+          credentialKey: "delivery_policy",
+          label: "delivery_policy",
+          transportType: "webhook",
+          authenticationKind: "bearer",
+        },
+        {
+          credentialKey: "retry_delivery",
+          label: "retry_delivery",
+          transportType: "webhook",
+          authenticationKind: "bearer",
+        },
+      ],
+    });
   });
 });
 

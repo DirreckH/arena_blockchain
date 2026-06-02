@@ -61,6 +61,37 @@ async function createWebhookServer() {
 }
 
 describe("Requester delivery transport", () => {
+  it("lists configured requester delivery credentials without exposing bearer tokens", () => {
+    const harness = createArenaHarness();
+
+    const directory =
+      harness.requesterComparisonSetDeliveryTransportService.listAvailableCredentials();
+
+    assert.deepEqual(directory, {
+      totalCount: 3,
+      items: [
+        {
+          credentialKey: "automation_delivery",
+          label: "automation_delivery",
+          transportType: "webhook",
+          authenticationKind: "bearer",
+        },
+        {
+          credentialKey: "delivery_policy",
+          label: "delivery_policy",
+          transportType: "webhook",
+          authenticationKind: "bearer",
+        },
+        {
+          credentialKey: "retry_delivery",
+          label: "retry_delivery",
+          transportType: "webhook",
+          authenticationKind: "bearer",
+        },
+      ],
+    });
+  });
+
   it("uses bearer authentication when a webhook credential key is configured", async () => {
     const harness = createArenaHarness();
     const webhook = await createWebhookServer();

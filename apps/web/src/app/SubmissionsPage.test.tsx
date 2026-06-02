@@ -1,6 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SystemRole } from '@arena/shared'
+import { arenaApi } from '../features/api/arena-api'
 import { buildDemoIdentity, DEMO_SESSION_TOKEN } from '../features/demo/demo-auth'
 import { demoBackend } from '../features/demo/demo-backend'
 import { renderApp } from '../test/render-app'
@@ -17,6 +19,7 @@ describe('submissions page', () => {
 
   afterEach(() => {
     window.localStorage.clear()
+    vi.restoreAllMocks()
     demoBackend.reset()
   })
 
@@ -27,6 +30,37 @@ describe('submissions page', () => {
     expect(await screen.findByTestId('submission-card-draft-demo-consensus-window')).toBeInTheDocument()
     expect(await screen.findByTestId('submission-overview-section')).toBeInTheDocument()
     expect(await screen.findByTestId('submission-recent-section')).toBeInTheDocument()
+  })
+
+  it('surfaces authenticated top-level requester load failures as unavailable instead of live', async () => {
+    const realIdentity = {
+      sub: 'real-requester-user',
+      walletAddress: '0x123400000000000000000000000000000000abcd',
+      chainId: 31337,
+      roles: [SystemRole.User],
+    }
+
+    window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, 'real-session-token')
+    window.localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, JSON.stringify(realIdentity))
+
+    vi.spyOn(arenaApi, 'getAuthProfile').mockResolvedValue(realIdentity)
+    vi.spyOn(arenaApi, 'listSubmissions').mockRejectedValue(new Error('Requester submissions unavailable'))
+    vi.spyOn(arenaApi, 'getRequesterOverview').mockResolvedValue(demoBackend.getRequesterOverview())
+    vi.spyOn(arenaApi, 'listOwnedPropositionExports').mockResolvedValue(
+      demoBackend.listOwnedPropositionExports(),
+    )
+    vi.spyOn(arenaApi, 'listRequesterReportPresets').mockResolvedValue(
+      demoBackend.listRequesterReportPresets(),
+    )
+    vi.spyOn(arenaApi, 'listRequesterComparisonSets').mockResolvedValue(
+      demoBackend.listRequesterComparisonSets(),
+    )
+
+    const { container } = renderApp(['/zh/submissions'])
+
+    expect(await screen.findByText('Requester flow error')).toBeInTheDocument()
+    expect(screen.getByText('Requester submissions unavailable')).toBeInTheDocument()
+    expect(container.querySelector('.data-source-badge.unavailable')).not.toBeNull()
   })
 
   it('withdraws a submission back to drafts', async () => {
@@ -65,6 +99,13 @@ describe('submissions page', () => {
     expect(
       screen.getByTestId('sample-progress-draft-demo-consensus-window'),
     ).toHaveTextContent('0 / 6')
+    expect(screen.getByText('Budget ledger')).toBeInTheDocument()
+    expect(
+      screen.getByTestId('submission-budget-summary-draft-demo-consensus-window'),
+    ).toHaveTextContent('Remaining')
+    expect(
+      screen.getByTestId('submission-budget-ledger-draft-demo-consensus-window'),
+    ).toHaveTextContent('No requester-visible budget entries yet')
   })
 
   it('creates requester export snapshots from the submissions flow', async () => {
@@ -275,6 +316,52 @@ describe('submissions page', () => {
     expect(
       screen.getByTestId('requester-comparison-delivery-health-transport'),
     ).toHaveTextContent('Ready')
+    expect(
+      screen.getByTestId('requester-comparison-delivery-health-credential-count'),
+    ).toHaveTextContent('1')
+    expect(
+      screen.getByTestId('requester-comparison-delivery-health-credential-options'),
+    ).toHaveTextContent('ARENA_REQUESTER_WEBHOOK_BEARER')
+  })
+
+  it('shows saved requester delivery bindings in the form and supports clearing or reapplying them', async () => {
+    const user = userEvent.setup()
+    renderApp(['/zh/submissions'])
+
+    await user.click(await screen.findByTestId('requester-comparison-set-open-delivery'))
+    await user.click(screen.getByTestId('requester-comparison-delivery-create-open'))
+
+    expect(
+      await screen.findByTestId('requester-comparison-delivery-credential-status'),
+    ).toHaveTextContent('Ready binding')
+    expect(
+      screen.getByTestId('requester-comparison-delivery-credential-detail'),
+    ).toHaveTextContent('ARENA_REQUESTER_WEBHOOK_BEARER')
+    expect(
+      screen.getByTestId('requester-comparison-delivery-available-credentials'),
+    ).toHaveTextContent('ARENA_REQUESTER_WEBHOOK_BEARER')
+    expect(
+      screen.getByTestId('requester-comparison-delivery-credential-binding-select'),
+    ).toHaveValue('ARENA_REQUESTER_WEBHOOK_BEARER')
+
+    await user.click(screen.getByTestId('requester-comparison-delivery-clear-credential'))
+
+    expect(screen.getByLabelText('Credential key')).toHaveValue('')
+    expect(
+      screen.getByTestId('requester-comparison-delivery-credential-status'),
+    ).toHaveTextContent('No credential')
+
+    await user.selectOptions(
+      screen.getByTestId('requester-comparison-delivery-credential-binding-select'),
+      'ARENA_REQUESTER_WEBHOOK_BEARER',
+    )
+
+    expect(screen.getByLabelText('Credential key')).toHaveValue(
+      'ARENA_REQUESTER_WEBHOOK_BEARER',
+    )
+    expect(
+      screen.getByTestId('requester-comparison-delivery-credential-status'),
+    ).toHaveTextContent('Ready binding')
   })
 
   it('surfaces row-side retained-export evidence before a health panel is opened', async () => {
@@ -1542,6 +1629,9 @@ describe('submissions page', () => {
     expect(screen.getByTestId('requester-comparison-delivery-health-transport-detail')).toHaveTextContent(
       'Missing credential binding',
     )
+    expect(screen.getByTestId('requester-comparison-delivery-health-credential-options')).toHaveTextContent(
+      'ARENA_REQUESTER_WEBHOOK_BEARER',
+    )
     expect(screen.getByTestId('requester-comparison-delivery-health-failure-streak')).toHaveTextContent(
       '1 consecutive failure',
     )
@@ -1595,10 +1685,16 @@ describe('submissions page', () => {
     expect(screen.getByTestId('requester-comparison-delivery-health-transport')).toHaveTextContent(
       'Blocked',
     )
+    expect(screen.getByTestId('requester-comparison-delivery-health-credential-options')).toHaveTextContent(
+      'ARENA_REQUESTER_WEBHOOK_BEARER',
+    )
 
     await user.click(within(blockedRow).getByTestId('requester-comparison-delivery-edit-open'))
-    await user.clear(screen.getByLabelText('Credential key'))
-    await user.type(screen.getByLabelText('Credential key'), 'ARENA_REQUESTER_WEBHOOK_BEARER')
+    await user.selectOptions(
+      screen.getByTestId('requester-comparison-delivery-credential-binding-select'),
+      'ARENA_REQUESTER_WEBHOOK_BEARER',
+    )
+    expect(screen.getByLabelText('Credential key')).toHaveValue('ARENA_REQUESTER_WEBHOOK_BEARER')
     await user.click(screen.getByTestId('requester-comparison-delivery-save'))
 
     await user.click(screen.getByTestId('requester-comparison-delivery-run-retry'))
@@ -1724,5 +1820,12 @@ describe('submissions page', () => {
       'Will continue improving',
     )
     expect(screen.getByTestId('requester-settled-report-sample')).toHaveTextContent('12')
+    expect(screen.getByText('Budget ledger')).toBeInTheDocument()
+    expect(screen.getByTestId('requester-settled-report-budget-summary')).toHaveTextContent(
+      'Remaining',
+    )
+    expect(screen.getByTestId('requester-settled-report-budget-ledger')).toHaveTextContent(
+      'Spent',
+    )
   })
 })

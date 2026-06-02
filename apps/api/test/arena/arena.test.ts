@@ -34,6 +34,7 @@ import { PublicDiscoveryService } from "../../src/arena/services/public-discover
 import { PublicRespondentLeaderboardService } from "../../src/arena/services/public-respondent-leaderboard.service";
 import { PublicIntegrityViewService } from "../../src/arena/services/public-integrity-view.service";
 import { PublicResultViewService } from "../../src/arena/services/public-result-view.service";
+import { RESPONSE_REVIEW_CLAIM_TTL_SECONDS } from "../../src/arena/services/response-review.service";
 import { ResultViewService } from "../../src/arena/services/result-view.service";
 import { RewardViewService } from "../../src/arena/services/reward-view.service";
 import { ValidationViewService } from "../../src/arena/services/validation-view.service";
@@ -890,6 +891,181 @@ test("submitResponse stores one latest response, marks task submitted and opens 
     harness.store.propositions.find((item) => item.id === proposition.id)?.status,
     "live",
   );
+});
+
+test("response review workflow can be claimed, released, and reclaimed without finalization side effects", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+  });
+  const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+    propositionId: proposition.id,
+    userIds: ["review_claim_user"],
+    assignedAt: "2026-04-18T10:06:00.000Z",
+    expiresAt: "2026-04-18T10:16:00.000Z",
+  });
+
+  const response = await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: task.id,
+    userId: "review_claim_user",
+    selectedOption: 0,
+    confirmationOption: 0,
+    clientStartedAt: "2026-04-18T10:06:10.000Z",
+    clientSubmittedAt: "2026-04-18T10:06:20.000Z",
+    submittedAt: "2026-04-18T10:06:20.000Z",
+    understandingAck: true,
+  });
+
+  const claimAt = new Date().toISOString();
+  const releaseAt = new Date(Date.now() + 60_000).toISOString();
+  const reclaimAt = new Date(Date.now() + 120_000).toISOString();
+
+  const initialState = await harness.responseReviewService.getReviewWorkflowState(
+    response.id,
+  );
+  const claimed = await harness.responseReviewService.claimPendingReview({
+    responseId: response.id,
+    claimedAt: claimAt,
+    claimedByUserId: "operator_a",
+  });
+  const released = await harness.responseReviewService.releasePendingReview({
+    responseId: response.id,
+    releasedAt: releaseAt,
+    releasedByUserId: "operator_a",
+  });
+  const reclaimed = await harness.responseReviewService.claimPendingReview({
+    responseId: response.id,
+    claimedAt: reclaimAt,
+    claimedByUserId: "operator_b",
+  });
+  const pendingReward = await harness.rewardLedgerService.getByPropositionAndUser(
+    proposition.id,
+    "review_claim_user",
+  );
+  const progress = await harness.counterService.getPublicProgress(proposition.id);
+  const persistedReview = await harness.responseReviewRepository.findByResponseId(
+    response.id,
+  );
+
+  assert.equal(initialState.workflowState, "unclaimed");
+  assert.equal(claimed.workflowState, "claimed");
+  assert.equal(claimed.claimedByUserId, "operator_a");
+  assert.equal(released.workflowState, "released");
+  assert.equal(released.releasedByUserId, "operator_a");
+  assert.equal(reclaimed.workflowState, "claimed");
+  assert.equal(reclaimed.claimedByUserId, "operator_b");
+  assert.equal(persistedReview?.status, "pending_review");
+  assert.equal(pendingReward?.status, "pending");
+  assert.equal(progress.progress.currentEffectiveSample, 0);
+  assert.equal(progress.progress.reviewedCount, 0);
+});
+
+test("response review workflow exposes stale ownership and allows takeover", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness);
+  const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+    propositionId: proposition.id,
+    userIds: ["review_stale_user"],
+    assignedAt: "2026-04-18T10:06:00.000Z",
+    expiresAt: "2026-04-18T10:16:00.000Z",
+  });
+
+  const response = await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: task.id,
+    userId: "review_stale_user",
+    selectedOption: 0,
+    confirmationOption: 0,
+    clientStartedAt: "2026-04-18T10:06:10.000Z",
+    clientSubmittedAt: "2026-04-18T10:06:20.000Z",
+    submittedAt: "2026-04-18T10:06:20.000Z",
+    understandingAck: true,
+  });
+
+  const staleClaimAt = new Date(
+    Date.now() - (RESPONSE_REVIEW_CLAIM_TTL_SECONDS + 60) * 1000,
+  ).toISOString();
+  const takeoverAt = new Date().toISOString();
+
+  await harness.responseReviewService.claimPendingReview({
+    responseId: response.id,
+    claimedAt: staleClaimAt,
+    claimedByUserId: "operator_a",
+  });
+  const staleState = await harness.responseReviewService.getReviewWorkflowState(
+    response.id,
+  );
+  const takenOver = await harness.responseReviewService.claimPendingReview({
+    responseId: response.id,
+    claimedAt: takeoverAt,
+    claimedByUserId: "operator_b",
+  });
+
+  assert.equal(staleState.workflowState, "expired");
+  assert.equal(staleState.claimedByUserId, "operator_a");
+  assert.equal(takenOver.workflowState, "claimed");
+  assert.equal(takenOver.claimedByUserId, "operator_b");
+  assert.equal(takenOver.isClaimStale, false);
+});
+
+test("response review finalization respects active claim ownership and clears workflow after settlement", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness);
+  const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+    propositionId: proposition.id,
+    userIds: ["review_finalize_user"],
+    assignedAt: "2026-04-18T10:06:00.000Z",
+    expiresAt: "2026-04-18T10:16:00.000Z",
+  });
+
+  const response = await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: task.id,
+    userId: "review_finalize_user",
+    selectedOption: 0,
+    confirmationOption: 0,
+    clientStartedAt: "2026-04-18T10:06:10.000Z",
+    clientSubmittedAt: "2026-04-18T10:06:20.000Z",
+    submittedAt: "2026-04-18T10:06:20.000Z",
+    understandingAck: true,
+  });
+
+  const claimAt = new Date().toISOString();
+  const foreignReviewAt = new Date(Date.now() + 60_000).toISOString();
+  const ownerReviewAt = new Date(Date.now() + 120_000).toISOString();
+
+  await harness.responseReviewService.claimPendingReview({
+    responseId: response.id,
+    claimedAt: claimAt,
+    claimedByUserId: "operator_a",
+  });
+
+  await assert.rejects(
+    () =>
+      harness.qualityEngineService.reviewPendingResponse({
+        responseId: response.id,
+        reviewedAt: foreignReviewAt,
+        reviewedByUserId: "operator_b",
+      }),
+    (error: unknown) =>
+      error instanceof ArenaConflictError &&
+      error.code === "response_review.review_claim_conflict",
+  );
+
+  const finalized = await harness.qualityEngineService.reviewPendingResponse({
+    responseId: response.id,
+    reviewedAt: ownerReviewAt,
+    reviewedByUserId: "operator_a",
+  });
+  const workflow = await harness.responseReviewService.getReviewWorkflowState(
+    response.id,
+  );
+
+  assert.equal(finalized.status, "valid");
+  assert.equal(workflow.workflowState, "finalized");
+  assert.equal(workflow.finalizedReviewStatus, "valid");
+  assert.equal(workflow.reviewedByUserId, "operator_a");
 });
 
 test("repeat submission is rejected in the current MVP one-task one-response strategy", async () => {
@@ -2544,6 +2720,155 @@ test("reward ledger progresses from pending to finalized and records a reversal 
   assert.equal(ledgerHistory[0]?.reasonCode, "review_corrected");
   assert.equal(ledgerHistory[1]?.status, "voided");
   assert.equal(ledgerHistory[1]?.reversalOfLedgerId, ledgerHistory[0]?.id ?? null);
+});
+
+test("requester budget ledger exposes reserved spent remaining released and adjusted budget truth", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    title: "Requester budget ledger truth proposition",
+    createdByUserId: "creator_budget_truth",
+    rewardBudget: "120",
+    baseResponseReward: "20",
+    marketEnabled: true,
+    minEffectiveSample: 1,
+  });
+  const [validTask, partialTask, pendingTask, correctedTask] =
+    await harness.dispatchEngineService.createDispatchTasksForProposition({
+      propositionId: proposition.id,
+      userIds: [
+        "budget_valid_user",
+        "budget_partial_user",
+        "budget_pending_user",
+        "budget_corrected_user",
+      ],
+      assignedAt: arenaTime(370),
+      expiresAt: arenaTime(390),
+    });
+  assert.ok(validTask);
+  assert.ok(partialTask);
+  assert.ok(pendingTask);
+  assert.ok(correctedTask);
+
+  const validResponse = await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: validTask.id,
+    userId: "budget_valid_user",
+    selectedOption: 0,
+    confirmationOption: 0,
+    clientStartedAt: arenaTime(370, 5),
+    clientSubmittedAt: arenaTime(370, 10),
+    understandingAck: true,
+    submittedAt: arenaTime(370, 10),
+  });
+  await harness.responseReviewService.reviewValid({
+    responseId: validResponse.id,
+    reviewedAt: arenaTime(370, 20),
+    reviewedByUserId: "reviewer_budget",
+    reasonCodes: [...defaultReasonCodesByStatus.valid],
+  });
+
+  const partialResponse = await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: partialTask.id,
+    userId: "budget_partial_user",
+    selectedOption: 1,
+    confirmationOption: 1,
+    clientStartedAt: arenaTime(371, 5),
+    clientSubmittedAt: arenaTime(371, 10),
+    understandingAck: true,
+    submittedAt: arenaTime(371, 10),
+  });
+  await harness.responseReviewService.reviewPartialValid({
+    responseId: partialResponse.id,
+    reviewedAt: arenaTime(371, 20),
+    reviewedByUserId: "reviewer_budget",
+    reasonCodes: [...defaultReasonCodesByStatus.partial_valid],
+  });
+
+  await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: pendingTask.id,
+    userId: "budget_pending_user",
+    selectedOption: 0,
+    confirmationOption: 0,
+    clientStartedAt: arenaTime(372, 5),
+    clientSubmittedAt: arenaTime(372, 10),
+    understandingAck: true,
+    submittedAt: arenaTime(372, 10),
+  });
+
+  const correctedResponse = await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: correctedTask.id,
+    userId: "budget_corrected_user",
+    selectedOption: 1,
+    confirmationOption: 1,
+    clientStartedAt: arenaTime(373, 5),
+    clientSubmittedAt: arenaTime(373, 10),
+    understandingAck: true,
+    submittedAt: arenaTime(373, 10),
+  });
+  await harness.responseReviewService.reviewValid({
+    responseId: correctedResponse.id,
+    reviewedAt: arenaTime(373, 20),
+    reviewedByUserId: "reviewer_budget",
+    reasonCodes: [...defaultReasonCodesByStatus.valid],
+  });
+  await harness.responseReviewService.reviewInvalid({
+    responseId: correctedResponse.id,
+    reviewedAt: arenaTime(374, 20),
+    reviewedByUserId: "reviewer_budget_correction",
+    reasonCodes: [...defaultReasonCodesByStatus.invalid],
+  });
+
+  const detail = await harness.requesterPropositionViewService.getOwnedPropositionDetail({
+    propositionId: proposition.id,
+    userId: "creator_budget_truth",
+  });
+  const budgetLedger =
+    await harness.requesterPropositionViewService.getOwnedPropositionBudgetLedger({
+      propositionId: proposition.id,
+      userId: "creator_budget_truth",
+    });
+
+  assert.equal(detail.budgetSummary.configuredAmount, "120");
+  assert.equal(detail.budgetSummary.reservedAmount, "20");
+  assert.equal(detail.budgetSummary.spentAmount, "30");
+  assert.equal(detail.budgetSummary.remainingAmount, "70");
+  assert.equal(detail.budgetSummary.releasedAmount, "30");
+  assert.equal(detail.budgetSummary.adjustedAmount, "20");
+  assert.equal(detail.budgetSummary.currentEntryCount, 4);
+  assert.equal(detail.budgetSummary.pendingEntryCount, 1);
+  assert.equal(detail.budgetSummary.finalizedEntryCount, 2);
+  assert.equal(detail.budgetSummary.voidedEntryCount, 1);
+  assert.equal(detail.budgetSummary.adjustedEntryCount, 1);
+
+  assert.equal(budgetLedger.propositionId, proposition.id);
+  assert.equal(budgetLedger.summary.remainingAmount, "70");
+  assert.equal(budgetLedger.items.length, 5);
+  const adjustedEntry = budgetLedger.items.find((item) => item.entryType === "adjusted");
+  const releasedEntry = budgetLedger.items.find(
+    (item) => item.entryType === "released" && item.releasedAmount === "20",
+  );
+  const reservedEntry = budgetLedger.items.find((item) => item.entryType === "reserved");
+  const partialSpentEntry = budgetLedger.items.find(
+    (item) => item.entryType === "spent" && item.spentAmount === "10",
+  );
+  const validSpentEntry = budgetLedger.items.find(
+    (item) => item.entryType === "spent" && item.spentAmount === "20",
+  );
+
+  assert.ok(adjustedEntry);
+  assert.equal(adjustedEntry.adjustedAmount, "20");
+  assert.equal(adjustedEntry.reasonCode, "review_corrected");
+  assert.ok(releasedEntry);
+  assert.equal(releasedEntry.isCurrent, true);
+  assert.ok(reservedEntry);
+  assert.equal(reservedEntry.reservedAmount, "20");
+  assert.equal(reservedEntry.isCurrent, true);
+  assert.ok(partialSpentEntry);
+  assert.equal(partialSpentEntry.releasedAmount, "10");
+  assert.ok(validSpentEntry);
 });
 
 test("respondent reward endpoint only returns the current user's ledger view and strips internal fields", async () => {
@@ -5669,7 +5994,10 @@ test("internal validation chain controller exposes manual command controls with 
     "resolve_market",
   ]);
   assert.deepEqual(
-    harness.store.internalAuditEvents.map((event) => event.action).sort(),
+    harness.store.internalAuditEvents
+      .map((event) => event.action)
+      .filter((action) => action.startsWith("validation_chain."))
+      .sort(),
     [
       "validation_chain.create_market.submitted",
       "validation_chain.freeze_market.submitted",

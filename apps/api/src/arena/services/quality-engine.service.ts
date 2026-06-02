@@ -20,7 +20,10 @@ import type { ArenaDbClient } from "../prisma.types";
 import { DispatchTaskRepository } from "../repositories/dispatch-task.repository";
 import { PropositionRepository } from "../repositories/proposition.repository";
 import { ResponseRepository } from "../repositories/response.repository";
-import { ResponseReviewService } from "./response-review.service";
+import {
+  type ResponseReviewWorkflowViewModel,
+  ResponseReviewService,
+} from "./response-review.service";
 
 const toIso = (value: Date | null): string | null =>
   value ? value.toISOString() : null;
@@ -82,6 +85,37 @@ export class QualityEngineService {
     db?: ArenaDbClient,
   ): Promise<ResponseReview | null> {
     return this.reviews.getReviewForResponse(responseId, db);
+  }
+
+  async claimPendingResponseReview(
+    input: {
+      responseId: string;
+      claimedAt: string;
+      claimedByUserId: string;
+      note?: string;
+    },
+    db?: ArenaDbClient,
+  ): Promise<ResponseReviewWorkflowViewModel> {
+    return this.reviews.claimPendingReview(input, db);
+  }
+
+  async releasePendingResponseReview(
+    input: {
+      responseId: string;
+      releasedAt: string;
+      releasedByUserId: string;
+      note?: string;
+    },
+    db?: ArenaDbClient,
+  ): Promise<ResponseReviewWorkflowViewModel> {
+    return this.reviews.releasePendingReview(input, db);
+  }
+
+  async getPendingResponseReviewState(
+    responseId: string,
+    db?: ArenaDbClient,
+  ): Promise<ResponseReviewWorkflowViewModel> {
+    return this.reviews.getReviewWorkflowState(responseId, db);
   }
 
   async listPendingReviewsByProposition(

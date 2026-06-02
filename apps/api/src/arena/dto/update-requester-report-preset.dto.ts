@@ -41,6 +41,6 @@ export class UpdateRequesterReportPresetDto {
   statusScope?: "all" | "settled" | "unresolved";
 
   @IsOptional()
-  @IsEnum(["json"])
-  defaultExportFormat?: "json";
+  @IsEnum(["json", "csv"])
+  defaultExportFormat?: "json" | "csv";
 }

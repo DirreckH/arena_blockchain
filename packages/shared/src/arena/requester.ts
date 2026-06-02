@@ -5,6 +5,9 @@ import type {
   PropositionResultKind,
   PropositionStatus,
   PropositionVoidReason,
+  ResponseReviewStatus,
+  RewardLedgerReasonCode,
+  RewardLedgerStatus,
 } from "./enums.js";
 import type {
   ClosureReadinessSnapshot,
@@ -42,6 +45,54 @@ export interface RequesterOwnedPropositionRecentItemViewModel {
     resultKind: PropositionResultKind | null;
     winningOption: BinaryOption | null;
   };
+}
+
+export type RequesterBudgetLedgerEntryType =
+  | "reserved"
+  | "spent"
+  | "released"
+  | "adjusted";
+
+export interface RequesterPropositionBudgetSummaryViewModel {
+  configuredAmount: string;
+  reservedAmount: string;
+  spentAmount: string;
+  remainingAmount: string;
+  releasedAmount: string;
+  adjustedAmount: string;
+  currentEntryCount: number;
+  pendingEntryCount: number;
+  finalizedEntryCount: number;
+  voidedEntryCount: number;
+  adjustedEntryCount: number;
+  lastEventAt: string | null;
+}
+
+export interface RequesterPropositionBudgetLedgerEntryViewModel {
+  entryId: string;
+  entryType: RequesterBudgetLedgerEntryType;
+  ledgerStatus: RewardLedgerStatus;
+  reviewStatus: ResponseReviewStatus | null;
+  pendingAmount: string;
+  finalAmount: string | null;
+  reservedAmount: string;
+  spentAmount: string;
+  releasedAmount: string;
+  adjustedAmount: string;
+  reasonCode: RewardLedgerReasonCode | null;
+  createdAt: string;
+  effectiveAt: string;
+  finalizedAt: string | null;
+  voidedAt: string | null;
+  reversedAt: string | null;
+  ledgerVersion: number;
+  isCurrent: boolean;
+}
+
+export interface RequesterPropositionBudgetLedgerViewModel {
+  propositionId: string;
+  summary: RequesterPropositionBudgetSummaryViewModel;
+  items: RequesterPropositionBudgetLedgerEntryViewModel[];
 }
 
 export interface RequesterOwnedPropositionOverviewViewModel {
@@ -85,6 +136,7 @@ export interface RequesterOwnedPropositionOverviewViewModel {
     liveOrRevealingCount: number;
     awaitingSettlementCount: number;
   };
+  budgetSummary: RequesterPropositionBudgetSummaryViewModel;
   recent: RequesterOwnedPropositionRecentItemViewModel[];
 }
 
@@ -155,7 +207,7 @@ export type RequesterReportPresetStatusScope =
   | "settled"
   | "unresolved";
 
-export type RequesterReportPresetExportFormat = "json";
+export type RequesterReportPresetExportFormat = "json" | "csv";
 
 export interface RequesterReportPresetConfigViewModel {
   windowDays: number;
@@ -253,6 +305,7 @@ export interface RequesterOwnedPropositionDetailViewModel {
     invalidCount: number;
     fraudSuspectedCount: number;
   };
+  budgetSummary: RequesterPropositionBudgetSummaryViewModel;
   revealSettlement: {
     propositionStatus: PropositionStatus;
     resultKind: PropositionResultKind | null;
@@ -318,6 +371,7 @@ export interface RequesterOwnedSettledPropositionReportViewModel {
     invalidCount: number;
     fraudSuspectedCount: number;
   };
+  budgetSummary: RequesterPropositionBudgetSummaryViewModel;
   result: {
     resultKind: PropositionResultKind;
     winningOption: BinaryOption | null;
@@ -336,7 +390,7 @@ export interface RequesterOwnedPropositionExportItemViewModel {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterReportPresetExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
@@ -356,6 +410,12 @@ export interface RequesterOwnedPropositionExportListViewModel {
   items: RequesterOwnedPropositionExportItemViewModel[];
 }
 
+export interface RequesterExportSerializedArtifactViewModel {
+  mediaType: "application/json" | "text/csv";
+  fileName: string;
+  content: string;
+}
+
 export interface RequesterOwnedPropositionExportArtifactViewModel
   extends RequesterOwnedPropositionExportItemViewModel {
   preset: {
@@ -368,6 +428,7 @@ export interface RequesterOwnedPropositionExportArtifactViewModel
   overview: RequesterOwnedPropositionOverviewViewModel;
   analytics: RequesterOwnedPropositionAnalyticsViewModel;
   reports: RequesterOwnedSettledPropositionReportViewModel[];
+  serialized: RequesterExportSerializedArtifactViewModel;
 }
 
 export interface RequesterComparisonSetViewModel {
@@ -453,7 +514,7 @@ export interface RequesterOwnedComparisonSetExportItemViewModel {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterReportPresetExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
@@ -497,7 +558,7 @@ export interface RequesterOwnedComparisonSetExportArtifactViewModel {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterReportPresetExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
@@ -509,6 +570,7 @@ export interface RequesterOwnedComparisonSetExportArtifactViewModel {
   };
   totalCount: number;
   summary: RequesterOwnedPropositionAnalyticsComparisonSummaryViewModel;
+  serialized: RequesterExportSerializedArtifactViewModel;
   report: {
     generatedAt: string;
     presetCount: number;
@@ -612,6 +674,18 @@ export interface DeleteRequesterComparisonSetDeliveryPolicyResultViewModel {
   comparisonSetId: string;
   policyId: string;
   deleted: true;
+}
+
+export interface RequesterDeliveryCredentialOptionViewModel {
+  credentialKey: string;
+  label: string;
+  transportType: "webhook";
+  authenticationKind: "bearer";
+}
+
+export interface RequesterDeliveryCredentialDirectoryViewModel {
+  totalCount: number;
+  items: RequesterDeliveryCredentialOptionViewModel[];
 }
 
 export type RequesterComparisonSetDeliveryRunTriggerType =

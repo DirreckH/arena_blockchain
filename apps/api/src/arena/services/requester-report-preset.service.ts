@@ -12,7 +12,7 @@ export type RequesterReportPresetStatusScope =
   | "settled"
   | "unresolved";
 
-export type RequesterReportPresetExportFormat = "json";
+export type RequesterReportPresetExportFormat = "json" | "csv";
 
 export interface RequesterReportPresetConfig {
   windowDays: number;

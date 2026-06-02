@@ -11,6 +11,7 @@ import {
 import {
   arenaApi,
   type CreateRequesterComparisonSetDeliveryPolicyInputRecord,
+  type RequesterDeliveryCredentialDirectoryRecord,
   type RequesterComparisonSetDeliveryRunReplayFilterRecord,
   type RequesterComparisonSetDeliveryRunStatusFilterRecord,
   type RequesterComparisonSetDeliveryRunTriggerTypeFilterRecord,
@@ -29,6 +30,7 @@ import {
   type RequesterOwnedPropositionExportRecord,
   type RequesterOwnedPropositionExportListRecord,
   type RequesterOwnedPropositionOverviewRecord,
+  type RequesterPropositionBudgetLedgerRecord,
   type RequesterReportPresetListRecord,
   type RequesterOwnedSettledPropositionReportRecord,
   type UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
@@ -46,6 +48,9 @@ type SubmissionCardRecord = {
   minEffectiveSample: number
   marketEnabled: boolean
 }
+
+type RequesterBudgetSummaryRecord = RequesterOwnedPropositionDetailRecord['budgetSummary']
+type RequesterBudgetLedgerEntryRecord = RequesterPropositionBudgetLedgerRecord['items'][number]
 
 function toSubmissionCardRecord(draft: PropositionDraftRecord): SubmissionCardRecord {
   return {
@@ -140,6 +145,56 @@ function formatResultKindLabel(resultKind: string) {
     default:
       return resultKind
   }
+}
+
+function BudgetLedgerPanel({
+  summary,
+  ledger,
+  summaryTestId,
+  ledgerTestId,
+}: {
+  summary: RequesterBudgetSummaryRecord
+  ledger: RequesterPropositionBudgetLedgerRecord | null
+  summaryTestId: string
+  ledgerTestId: string
+}) {
+  const visibleItems = ledger?.items.slice(0, 4) ?? []
+
+  return (
+    <>
+      <div className="account-menu-status-row">
+        <div>
+          <strong>Budget ledger</strong>
+          <span data-testid={summaryTestId}>
+            {formatBudgetSummary(summary)} · configured {formatBudgetAmount(summary.configuredAmount)}
+          </span>
+        </div>
+        <em className="account-menu-value">
+          <span>{formatBudgetAmount(summary.remainingAmount)} remaining</span>
+        </em>
+      </div>
+      <div className="account-menu-status-row">
+        <div className="submission-detail-stack" data-testid={ledgerTestId}>
+          {visibleItems.length ? (
+            visibleItems.map((entry) => (
+              <div className="submission-detail-stack-row" key={entry.entryId}>
+                <strong>{formatBudgetEntryType(entry.entryType)}</strong>
+                <span>{formatBudgetEntryDetail(entry)}</span>
+                <small>{formatRelativeTime(entry.effectiveAt)}</small>
+              </div>
+            ))
+          ) : (
+            <span>No requester-visible budget entries yet.</span>
+          )}
+        </div>
+        <em className="account-menu-value">
+          <span>
+            {summary.currentEntryCount} current · {summary.adjustedEntryCount} adjusted
+          </span>
+        </em>
+      </div>
+    </>
+  )
 }
 
 function formatTopCategoryLabel(
@@ -589,8 +644,91 @@ function fromDeliveryDatetimeInputValue(value: string) {
   return new Date(value).toISOString()
 }
 
+function normalizeDeliveryCredentialKey(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? ''
+  return trimmed.length > 0 ? trimmed : ''
+}
+
+function isSavedDeliveryCredential(
+  credentials: RequesterDeliveryCredentialDirectoryRecord | null,
+  credentialKey: string,
+) {
+  const normalizedCredentialKey = normalizeDeliveryCredentialKey(credentialKey)
+  return (
+    normalizedCredentialKey.length > 0
+    && (credentials?.items ?? []).some((item) => item.credentialKey === normalizedCredentialKey)
+  )
+}
+
+function buildDeliveryCredentialBindingOptions(
+  credentials: RequesterDeliveryCredentialDirectoryRecord | null,
+  credentialKey: string,
+) {
+  const normalizedCredentialKey = normalizeDeliveryCredentialKey(credentialKey)
+  const options = (credentials?.items ?? []).map((item) => ({
+    value: item.credentialKey,
+    label: item.label,
+  }))
+
+  if (
+    normalizedCredentialKey.length > 0
+    && !options.some((item) => item.value === normalizedCredentialKey)
+  ) {
+    return [
+      {
+        value: normalizedCredentialKey,
+        label: `Unavailable binding: ${normalizedCredentialKey}`,
+      },
+      ...options,
+    ]
+  }
+
+  return options
+}
+
+function formatDeliveryCredentialBindingStatus(
+  credentials: RequesterDeliveryCredentialDirectoryRecord | null,
+  credentialKey: string,
+) {
+  const normalizedCredentialKey = normalizeDeliveryCredentialKey(credentialKey)
+  if (normalizedCredentialKey.length === 0) {
+    return 'No credential'
+  }
+
+  return isSavedDeliveryCredential(credentials, normalizedCredentialKey)
+    ? 'Ready binding'
+    : 'Missing binding'
+}
+
+function formatDeliveryCredentialBindingDetail(
+  credentials: RequesterDeliveryCredentialDirectoryRecord | null,
+  credentialKey: string,
+) {
+  const normalizedCredentialKey = normalizeDeliveryCredentialKey(credentialKey)
+  if (normalizedCredentialKey.length === 0) {
+    return 'No downstream bearer token will be attached'
+  }
+
+  return isSavedDeliveryCredential(credentials, normalizedCredentialKey)
+    ? `Bound to saved bearer credential ${normalizedCredentialKey}`
+    : `Saved bearer credential ${normalizedCredentialKey} is not available on this environment`
+}
+
+function formatDeliveryCredentialDirectorySummary(
+  credentials: RequesterDeliveryCredentialDirectoryRecord | null,
+) {
+  if (!credentials || credentials.totalCount === 0) {
+    return 'No saved webhook credentials are currently configured'
+  }
+
+  return credentials.totalCount === 1
+    ? `1 saved binding · ${credentials.items[0]?.label ?? 'Unknown binding'}`
+    : `${credentials.totalCount} saved bindings · ${credentials.items.map((item) => item.label).join(', ')}`
+}
+
 function buildCreateComparisonDeliveryFormState(
   comparisonSetId: string,
+  defaultCredentialKey = '',
 ): ComparisonDeliveryFormState {
   return {
     comparisonSetId,
@@ -601,7 +739,48 @@ function buildCreateComparisonDeliveryFormState(
     enabled: true,
     retainedExportCount: '5',
     targetUrl: 'https://example.arena.test/requester-deliveries',
-    credentialKey: 'ARENA_REQUESTER_WEBHOOK_BEARER',
+    credentialKey: defaultCredentialKey,
+  }
+}
+
+function formatBudgetAmount(amount: string) {
+  const numeric = Number(amount)
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : amount
+}
+
+function formatBudgetSummary(summary: RequesterBudgetSummaryRecord) {
+  return `Remaining ${formatBudgetAmount(summary.remainingAmount)} · reserved ${formatBudgetAmount(
+    summary.reservedAmount,
+  )} · spent ${formatBudgetAmount(summary.spentAmount)}`
+}
+
+function formatBudgetEntryType(type: RequesterBudgetLedgerEntryRecord['entryType']) {
+  switch (type) {
+    case 'reserved':
+      return 'Reserved'
+    case 'spent':
+      return 'Spent'
+    case 'released':
+      return 'Released'
+    case 'adjusted':
+    default:
+      return 'Adjusted'
+  }
+}
+
+function formatBudgetEntryDetail(entry: RequesterBudgetLedgerEntryRecord) {
+  switch (entry.entryType) {
+    case 'reserved':
+      return `Reserved ${formatBudgetAmount(entry.reservedAmount)} pending review resolution`
+    case 'spent':
+      return entry.releasedAmount !== '0'
+        ? `Spent ${formatBudgetAmount(entry.spentAmount)} · released ${formatBudgetAmount(entry.releasedAmount)}`
+        : `Spent ${formatBudgetAmount(entry.spentAmount)}`
+    case 'released':
+      return `Released ${formatBudgetAmount(entry.releasedAmount)} back into remaining budget`
+    case 'adjusted':
+    default:
+      return `Adjusted ${formatBudgetAmount(entry.adjustedAmount)} · ${entry.reasonCode ?? 'historical correction'}`
   }
 }
 
@@ -627,6 +806,8 @@ export function SubmissionsPage() {
   const [submissions, setSubmissions] = useState<SubmissionCardRecord[]>([])
   const [overview, setOverview] = useState<RequesterOwnedPropositionOverviewRecord | null>(null)
   const [detailById, setDetailById] = useState<Record<string, RequesterOwnedPropositionDetailRecord>>({})
+  const [budgetLedgerById, setBudgetLedgerById] =
+    useState<Record<string, RequesterPropositionBudgetLedgerRecord>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [exportsView, setExportsView] = useState<RequesterOwnedPropositionExportListRecord | null>(null)
   const [reportPresets, setReportPresets] = useState<RequesterReportPresetListRecord | null>(null)
@@ -641,6 +822,8 @@ export function SubmissionsPage() {
     useState<RequesterComparisonSetExportRecord | null>(null)
   const [selectedComparisonDeliveryPolicies, setSelectedComparisonDeliveryPolicies] =
     useState<RequesterComparisonSetDeliveryPolicyListRecord | null>(null)
+  const [requesterDeliveryCredentials, setRequesterDeliveryCredentials] =
+    useState<RequesterDeliveryCredentialDirectoryRecord | null>(null)
   const [selectedComparisonDeliveryHealth, setSelectedComparisonDeliveryHealth] =
     useState<RequesterComparisonSetDeliveryPolicyHealthRecord | null>(null)
   const [selectedComparisonDeliveryRun, setSelectedComparisonDeliveryRun] =
@@ -667,6 +850,7 @@ export function SubmissionsPage() {
     useState<RequesterOwnedSettledPropositionReportRecord | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [topLevelLoadErrorMessage, setTopLevelLoadErrorMessage] = useState<string | null>(null)
   const [pendingWithdrawId, setPendingWithdrawId] = useState<string | null>(null)
   const [pendingDetailId, setPendingDetailId] = useState<string | null>(null)
   const [pendingExport, setPendingExport] = useState(false)
@@ -681,6 +865,7 @@ export function SubmissionsPage() {
       setSubmissions([])
       setOverview(null)
       setDetailById({})
+      setBudgetLedgerById({})
       setExpandedId(null)
       setExportsView(null)
       setReportPresets(null)
@@ -691,6 +876,7 @@ export function SubmissionsPage() {
       setSelectedComparisonExports(null)
       setSelectedComparisonExport(null)
       setSelectedComparisonDeliveryPolicies(null)
+      setRequesterDeliveryCredentials(null)
       setSelectedComparisonDeliveryHealth(null)
       setSelectedComparisonDeliveryRun(null)
       setSelectedComparisonDeliveryRuns(null)
@@ -711,6 +897,7 @@ export function SubmissionsPage() {
     void (async () => {
       setIsLoading(true)
       setErrorMessage(null)
+      setTopLevelLoadErrorMessage(null)
 
       try {
         const [submissionRecords, overviewRecord, exportRecords, presetRecords, comparisonSetRecords] = await Promise.all([
@@ -727,6 +914,7 @@ export function SubmissionsPage() {
 
         setSubmissions(submissionRecords.map(toSubmissionCardRecord))
         setOverview(overviewRecord)
+        setBudgetLedgerById({})
         setExportsView(exportRecords)
         setReportPresets(presetRecords)
         setComparisonSets(comparisonSetRecords)
@@ -736,6 +924,7 @@ export function SubmissionsPage() {
         setSelectedComparisonExports(null)
         setSelectedComparisonExport(null)
         setSelectedComparisonDeliveryPolicies(null)
+        setRequesterDeliveryCredentials(null)
         setSelectedComparisonDeliveryHealth(null)
         setSelectedComparisonDeliveryRun(null)
         setSelectedComparisonDeliveryRuns(null)
@@ -752,7 +941,10 @@ export function SubmissionsPage() {
           return
         }
 
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to load requester submissions')
+        const nextErrorMessage =
+          error instanceof Error ? error.message : 'Failed to load requester submissions'
+        setErrorMessage(nextErrorMessage)
+        setTopLevelLoadErrorMessage(nextErrorMessage)
       } finally {
         if (!disposed) {
           setIsLoading(false)
@@ -790,6 +982,13 @@ export function SubmissionsPage() {
         label: 'Unresolved',
         value: String(overview.resultSummary.unresolvedHiddenCount),
         detail: 'Still hidden from directional result disclosure before settlement.',
+      },
+      {
+        label: 'Remaining budget',
+        value: formatBudgetAmount(overview.budgetSummary.remainingAmount),
+        detail: `Reserved ${formatBudgetAmount(overview.budgetSummary.reservedAmount)} · spent ${formatBudgetAmount(
+          overview.budgetSummary.spentAmount,
+        )}.`,
       },
     ]
   }, [overview])
@@ -839,6 +1038,17 @@ export function SubmissionsPage() {
     focusedComparisonDeliveryHealth,
     focusedComparisonDeliveryPolicy,
   ])
+
+  const comparisonDeliveryCredentialBindingOptions = useMemo(
+    () =>
+      comparisonDeliveryForm
+        ? buildDeliveryCredentialBindingOptions(
+            requesterDeliveryCredentials,
+            comparisonDeliveryForm.credentialKey,
+          )
+        : [],
+    [comparisonDeliveryForm, requesterDeliveryCredentials],
+  )
 
   const requestComparisonDeliveryHealthRefresh = () => {
     setComparisonDeliveryHealthRefreshNonce((current) => current + 1)
@@ -1081,13 +1291,24 @@ export function SubmissionsPage() {
 
     setErrorMessage(null)
 
-    if (!detailById[propositionId]) {
+    if (!detailById[propositionId] || !budgetLedgerById[propositionId]) {
       setPendingDetailId(propositionId)
       try {
-        const detail = await arenaApi.getOwnedPropositionDetail(propositionId, token)
+        const [detail, budgetLedger] = await Promise.all([
+          detailById[propositionId]
+            ? Promise.resolve(detailById[propositionId])
+            : arenaApi.getOwnedPropositionDetail(propositionId, token),
+          budgetLedgerById[propositionId]
+            ? Promise.resolve(budgetLedgerById[propositionId])
+            : arenaApi.getOwnedPropositionBudgetLedger(propositionId, token),
+        ])
         setDetailById((current) => ({
           ...current,
           [propositionId]: detail,
+        }))
+        setBudgetLedgerById((current) => ({
+          ...current,
+          [propositionId]: budgetLedger,
         }))
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load submission detail')
@@ -1172,8 +1393,17 @@ export function SubmissionsPage() {
     setErrorMessage(null)
 
     try {
-      const report = await arenaApi.getOwnedPropositionReport(propositionId, token)
+      const [report, budgetLedger] = await Promise.all([
+        arenaApi.getOwnedPropositionReport(propositionId, token),
+        budgetLedgerById[propositionId]
+          ? Promise.resolve(budgetLedgerById[propositionId])
+          : arenaApi.getOwnedPropositionBudgetLedger(propositionId, token),
+      ])
       setSelectedSettledReport(report)
+      setBudgetLedgerById((current) => ({
+        ...current,
+        [propositionId]: budgetLedger,
+      }))
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load settled requester report')
     } finally {
@@ -1426,8 +1656,12 @@ export function SubmissionsPage() {
     setErrorMessage(null)
 
     try {
-      const policies = await arenaApi.listRequesterComparisonSetDeliveryPolicies(comparisonSetId, token)
+      const [policies, credentialDirectory] = await Promise.all([
+        arenaApi.listRequesterComparisonSetDeliveryPolicies(comparisonSetId, token),
+        arenaApi.listRequesterDeliveryCredentials(token).catch(() => null),
+      ])
       setSelectedComparisonDeliveryPolicies(policies)
+      setRequesterDeliveryCredentials(credentialDirectory)
       setFocusedComparisonDeliveryHealth(null)
       void loadComparisonDeliveryPolicyHealthSummaries(policies, token)
       setComparisonDeliveryFocus({
@@ -1446,7 +1680,12 @@ export function SubmissionsPage() {
   }
 
   const handleOpenCreateComparisonDeliveryPolicy = (comparisonSetId: string) => {
-    setComparisonDeliveryForm(buildCreateComparisonDeliveryFormState(comparisonSetId))
+    setComparisonDeliveryForm(
+      buildCreateComparisonDeliveryFormState(
+        comparisonSetId,
+        requesterDeliveryCredentials?.items[0]?.credentialKey ?? '',
+      ),
+    )
     setSelectedComparisonDeliveryRetry(null)
   }
 
@@ -2016,7 +2255,9 @@ export function SubmissionsPage() {
     ? 'unavailable'
     : sessionMode === 'demo'
       ? 'demo'
-      : 'live'
+      : topLevelLoadErrorMessage
+        ? 'unavailable'
+        : 'live'
 
   return (
     <section className="route-page utility-page">
@@ -2843,6 +3084,30 @@ export function SubmissionsPage() {
                       />
                     </label>
                     <label className="field-shell">
+                      <span className="field-label">Saved credential binding</span>
+                      <select
+                        data-testid="requester-comparison-delivery-credential-binding-select"
+                        value={normalizeDeliveryCredentialKey(comparisonDeliveryForm.credentialKey)}
+                        onChange={(event) =>
+                          setComparisonDeliveryForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  credentialKey: event.target.value,
+                                }
+                              : current,
+                          )
+                        }
+                      >
+                        <option value="">No credential binding</option>
+                        {comparisonDeliveryCredentialBindingOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field-shell">
                       <span className="field-label">Credential key</span>
                       <input
                         value={comparisonDeliveryForm.credentialKey}
@@ -2888,7 +3153,44 @@ export function SubmissionsPage() {
                         <Download size={16} />
                         <span>{pendingComparisonDeliverySave ? 'Saving...' : 'Save policy'}</span>
                       </button>
+                      <button
+                        className="secondary-action"
+                        data-testid="requester-comparison-delivery-clear-credential"
+                        disabled={normalizeDeliveryCredentialKey(comparisonDeliveryForm.credentialKey).length === 0}
+                        onClick={() =>
+                          setComparisonDeliveryForm((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  credentialKey: '',
+                                }
+                              : current,
+                          )
+                        }
+                        type="button"
+                      >
+                        <Undo2 size={16} />
+                        <span>Clear binding</span>
+                      </button>
                     </div>
+                    <article className="account-summary-item">
+                      <span>Credential binding</span>
+                      <strong data-testid="requester-comparison-delivery-credential-status">
+                        {formatDeliveryCredentialBindingStatus(
+                          requesterDeliveryCredentials,
+                          comparisonDeliveryForm.credentialKey,
+                        )}
+                      </strong>
+                      <small data-testid="requester-comparison-delivery-credential-detail">
+                        {formatDeliveryCredentialBindingDetail(
+                          requesterDeliveryCredentials,
+                          comparisonDeliveryForm.credentialKey,
+                        )}
+                      </small>
+                      <small data-testid="requester-comparison-delivery-available-credentials">
+                        {formatDeliveryCredentialDirectorySummary(requesterDeliveryCredentials)}
+                      </small>
+                    </article>
                     <article className="account-summary-item">
                       <span>Retention policy</span>
                       <strong data-testid="requester-comparison-delivery-form-retained-count">
@@ -3174,6 +3476,15 @@ export function SubmissionsPage() {
                           : formatDeliveryTransportBlockingReason(
                             selectedComparisonDeliveryHealth.health.transport.blockingReason,
                           )}
+                      </small>
+                    </article>
+                    <article className="account-summary-item">
+                      <span>Saved bindings</span>
+                      <strong data-testid="requester-comparison-delivery-health-credential-count">
+                        {requesterDeliveryCredentials?.totalCount ?? 0}
+                      </strong>
+                      <small data-testid="requester-comparison-delivery-health-credential-options">
+                        {formatDeliveryCredentialDirectorySummary(requesterDeliveryCredentials)}
                       </small>
                     </article>
                     <article className="account-summary-item">
@@ -3701,18 +4012,12 @@ export function SubmissionsPage() {
                               <span>{detail.market ? detail.market.status : 'No market yet'}</span>
                             </em>
                           </div>
-                          <div className="account-menu-status-row">
-                            <div>
-                              <strong>Requester budget</strong>
-                              <span>
-                                Reward budget {detail.proposition.rewardBudget} · base response reward{' '}
-                                {detail.proposition.baseResponseReward}
-                              </span>
-                            </div>
-                            <em className="account-menu-value">
-                              <span>{detail.proposition.marketEnabled ? 'Market-enabled' : 'Market-disabled'}</span>
-                            </em>
-                          </div>
+                          <BudgetLedgerPanel
+                            summary={detail.budgetSummary}
+                            ledger={budgetLedgerById[submission.propositionId] ?? null}
+                            summaryTestId={`submission-budget-summary-${submission.propositionId}`}
+                            ledgerTestId={`submission-budget-ledger-${submission.propositionId}`}
+                          />
                         </div>
                       </div>
                     ) : null}
@@ -3825,20 +4130,12 @@ export function SubmissionsPage() {
                       <span>{selectedSettledReport.result.marketStatus ?? 'No market'}</span>
                     </em>
                   </div>
-                  <div className="account-menu-status-row">
-                    <div>
-                      <strong>Requester budget</strong>
-                      <span>
-                        Reward budget {selectedSettledReport.proposition.rewardBudget} · base response reward{' '}
-                        {selectedSettledReport.proposition.baseResponseReward}
-                      </span>
-                    </div>
-                    <em className="account-menu-value">
-                      <span>
-                        {selectedSettledReport.proposition.marketEnabled ? 'Market-enabled' : 'Market-disabled'}
-                      </span>
-                    </em>
-                  </div>
+                  <BudgetLedgerPanel
+                    summary={selectedSettledReport.budgetSummary}
+                    ledger={budgetLedgerById[selectedSettledReport.proposition.id] ?? null}
+                    summaryTestId="requester-settled-report-budget-summary"
+                    ledgerTestId="requester-settled-report-budget-ledger"
+                  />
                 </div>
               </div>
             ) : null}

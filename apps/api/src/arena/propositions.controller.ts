@@ -32,6 +32,7 @@ import { UpdateRequesterReportPresetDto } from "./dto/update-requester-report-pr
 import { UpdatePropositionDraftDto } from "./dto/update-proposition-draft.dto";
 import { WithdrawPropositionSubmissionDto } from "./dto/withdraw-proposition-submission.dto";
 import { RequesterComparisonSetDeliveryPolicyService } from "./services/requester-comparison-set-delivery-policy.service";
+import { RequesterComparisonSetDeliveryTransportService } from "./services/requester-comparison-set-delivery-transport.service";
 import { RequesterComparisonSetService } from "./services/requester-comparison-set.service";
 import { PropositionDraftService } from "./services/proposition-draft.service";
 import { RequesterPropositionViewService } from "./services/requester-proposition-view.service";
@@ -45,6 +46,7 @@ export class ArenaPropositionsController {
     private readonly requesterReportPresets: RequesterReportPresetService,
     private readonly requesterComparisonSets: RequesterComparisonSetService,
     private readonly requesterComparisonSetDeliveryPolicies: RequesterComparisonSetDeliveryPolicyService,
+    private readonly requesterComparisonSetDeliveryTransport: RequesterComparisonSetDeliveryTransportService,
   ) {}
 
   @Get("mine")
@@ -186,6 +188,7 @@ export class ArenaPropositionsController {
     return this.requesterViews.createOwnedPropositionExport({
       userId: this.getUserId(request),
       presetId: body.presetId,
+      format: body.format,
     });
   }
 
@@ -252,12 +255,13 @@ export class ArenaPropositionsController {
   @Post("mine/comparison-sets/:comparisonSetId/exports")
   createOwnedComparisonSetExport(
     @Param("comparisonSetId") comparisonSetId: string,
-    @Body() _body: CreateRequesterComparisonSetExportDto,
+    @Body() body: CreateRequesterComparisonSetExportDto,
     @Req() request: RequestWithUser,
   ) {
     return this.requesterViews.createOwnedComparisonSetExport({
       userId: this.getUserId(request),
       comparisonSetId,
+      format: body.format,
     });
   }
 
@@ -272,6 +276,11 @@ export class ArenaPropositionsController {
       comparisonSetId,
       exportId,
     });
+  }
+
+  @Get("mine/delivery-credentials")
+  listRequesterDeliveryCredentials() {
+    return this.requesterComparisonSetDeliveryTransport.listAvailableCredentials();
   }
 
   @Delete("mine/comparison-sets/:comparisonSetId/exports/:exportId")
@@ -434,6 +443,17 @@ export class ArenaPropositionsController {
     @Req() request: RequestWithUser,
   ) {
     return this.requesterViews.getOwnedPropositionReport({
+      propositionId,
+      userId: this.getUserId(request),
+    });
+  }
+
+  @Get("mine/:propositionId/budget-ledger")
+  getOwnedPropositionBudgetLedger(
+    @Param("propositionId") propositionId: string,
+    @Req() request: RequestWithUser,
+  ) {
+    return this.requesterViews.getOwnedPropositionBudgetLedger({
       propositionId,
       userId: this.getUserId(request),
     });

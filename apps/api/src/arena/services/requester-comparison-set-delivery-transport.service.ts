@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { RequesterDeliveryCredentialDirectoryViewModel } from "@arena/shared";
 
 import { ArenaValidationError } from "../arena.errors";
 import { AppConfigService } from "../../config/app-config.service";
@@ -9,6 +10,22 @@ import type { RequesterComparisonSetDeliveryTransportResult } from "./requester-
 @Injectable()
 export class RequesterComparisonSetDeliveryTransportService {
   constructor(private readonly config: AppConfigService) {}
+
+  listAvailableCredentials(): RequesterDeliveryCredentialDirectoryViewModel {
+    const items = Object.keys(this.config.requesterDeliveryWebhookBearerTokens)
+      .sort((left, right) => left.localeCompare(right))
+      .map((credentialKey) => ({
+        credentialKey,
+        label: credentialKey,
+        transportType: "webhook" as const,
+        authenticationKind: "bearer" as const,
+      }));
+
+    return {
+      totalCount: items.length,
+      items,
+    };
+  }
 
   getWebhookCredentialStatus(credentialKey: string | null | undefined): {
     status: "ready" | "blocked";

@@ -17,6 +17,7 @@ import type {
   PublicProgressViewModel,
   PublicRespondentLeaderboardViewModel,
   PublicSettledResultsViewModel,
+  RequesterDeliveryCredentialDirectoryViewModel,
   RequesterComparisonSetDeliveryPolicyHealthViewModel,
   RequesterComparisonSetDeliveryPolicyListViewModel,
   RequesterComparisonSetDeliveryRunListViewModel,
@@ -38,6 +39,8 @@ import type {
   RequesterOwnedComparisonSetExportArtifactViewModel,
   RequesterOwnedPropositionAnalyticsComparisonViewModel,
   RequesterOwnedPropositionAnalyticsViewModel,
+  RequesterPropositionBudgetLedgerViewModel,
+  RequesterPropositionBudgetSummaryViewModel,
   RequesterPropositionSubmissionStatus,
   RequesterReportPresetListViewModel,
   SubmitAdjudicationResponseResult,
@@ -62,6 +65,7 @@ import type {
   RequesterOwnedPropositionDetailRecord,
   RequesterOwnedPropositionExportListRecord,
   RequesterOwnedPropositionExportRecord,
+  RequesterPropositionBudgetLedgerRecord,
   RequesterOwnedPropositionOverviewRecord,
   RequesterOwnedSettledPropositionReportRecord,
   UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
@@ -1091,6 +1095,7 @@ function buildRequesterOverview(
   drafts: PropositionDraftRecord[],
 ): RequesterOwnedPropositionOverviewRecord {
   const submittedDrafts = drafts.filter((draft) => draft.submissionStatus === 'submitted')
+  const budgetSummaries = drafts.map((draft) => buildDemoBudgetSummary(draft))
   const recent = [...drafts]
     .sort(
       (left, right) =>
@@ -1165,14 +1170,165 @@ function buildRequesterOverview(
       liveOrRevealingCount: 0,
       awaitingSettlementCount: 0,
     },
+    budgetSummary: {
+      configuredAmount: budgetSummaries
+        .reduce((total, summary) => total + BigInt(summary.configuredAmount), 0n)
+        .toString(),
+      reservedAmount: budgetSummaries
+        .reduce((total, summary) => total + BigInt(summary.reservedAmount), 0n)
+        .toString(),
+      spentAmount: budgetSummaries
+        .reduce((total, summary) => total + BigInt(summary.spentAmount), 0n)
+        .toString(),
+      remainingAmount: budgetSummaries
+        .reduce((total, summary) => total + BigInt(summary.remainingAmount), 0n)
+        .toString(),
+      releasedAmount: budgetSummaries
+        .reduce((total, summary) => total + BigInt(summary.releasedAmount), 0n)
+        .toString(),
+      adjustedAmount: budgetSummaries
+        .reduce((total, summary) => total + BigInt(summary.adjustedAmount), 0n)
+        .toString(),
+      currentEntryCount: budgetSummaries.reduce(
+        (total, summary) => total + summary.currentEntryCount,
+        0,
+      ),
+      pendingEntryCount: budgetSummaries.reduce(
+        (total, summary) => total + summary.pendingEntryCount,
+        0,
+      ),
+      finalizedEntryCount: budgetSummaries.reduce(
+        (total, summary) => total + summary.finalizedEntryCount,
+        0,
+      ),
+      voidedEntryCount: budgetSummaries.reduce(
+        (total, summary) => total + summary.voidedEntryCount,
+        0,
+      ),
+      adjustedEntryCount: budgetSummaries.reduce(
+        (total, summary) => total + summary.adjustedEntryCount,
+        0,
+      ),
+      lastEventAt:
+        budgetSummaries
+          .map((summary) => summary.lastEventAt)
+          .filter((value): value is string => Boolean(value))
+          .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null,
+    },
     recent,
   }
+}
+
+function buildDemoBudgetLedger(
+  draft: PropositionDraftRecord,
+): RequesterPropositionBudgetLedgerRecord {
+  const configuredAmount = draft.rewardBudget
+  const baseResponseReward = BigInt(draft.baseResponseReward)
+
+  if (draft.status !== 'settled') {
+    return {
+      propositionId: draft.propositionId,
+      summary: {
+        configuredAmount,
+        reservedAmount: '0',
+        spentAmount: '0',
+        remainingAmount: configuredAmount,
+        releasedAmount: '0',
+        adjustedAmount: '0',
+        currentEntryCount: 0,
+        pendingEntryCount: 0,
+        finalizedEntryCount: 0,
+        voidedEntryCount: 0,
+        adjustedEntryCount: 0,
+        lastEventAt: null,
+      },
+      items: [],
+    }
+  }
+
+  const partialSpent = (baseResponseReward / 2n).toString()
+  const partialReleased = (baseResponseReward - baseResponseReward / 2n).toString()
+  const items: RequesterPropositionBudgetLedgerViewModel['items'] = [
+    ...Array.from({ length: 10 }, (_, index) => ({
+      entryId: `${draft.propositionId}-budget-spent-${index + 1}`,
+      entryType: 'spent' as const,
+      ledgerStatus: 'finalized' as const,
+      reviewStatus: 'valid' as const,
+      pendingAmount: draft.baseResponseReward,
+      finalAmount: draft.baseResponseReward,
+      reservedAmount: '0',
+      spentAmount: draft.baseResponseReward,
+      releasedAmount: '0',
+      adjustedAmount: '0',
+      reasonCode: 'review_valid' as const,
+      createdAt: minusDays(7 + index),
+      effectiveAt: minusDays(6 + index),
+      finalizedAt: minusDays(6 + index),
+      voidedAt: null,
+      reversedAt: null,
+      ledgerVersion: 1,
+      isCurrent: true,
+    })),
+    ...Array.from({ length: 2 }, (_, index) => ({
+      entryId: `${draft.propositionId}-budget-partial-${index + 1}`,
+      entryType: 'spent' as const,
+      ledgerStatus: 'finalized' as const,
+      reviewStatus: 'partial_valid' as const,
+      pendingAmount: draft.baseResponseReward,
+      finalAmount: partialSpent,
+      reservedAmount: '0',
+      spentAmount: partialSpent,
+      releasedAmount: partialReleased,
+      adjustedAmount: '0',
+      reasonCode: 'review_partial_valid' as const,
+      createdAt: minusDays(4 + index),
+      effectiveAt: minusDays(3 + index),
+      finalizedAt: minusDays(3 + index),
+      voidedAt: null,
+      reversedAt: null,
+      ledgerVersion: 1,
+      isCurrent: true,
+    })),
+  ].sort((left, right) => Date.parse(right.effectiveAt) - Date.parse(left.effectiveAt))
+
+  return {
+    propositionId: draft.propositionId,
+    summary: {
+      configuredAmount,
+      reservedAmount: '0',
+      spentAmount: items
+        .reduce((total, item) => total + BigInt(item.spentAmount), 0n)
+        .toString(),
+      remainingAmount: (
+        BigInt(configuredAmount)
+        - items.reduce((total, item) => total + BigInt(item.spentAmount), 0n)
+      ).toString(),
+      releasedAmount: items
+        .reduce((total, item) => total + BigInt(item.releasedAmount), 0n)
+        .toString(),
+      adjustedAmount: '0',
+      currentEntryCount: items.length,
+      pendingEntryCount: 0,
+      finalizedEntryCount: items.length,
+      voidedEntryCount: 0,
+      adjustedEntryCount: 0,
+      lastEventAt: items[0]?.effectiveAt ?? null,
+    },
+    items,
+  }
+}
+
+function buildDemoBudgetSummary(
+  draft: PropositionDraftRecord,
+): RequesterPropositionBudgetSummaryViewModel {
+  return buildDemoBudgetLedger(draft).summary
 }
 
 function buildDemoSubmissionDetail(
   draft: PropositionDraftRecord,
 ): RequesterOwnedPropositionDetailRecord {
   const isSettled = draft.status === 'settled'
+  const budgetSummary = buildDemoBudgetSummary(draft)
 
   return {
     proposition: {
@@ -1289,6 +1445,7 @@ function buildDemoSubmissionDetail(
       invalidCount: 0,
       fraudSuspectedCount: 0,
     },
+    budgetSummary,
     revealSettlement: {
       propositionStatus: draft.status,
       resultKind: isSettled ? 'resolved' : null,
@@ -1365,6 +1522,9 @@ function buildDemoSettledRequesterReport(
     reviewSummary: {
       ...detail.reviewSummary,
     },
+    budgetSummary: {
+      ...detail.budgetSummary,
+    },
     result: {
       resultKind: 'resolved',
       winningOption: 0,
@@ -1384,6 +1544,7 @@ function buildDemoRequesterExport(
   exportId: string,
   requestedAt: string,
   presetId?: string,
+  format: 'json' | 'csv' = 'json',
 ): RequesterOwnedPropositionExportRecord {
   const overview = buildRequesterOverview(demoState.drafts)
   const preset =
@@ -1486,14 +1647,60 @@ function buildDemoRequesterExport(
     exportId,
     userId: DEMO_USER_ID,
     status: 'completed',
-    format: 'json',
+    format,
     requestedAt,
     completedAt: requestedAt,
-    fileName: `arena-requester-${DEMO_USER_ID}-${requestedAt.replace(/[:.]/g, '-')}.json`,
+    fileName: `arena-requester-${DEMO_USER_ID}-${requestedAt.replace(/[:.]/g, '-')}.${format}`,
     preset,
     overview,
     analytics,
     reports,
+    serialized:
+      format === 'csv'
+        ? {
+            mediaType: 'text/csv',
+            fileName: `arena-requester-${DEMO_USER_ID}-${requestedAt.replace(/[:.]/g, '-')}.${format}`,
+            content: [
+              'propositionId,title,category,status,resultKind,winningOptionLabel,settledAt,effectiveSampleCount,reviewedResponseCount,validCount,partialValidCount,invalidCount',
+              ...reports.map((report) =>
+                [
+                  report.proposition.id,
+                  report.proposition.title,
+                  report.proposition.category,
+                  report.proposition.status,
+                  report.result.resultKind,
+                  report.result.winningOptionLabel ?? '',
+                  report.result.settledAt,
+                  String(report.sample.effectiveSampleCount),
+                  String(report.sample.reviewedResponses),
+                  String(report.reviewSummary.validCount),
+                  String(report.reviewSummary.partialValidCount),
+                  String(report.reviewSummary.invalidCount),
+                ].join(','),
+              ),
+            ].join('\n') + '\n',
+          }
+        : {
+            mediaType: 'application/json',
+            fileName: `arena-requester-${DEMO_USER_ID}-${requestedAt.replace(/[:.]/g, '-')}.${format}`,
+            content: JSON.stringify(
+              {
+                exportId,
+                userId: DEMO_USER_ID,
+                status: 'completed',
+                format,
+                requestedAt,
+                completedAt: requestedAt,
+                fileName: `arena-requester-${DEMO_USER_ID}-${requestedAt.replace(/[:.]/g, '-')}.${format}`,
+                preset,
+                overview,
+                analytics,
+                reports,
+              },
+              null,
+              2,
+            ) + '\n',
+          },
     metrics: {
       settledReportCount: reports.length,
       openLifecycleCount: overview.totals.unresolvedCount,
@@ -1803,7 +2010,7 @@ function buildDemoRequesterComparisonExport(
   overrides?: Partial<
     Pick<
       RequesterComparisonSetExportRecord,
-      'exportId' | 'requestedAt' | 'completedAt' | 'fileName' | 'origin'
+      'exportId' | 'requestedAt' | 'completedAt' | 'fileName' | 'origin' | 'format'
     >
   >,
 ): RequesterComparisonSetExportRecord {
@@ -1813,17 +2020,68 @@ function buildDemoRequesterComparisonExport(
   const exportId =
     overrides?.exportId
     ?? `comparison-export-demo-${comparisonSetId}-${Date.now()}`
+  const format = overrides?.format ?? 'json'
+  const fileName =
+    overrides?.fileName
+    ?? `arena-requester-comparison-${DEMO_USER_ID}-${comparisonSetId}-${requestedAt.replace(/[:.]/g, '-')}.${format}`
+
+  const report = {
+    generatedAt: completedAt,
+    presetCount: comparison.summary.presetCount,
+    totals: structuredClone(comparison.summary.totals),
+    leaders: {
+      byCreatedCount: {
+        presetId: 'preset-demo-settled',
+        name: 'Settled only',
+        createdCount: 1,
+      },
+      bySettledCount: {
+        presetId: 'preset-demo-settled',
+        name: 'Settled only',
+        settledCount: 1,
+      },
+      byBetStakeAmount: {
+        presetId: 'preset-demo-settled',
+        name: 'Settled only',
+        totalBetStakeAmount: '0',
+      },
+    },
+    rows: [
+      {
+        rank: 1,
+        preset: comparison.items[0]!.preset,
+        createdCount: 1,
+        settledCount: 1,
+        unresolvedCount: 0,
+        totalEffectiveSampleCount: 12,
+        totalReviewedResponseCount: 12,
+        totalBetCount: 0,
+        totalBetStakeAmount: '0',
+        uniqueTraderCount: 0,
+      },
+      {
+        rank: 2,
+        preset: comparison.items[1]!.preset,
+        createdCount: 1,
+        settledCount: 0,
+        unresolvedCount: 1,
+        totalEffectiveSampleCount: 0,
+        totalReviewedResponseCount: 0,
+        totalBetCount: 0,
+        totalBetStakeAmount: '0',
+        uniqueTraderCount: 0,
+      },
+    ],
+  } satisfies RequesterComparisonSetExportRecord['report']
 
   return {
     exportId,
     userId: DEMO_USER_ID,
     status: 'completed',
-    format: 'json',
+    format,
     requestedAt,
     completedAt,
-    fileName:
-      overrides?.fileName
-      ?? `arena-requester-comparison-${DEMO_USER_ID}-${comparisonSetId}-${requestedAt.replace(/[:.]/g, '-')}.json`,
+    fileName,
     origin: overrides?.origin ?? {
       type: 'manual',
       policyId: null,
@@ -1836,54 +2094,62 @@ function buildDemoRequesterComparisonExport(
     },
     totalCount: comparison.totalCount,
     summary: structuredClone(comparison.summary),
-    report: {
-      generatedAt: completedAt,
-      presetCount: comparison.summary.presetCount,
-      totals: structuredClone(comparison.summary.totals),
-      leaders: {
-        byCreatedCount: {
-          presetId: 'preset-demo-settled',
-          name: 'Settled only',
-          createdCount: 1,
-        },
-        bySettledCount: {
-          presetId: 'preset-demo-settled',
-          name: 'Settled only',
-          settledCount: 1,
-        },
-        byBetStakeAmount: {
-          presetId: 'preset-demo-settled',
-          name: 'Settled only',
-          totalBetStakeAmount: '0',
-        },
-      },
-      rows: [
-        {
-          rank: 1,
-          preset: comparison.items[0]!.preset,
-          createdCount: 1,
-          settledCount: 1,
-          unresolvedCount: 0,
-          totalEffectiveSampleCount: 12,
-          totalReviewedResponseCount: 12,
-          totalBetCount: 0,
-          totalBetStakeAmount: '0',
-          uniqueTraderCount: 0,
-        },
-        {
-          rank: 2,
-          preset: comparison.items[1]!.preset,
-          createdCount: 1,
-          settledCount: 0,
-          unresolvedCount: 1,
-          totalEffectiveSampleCount: 0,
-          totalReviewedResponseCount: 0,
-          totalBetCount: 0,
-          totalBetStakeAmount: '0',
-          uniqueTraderCount: 0,
-        },
-      ],
-    },
+    serialized:
+      format === 'csv'
+        ? {
+            mediaType: 'text/csv',
+            fileName,
+            content: [
+              'rank,presetId,presetName,createdCount,settledCount,unresolvedCount,totalEffectiveSampleCount,totalReviewedResponseCount,totalBetCount,totalBetStakeAmount,uniqueTraderCount',
+              ...report.rows.map((row) =>
+                [
+                  String(row.rank),
+                  row.preset.presetId,
+                  row.preset.name,
+                  String(row.createdCount),
+                  String(row.settledCount),
+                  String(row.unresolvedCount),
+                  String(row.totalEffectiveSampleCount),
+                  String(row.totalReviewedResponseCount),
+                  String(row.totalBetCount),
+                  row.totalBetStakeAmount,
+                  String(row.uniqueTraderCount),
+                ].join(','),
+              ),
+            ].join('\n') + '\n',
+          }
+        : {
+            mediaType: 'application/json',
+            fileName,
+            content: JSON.stringify(
+              {
+                exportId,
+                userId: DEMO_USER_ID,
+                status: 'completed',
+                format,
+                requestedAt,
+                completedAt,
+                fileName,
+                origin: overrides?.origin ?? {
+                  type: 'manual',
+                  policyId: null,
+                  policyName: null,
+                },
+                comparisonSet: {
+                  comparisonSetId: comparison.comparisonSet!.comparisonSetId,
+                  name: comparison.comparisonSet!.name,
+                  presetIds: [...comparison.comparisonSet!.presetIds],
+                },
+                totalCount: comparison.totalCount,
+                summary: structuredClone(comparison.summary),
+                report,
+                items: structuredClone(comparison.items),
+              },
+              null,
+              2,
+            ) + '\n',
+          },
+    report,
     items: structuredClone(comparison.items),
   }
 }
@@ -2870,6 +3136,14 @@ export const demoBackend = {
 
     return structuredClone(buildDemoSubmissionDetail(draft))
   },
+  getOwnedPropositionBudgetLedger(propositionId: string): RequesterPropositionBudgetLedgerRecord {
+    const draft = demoState.drafts.find((entry) => entry.propositionId === propositionId)
+    if (!draft) {
+      throw new Error('Demo submission budget ledger not found')
+    }
+
+    return structuredClone(buildDemoBudgetLedger(draft))
+  },
   getOwnedPropositionReport(propositionId: string): RequesterOwnedSettledPropositionReportRecord {
     const draft = demoState.drafts.find((entry) => entry.propositionId === propositionId)
     if (!draft || draft.status !== 'settled') {
@@ -2932,6 +3206,19 @@ export const demoBackend = {
   },
   listRequesterComparisonSets(): RequesterComparisonSetListRecord {
     return structuredClone(buildDemoRequesterComparisonSets())
+  },
+  listRequesterDeliveryCredentials(): RequesterDeliveryCredentialDirectoryViewModel {
+    return structuredClone({
+      totalCount: 1,
+      items: [
+        {
+          credentialKey: 'ARENA_REQUESTER_WEBHOOK_BEARER',
+          label: 'ARENA_REQUESTER_WEBHOOK_BEARER',
+          transportType: 'webhook',
+          authenticationKind: 'bearer',
+        },
+      ],
+    })
   },
   listRequesterComparisonSetDeliveryPolicies(
     comparisonSetId: string,
@@ -3070,8 +3357,11 @@ export const demoBackend = {
   },
   createRequesterComparisonSetExport(
     comparisonSetId: string,
+    body?: { format?: 'json' | 'csv' },
   ): RequesterComparisonSetExportRecord {
-    const exportArtifact = buildDemoRequesterComparisonExport(comparisonSetId)
+    const exportArtifact = buildDemoRequesterComparisonExport(comparisonSetId, {
+      format: body?.format ?? 'json',
+    })
     upsertDemoComparisonExport(exportArtifact)
     return structuredClone(exportArtifact)
   },
@@ -3152,10 +3442,10 @@ export const demoBackend = {
       })),
     )
   },
-  createOwnedPropositionExport(body: { presetId?: string }): RequesterOwnedPropositionExportRecord {
+  createOwnedPropositionExport(body: { presetId?: string; format?: 'json' | 'csv' }): RequesterOwnedPropositionExportRecord {
     const requestedAt = DEMO_NOW
     const exportId = `requester-export-${Date.now()}`
-    const record = buildDemoRequesterExport(exportId, requestedAt, body.presetId)
+    const record = buildDemoRequesterExport(exportId, requestedAt, body.presetId, body.format ?? 'json')
     demoState.requesterExports = [record, ...demoState.requesterExports]
     return structuredClone(record)
   },

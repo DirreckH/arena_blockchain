@@ -7,6 +7,7 @@ import type {
   PropositionStatus,
   PropositionResultKind,
   PropositionVoidReason,
+  RewardLedger as PrismaRewardLedger,
 } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service";
@@ -31,6 +32,7 @@ import type { ArenaDbClient } from "../prisma.types";
 import { DispatchTaskRepository } from "../repositories/dispatch-task.repository";
 import { MarketRepository } from "../repositories/market.repository";
 import { PropositionRepository } from "../repositories/proposition.repository";
+import { RewardLedgerRepository } from "../repositories/reward-ledger.repository";
 import { BetRepository } from "../repositories/bet.repository";
 import { ResponseReviewRepository } from "../repositories/response-review.repository";
 import { SystemKeyValueRepository } from "../repositories/system-key-value.repository";
@@ -64,14 +66,75 @@ const REQUESTER_EXPORT_NAMESPACE = "arena.requester.exports";
 const REQUESTER_COMPARISON_SET_EXPORT_NAMESPACE =
   "arena.requester.comparison_set_exports";
 const DEFAULT_ANALYTICS_WINDOW_DAYS = 30;
+const REQUESTER_EXPORT_FORMATS = ["json", "csv"] as const;
 const REQUESTER_COMPARISON_SET_EXPORT_ORIGIN_TYPES = [
   "manual",
   "delivery_policy_manual",
   "delivery_policy_automation",
 ] as const;
 
+const toAmountBigInt = (value: string | null | undefined): bigint =>
+  BigInt(value ?? "0");
+
+const toAmountString = (value: bigint): string => value.toString();
+
+const toEffectiveBudgetTimestamp = (ledger: PrismaRewardLedger): Date =>
+  ledger.reversedAt ??
+  ledger.finalizedAt ??
+  ledger.voidedAt ??
+  ledger.createdAt;
+
+const getBudgetEntryType = (
+  ledger: PrismaRewardLedger,
+): RequesterBudgetLedgerEntryType => {
+  switch (ledger.status) {
+    case "pending":
+      return "reserved";
+    case "finalized":
+      return "spent";
+    case "voided":
+      return "released";
+    case "reversed":
+    default:
+      return "adjusted";
+  }
+};
+
+const getReservedBudgetAmount = (ledger: PrismaRewardLedger): bigint =>
+  ledger.status === "pending" ? toAmountBigInt(ledger.pendingAmount) : 0n;
+
+const getSpentBudgetAmount = (ledger: PrismaRewardLedger): bigint =>
+  ledger.status === "finalized" ? toAmountBigInt(ledger.finalAmount) : 0n;
+
+const getReleasedBudgetAmount = (ledger: PrismaRewardLedger): bigint => {
+  if (ledger.status === "voided") {
+    return toAmountBigInt(ledger.pendingAmount);
+  }
+
+  if (ledger.status === "finalized") {
+    return (
+      toAmountBigInt(ledger.pendingAmount) - toAmountBigInt(ledger.finalAmount)
+    );
+  }
+
+  return 0n;
+};
+
+const getAdjustedBudgetAmount = (ledger: PrismaRewardLedger): bigint =>
+  ledger.status === "reversed"
+    ? ledger.finalAmount !== null
+      ? toAmountBigInt(ledger.finalAmount)
+      : toAmountBigInt(ledger.pendingAmount)
+    : 0n;
+
+type RequesterExportFormat = (typeof REQUESTER_EXPORT_FORMATS)[number];
 type RequesterComparisonSetExportOriginType =
   (typeof REQUESTER_COMPARISON_SET_EXPORT_ORIGIN_TYPES)[number];
+type RequesterSerializedArtifactViewModel = {
+  mediaType: "application/json" | "text/csv";
+  fileName: string;
+  content: string;
+};
 
 interface ListOwnedPropositionsInput {
   userId: string;
@@ -123,6 +186,7 @@ interface DeleteOwnedComparisonSetExportInput {
 interface CreateOwnedComparisonSetExportInput {
   userId: string;
   comparisonSetId: string;
+  format?: RequesterExportFormat;
   now?: string;
   origin?: Partial<RequesterComparisonSetExportOriginViewModel>;
   retainedExportCount?: number;
@@ -175,6 +239,11 @@ interface GetOwnedPropositionReportInput {
   userId: string;
 }
 
+interface GetOwnedPropositionBudgetLedgerInput {
+  propositionId: string;
+  userId: string;
+}
+
 interface ListOwnedPropositionExportsInput {
   userId: string;
 }
@@ -186,7 +255,7 @@ interface GetOwnedPropositionExportInput {
 
 interface CreateOwnedPropositionExportInput {
   userId: string;
-  format?: "json";
+  format?: RequesterExportFormat;
   analyticsWindowDays?: number;
   analyticsNow?: string;
   presetId?: string;
@@ -209,6 +278,54 @@ export interface RequesterOwnedPropositionListItemViewModel {
   minEffectiveSample: number;
   effectiveSampleCount: number;
   reviewedResponseCount: number;
+}
+
+type RequesterBudgetLedgerEntryType =
+  | "reserved"
+  | "spent"
+  | "released"
+  | "adjusted";
+
+interface RequesterPropositionBudgetSummaryViewModel {
+  configuredAmount: string;
+  reservedAmount: string;
+  spentAmount: string;
+  remainingAmount: string;
+  releasedAmount: string;
+  adjustedAmount: string;
+  currentEntryCount: number;
+  pendingEntryCount: number;
+  finalizedEntryCount: number;
+  voidedEntryCount: number;
+  adjustedEntryCount: number;
+  lastEventAt: string | null;
+}
+
+interface RequesterPropositionBudgetLedgerEntryViewModel {
+  entryId: string;
+  entryType: RequesterBudgetLedgerEntryType;
+  ledgerStatus: PrismaRewardLedger["status"];
+  reviewStatus: PrismaRewardLedger["reviewStatus"];
+  pendingAmount: string;
+  finalAmount: string | null;
+  reservedAmount: string;
+  spentAmount: string;
+  releasedAmount: string;
+  adjustedAmount: string;
+  reasonCode: PrismaRewardLedger["reasonCode"];
+  createdAt: string;
+  effectiveAt: string;
+  finalizedAt: string | null;
+  voidedAt: string | null;
+  reversedAt: string | null;
+  ledgerVersion: number;
+  isCurrent: boolean;
+}
+
+interface RequesterPropositionBudgetLedgerViewModel {
+  propositionId: string;
+  summary: RequesterPropositionBudgetSummaryViewModel;
+  items: RequesterPropositionBudgetLedgerEntryViewModel[];
 }
 
 interface RequesterOwnedPropositionOverviewViewModel {
@@ -252,6 +369,7 @@ interface RequesterOwnedPropositionOverviewViewModel {
     liveOrRevealingCount: number;
     awaitingSettlementCount: number;
   };
+  budgetSummary: RequesterPropositionBudgetSummaryViewModel;
   recent: Array<
     RequesterOwnedPropositionListItemViewModel & {
       revealSettlement: {
@@ -367,7 +485,7 @@ interface RequesterOwnedComparisonSetExportItemViewModel {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
@@ -404,7 +522,7 @@ export interface RequesterOwnedComparisonSetExportArtifactViewModel {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
@@ -416,6 +534,7 @@ export interface RequesterOwnedComparisonSetExportArtifactViewModel {
   };
   totalCount: number;
   summary: RequesterOwnedPropositionAnalyticsComparisonViewModel["summary"];
+  serialized: RequesterSerializedArtifactViewModel;
   report: {
     generatedAt: string;
     presetCount: number;
@@ -589,6 +708,7 @@ interface RequesterOwnedPropositionDetailViewModel {
     invalidCount: number;
     fraudSuspectedCount: number;
   };
+  budgetSummary: RequesterPropositionBudgetSummaryViewModel;
   revealSettlement: {
     propositionStatus: PropositionStatus;
     resultKind: PropositionResultKind | null;
@@ -654,6 +774,7 @@ interface RequesterOwnedSettledPropositionReportViewModel {
     invalidCount: number;
     fraudSuspectedCount: number;
   };
+  budgetSummary: RequesterPropositionBudgetSummaryViewModel;
   result: {
     resultKind: PropositionResultKind;
     winningOption: number | null;
@@ -672,7 +793,7 @@ interface RequesterOwnedPropositionExportItemViewModel {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
@@ -696,7 +817,7 @@ interface RequesterOwnedPropositionExportArtifactViewModel {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
@@ -710,6 +831,7 @@ interface RequesterOwnedPropositionExportArtifactViewModel {
   overview: RequesterOwnedPropositionOverviewViewModel;
   analytics: RequesterOwnedPropositionAnalyticsViewModel;
   reports: RequesterOwnedSettledPropositionReportViewModel[];
+  serialized: RequesterSerializedArtifactViewModel;
   metrics: {
     settledReportCount: number;
     openLifecycleCount: number;
@@ -720,10 +842,11 @@ type StoredRequesterExportRecord = {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
+  serialized?: RequesterSerializedArtifactViewModel;
   preset?: {
     presetId: string;
     name: string;
@@ -740,10 +863,11 @@ type StoredRequesterComparisonSetExportRecord = {
   exportId: string;
   userId: string;
   status: "completed";
-  format: "json";
+  format: RequesterExportFormat;
   requestedAt: string;
   completedAt: string;
   fileName: string;
+  serialized?: RequesterSerializedArtifactViewModel;
   origin: RequesterComparisonSetExportOriginViewModel;
   comparisonSet: {
     comparisonSetId: string;
@@ -796,27 +920,104 @@ type BuiltOwnedPropositionAnalytics = {
   uniqueTraderIds: Set<string>;
 };
 
+function isRequesterExportFormat(value: unknown): value is RequesterExportFormat {
+  return (
+    typeof value === "string" &&
+    (REQUESTER_EXPORT_FORMATS as readonly string[]).includes(value)
+  );
+}
+
+function normalizeStoredSerializedRequesterArtifact(
+  value: unknown,
+): RequesterSerializedArtifactViewModel | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<RequesterSerializedArtifactViewModel>;
+  if (
+    (candidate.mediaType !== "application/json" &&
+      candidate.mediaType !== "text/csv") ||
+    typeof candidate.fileName !== "string" ||
+    typeof candidate.content !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    mediaType: candidate.mediaType,
+    fileName: candidate.fileName,
+    content: candidate.content,
+  };
+}
+
+function serializeJsonArtifact(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function escapeCsvCell(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  const text = String(value);
+  if (/[",\r\n]/u.test(text)) {
+    return `"${text.replace(/"/gu, "\"\"")}"`;
+  }
+
+  return text;
+}
+
+function toCsvRow(values: unknown[]): string {
+  return values.map((value) => escapeCsvCell(value)).join(",");
+}
+
 function parseStoredRequesterExports(value: unknown): StoredRequesterExportRecord[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value
+    .map((item) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        typeof (item as { exportId?: unknown }).exportId !== "string" ||
+        typeof (item as { userId?: unknown }).userId !== "string" ||
+        typeof (item as { status?: unknown }).status !== "string" ||
+        !isRequesterExportFormat((item as { format?: unknown }).format) ||
+        typeof (item as { requestedAt?: unknown }).requestedAt !== "string" ||
+        typeof (item as { completedAt?: unknown }).completedAt !== "string" ||
+        typeof (item as { fileName?: unknown }).fileName !== "string" ||
+        !Array.isArray((item as { reports?: unknown[] }).reports) ||
+        !("overview" in (item as Record<string, unknown>))
+      ) {
+        return null;
+      }
+
+      const record = item as Partial<StoredRequesterExportRecord>;
+      return {
+        exportId: record.exportId!,
+        userId: record.userId!,
+        status: "completed",
+        format: record.format!,
+        requestedAt: record.requestedAt!,
+        completedAt: record.completedAt!,
+        fileName: record.fileName!,
+        serialized:
+          normalizeStoredSerializedRequesterArtifact(record.serialized) ??
+          undefined,
+        preset:
+          record.preset && typeof record.preset === "object"
+            ? structuredClone(record.preset)
+            : null,
+        overview: structuredClone(record.overview),
+        analytics: record.analytics ? structuredClone(record.analytics) : undefined,
+        reports: structuredClone(record.reports ?? []),
+      } as StoredRequesterExportRecord;
+    })
     .filter(
-      (item): item is StoredRequesterExportRecord =>
-        Boolean(
-          item &&
-            typeof item === "object" &&
-            typeof (item as { exportId?: unknown }).exportId === "string" &&
-            typeof (item as { userId?: unknown }).userId === "string" &&
-            typeof (item as { status?: unknown }).status === "string" &&
-            typeof (item as { format?: unknown }).format === "string" &&
-            typeof (item as { requestedAt?: unknown }).requestedAt === "string" &&
-            typeof (item as { completedAt?: unknown }).completedAt === "string" &&
-            typeof (item as { fileName?: unknown }).fileName === "string" &&
-            Array.isArray((item as { reports?: unknown[] }).reports) &&
-            "overview" in (item as Record<string, unknown>),
-        ),
+      (record): record is StoredRequesterExportRecord => record !== null,
     )
     .sort((left, right) => Date.parse(right.completedAt) - Date.parse(left.completedAt));
 }
@@ -870,7 +1071,7 @@ function normalizeStoredRequesterComparisonSetExport(
     typeof record.exportId !== "string" ||
     typeof record.userId !== "string" ||
     record.status !== "completed" ||
-    record.format !== "json" ||
+    !isRequesterExportFormat(record.format) ||
     typeof record.requestedAt !== "string" ||
     typeof record.completedAt !== "string" ||
     typeof record.fileName !== "string" ||
@@ -889,10 +1090,13 @@ function normalizeStoredRequesterComparisonSetExport(
     exportId: record.exportId,
     userId: record.userId,
     status: "completed",
-    format: "json",
+    format: record.format,
     requestedAt: record.requestedAt,
     completedAt: record.completedAt,
     fileName: record.fileName,
+    serialized:
+      normalizeStoredSerializedRequesterArtifact(record.serialized) ??
+      undefined,
     origin: buildComparisonSetExportOrigin(record.origin),
     comparisonSet: {
       comparisonSetId: record.comparisonSet.comparisonSetId,
@@ -1213,6 +1417,7 @@ export class RequesterPropositionViewService {
     private readonly dispatchTasks: DispatchTaskRepository,
     private readonly bets: BetRepository,
     private readonly reviews: ResponseReviewRepository,
+    private readonly rewardLedgers: RewardLedgerRepository,
     private readonly requesterReportPresets: RequesterReportPresetService,
     private readonly requesterComparisonSets: RequesterComparisonSetService,
     private readonly requesterComparisonSetDeliveryPolicies: RequesterComparisonSetDeliveryPolicyService,
@@ -1235,6 +1440,11 @@ export class RequesterPropositionViewService {
   ): Promise<RequesterOwnedPropositionOverviewViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
       const snapshots = await this.listOwnedPropositionSnapshots(input.userId, tx);
+      const budgetSummaries = await Promise.all(
+        snapshots.map(({ proposition }) =>
+          this.buildOwnedPropositionBudgetSummary(proposition, tx),
+        ),
+      );
       const latestSettled = snapshots
         .filter(({ proposition }) => proposition.status === "settled")
         .sort(
@@ -1306,6 +1516,69 @@ export class RequesterPropositionViewService {
             ({ proposition }) => proposition.marketEnabled && proposition.status === "revealing",
           ).length,
         },
+        budgetSummary: {
+          configuredAmount: toAmountString(
+            budgetSummaries.reduce(
+              (total, summary) => total + toAmountBigInt(summary.configuredAmount),
+              0n,
+            ),
+          ),
+          reservedAmount: toAmountString(
+            budgetSummaries.reduce(
+              (total, summary) => total + toAmountBigInt(summary.reservedAmount),
+              0n,
+            ),
+          ),
+          spentAmount: toAmountString(
+            budgetSummaries.reduce(
+              (total, summary) => total + toAmountBigInt(summary.spentAmount),
+              0n,
+            ),
+          ),
+          remainingAmount: toAmountString(
+            budgetSummaries.reduce(
+              (total, summary) => total + toAmountBigInt(summary.remainingAmount),
+              0n,
+            ),
+          ),
+          releasedAmount: toAmountString(
+            budgetSummaries.reduce(
+              (total, summary) => total + toAmountBigInt(summary.releasedAmount),
+              0n,
+            ),
+          ),
+          adjustedAmount: toAmountString(
+            budgetSummaries.reduce(
+              (total, summary) => total + toAmountBigInt(summary.adjustedAmount),
+              0n,
+            ),
+          ),
+          currentEntryCount: budgetSummaries.reduce(
+            (total, summary) => total + summary.currentEntryCount,
+            0,
+          ),
+          pendingEntryCount: budgetSummaries.reduce(
+            (total, summary) => total + summary.pendingEntryCount,
+            0,
+          ),
+          finalizedEntryCount: budgetSummaries.reduce(
+            (total, summary) => total + summary.finalizedEntryCount,
+            0,
+          ),
+          voidedEntryCount: budgetSummaries.reduce(
+            (total, summary) => total + summary.voidedEntryCount,
+            0,
+          ),
+          adjustedEntryCount: budgetSummaries.reduce(
+            (total, summary) => total + summary.adjustedEntryCount,
+            0,
+          ),
+          lastEventAt:
+            budgetSummaries
+              .map((summary) => summary.lastEventAt)
+              .filter((value): value is string => value !== null)
+              .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null,
+        },
         recent: snapshots.slice(0, 5).map(({ listItem, proposition }) => ({
           ...listItem,
           revealSettlement: {
@@ -1314,6 +1587,21 @@ export class RequesterPropositionViewService {
           },
         })),
       };
+    });
+  }
+
+  async getOwnedPropositionBudgetLedger(
+    input: GetOwnedPropositionBudgetLedgerInput,
+    db?: ArenaDbClient,
+  ): Promise<RequesterPropositionBudgetLedgerViewModel> {
+    return withArenaTransaction(this.prisma, db, async (tx) => {
+      const proposition = await this.getRequiredOwnedProposition(
+        input.propositionId,
+        input.userId,
+        tx,
+      );
+
+      return this.buildOwnedPropositionBudgetLedger(proposition, tx);
     });
   }
 
@@ -1768,6 +2056,7 @@ export class RequesterPropositionViewService {
     db: ArenaDbClient = this.prisma,
   ): Promise<RequesterOwnedComparisonSetExportArtifactViewModel> {
     const requestedAt = input.now ?? new Date().toISOString();
+    const format = input.format ?? "json";
     const comparison =
       await this.getOwnedComparisonSetAnalytics(
         {
@@ -1782,13 +2071,14 @@ export class RequesterPropositionViewService {
       exportId: this.ids.next("requester_comparison_set_export"),
       userId: input.userId,
       status: "completed",
-      format: "json",
+      format,
       requestedAt,
       completedAt: requestedAt,
       fileName: this.buildComparisonSetExportFileName(
         input.userId,
         input.comparisonSetId,
         requestedAt,
+        format,
       ),
       origin: buildComparisonSetExportOrigin(input.origin),
       comparisonSet: {
@@ -1805,6 +2095,9 @@ export class RequesterPropositionViewService {
       }),
       items: structuredClone(comparison.items),
     };
+    record.serialized = this.buildSerializedComparisonSetExportArtifact(
+      this.buildComparisonSetExportArtifactBase(record),
+    );
 
     const storageKey = this.buildComparisonSetExportStorageKey(
       input.userId,
@@ -2283,7 +2576,15 @@ export class RequesterPropositionViewService {
         input.userId,
         tx,
       );
-      const [auditEvents, market, sampleCounter, closureReadiness, tasks, reviews] =
+      const [
+        auditEvents,
+        market,
+        sampleCounter,
+        closureReadiness,
+        tasks,
+        reviews,
+        budgetSummary,
+      ] =
         await Promise.all([
           this.audits.listByEntity(
             INTERNAL_AUDIT_ENTITY_TYPES.proposition,
@@ -2301,6 +2602,7 @@ export class RequesterPropositionViewService {
           ),
           this.dispatchTasks.listByProposition(proposition.id, tx),
           this.reviews.listByPropositionId(proposition.id, tx),
+          this.buildOwnedPropositionBudgetSummary(proposition, tx),
         ]);
       const submission = buildPropositionSubmissionSnapshot(proposition, auditEvents);
       const resultVisible = proposition.status === "settled";
@@ -2357,6 +2659,7 @@ export class RequesterPropositionViewService {
         closureReadiness,
         dispatchSummary: this.buildDispatchSummary(tasks),
         reviewSummary: this.buildReviewSummary(reviews),
+        budgetSummary,
         revealSettlement: {
           propositionStatus: proposition.status,
           resultKind: resultVisible ? proposition.resultKind : null,
@@ -2396,7 +2699,7 @@ export class RequesterPropositionViewService {
         );
       }
 
-      const [auditEvents, market, sampleCounter, tasks, reviews] =
+      const [auditEvents, market, sampleCounter, tasks, reviews, budgetSummary] =
         await Promise.all([
           this.audits.listByEntity(
             INTERNAL_AUDIT_ENTITY_TYPES.proposition,
@@ -2407,6 +2710,7 @@ export class RequesterPropositionViewService {
           this.counters.getCounterSnapshot(proposition.id, tx),
           this.dispatchTasks.listByProposition(proposition.id, tx),
           this.reviews.listByPropositionId(proposition.id, tx),
+          this.buildOwnedPropositionBudgetSummary(proposition, tx),
         ]);
       const submission = buildPropositionSubmissionSnapshot(proposition, auditEvents);
       const optionA = proposition.options[0] ?? "";
@@ -2448,6 +2752,7 @@ export class RequesterPropositionViewService {
         sample: sampleCounter,
         dispatchSummary: this.buildDispatchSummary(tasks),
         reviewSummary: this.buildReviewSummary(reviews),
+        budgetSummary,
         result: {
           resultKind: proposition.resultKind,
           winningOption: proposition.winningOption,
@@ -2538,7 +2843,16 @@ export class RequesterPropositionViewService {
       snapshots,
       preset?.config ?? null,
     );
-    const overview = this.buildOverviewFromSnapshots(input.userId, filteredSnapshots);
+    const filteredBudgetSummaries = await Promise.all(
+      filteredSnapshots.map(({ proposition }) =>
+        this.buildOwnedPropositionBudgetSummary(proposition, db),
+      ),
+    );
+    const overview = this.buildOverviewFromSnapshots(
+      input.userId,
+      filteredSnapshots,
+      filteredBudgetSummaries,
+    );
 
     const reports = await Promise.all(
       filteredSnapshots
@@ -2555,19 +2869,23 @@ export class RequesterPropositionViewService {
     );
 
     const exportId = this.ids.next("requester_export");
+    const format = input.format ?? preset?.config.defaultExportFormat ?? "json";
     const record: StoredRequesterExportRecord = {
       exportId,
       userId: input.userId,
       status: "completed",
-      format: input.format ?? "json",
+      format,
       requestedAt,
       completedAt: requestedAt,
-      fileName: this.buildExportFileName(input.userId, requestedAt),
+      fileName: this.buildExportFileName(input.userId, requestedAt, format),
       preset: preset ? this.toExportPresetSummary(preset) : null,
       overview,
       analytics,
       reports,
     };
+    record.serialized = this.buildSerializedPropositionExportArtifact(
+      this.buildExportArtifactBase(record),
+    );
 
     const storageKey = this.buildExportStorageKey(input.userId);
     const existing = await this.systemKeyValues.findByKey(storageKey, db);
@@ -2590,6 +2908,136 @@ export class RequesterPropositionViewService {
     );
 
     return this.toExportArtifact(record);
+  }
+
+  private async buildOwnedPropositionBudgetSummary(
+    proposition: Proposition,
+    db: ArenaDbClient,
+  ): Promise<RequesterPropositionBudgetSummaryViewModel> {
+    return (await this.buildOwnedPropositionBudgetLedger(proposition, db)).summary;
+  }
+
+  private async buildOwnedPropositionBudgetLedger(
+    proposition: Proposition,
+    db: ArenaDbClient,
+  ): Promise<RequesterPropositionBudgetLedgerViewModel> {
+    const ledgers = await this.rewardLedgers.list(
+      {
+        propositionId: proposition.id,
+        sourceType: "response",
+      },
+      db,
+    );
+    const currentLedgerIds = this.collectCurrentRewardLedgerIds(ledgers);
+    const items = [...ledgers]
+      .sort(
+        (left, right) =>
+          toEffectiveBudgetTimestamp(right).getTime() -
+            toEffectiveBudgetTimestamp(left).getTime() ||
+          right.ledgerVersion - left.ledgerVersion ||
+          right.createdAt.getTime() - left.createdAt.getTime(),
+      )
+      .map((ledger) => this.toRequesterBudgetLedgerEntry(ledger, currentLedgerIds));
+    const currentItems = items.filter((item) => item.isCurrent);
+
+    return {
+      propositionId: proposition.id,
+      summary: {
+        configuredAmount: proposition.rewardBudget,
+        reservedAmount: toAmountString(
+          currentItems.reduce(
+            (total, item) => total + toAmountBigInt(item.reservedAmount),
+            0n,
+          ),
+        ),
+        spentAmount: toAmountString(
+          currentItems.reduce(
+            (total, item) => total + toAmountBigInt(item.spentAmount),
+            0n,
+          ),
+        ),
+        remainingAmount: toAmountString(
+          toAmountBigInt(proposition.rewardBudget) -
+            currentItems.reduce(
+              (total, item) => total + toAmountBigInt(item.reservedAmount),
+              0n,
+            ) -
+            currentItems.reduce(
+              (total, item) => total + toAmountBigInt(item.spentAmount),
+              0n,
+            ),
+        ),
+        releasedAmount: toAmountString(
+          currentItems.reduce(
+            (total, item) => total + toAmountBigInt(item.releasedAmount),
+            0n,
+          ),
+        ),
+        adjustedAmount: toAmountString(
+          items.reduce(
+            (total, item) => total + toAmountBigInt(item.adjustedAmount),
+            0n,
+          ),
+        ),
+        currentEntryCount: currentItems.length,
+        pendingEntryCount: currentItems.filter((item) => item.ledgerStatus === "pending")
+          .length,
+        finalizedEntryCount: currentItems.filter(
+          (item) => item.ledgerStatus === "finalized",
+        ).length,
+        voidedEntryCount: currentItems.filter((item) => item.ledgerStatus === "voided")
+          .length,
+        adjustedEntryCount: items.filter((item) => item.entryType === "adjusted").length,
+        lastEventAt: items[0]?.effectiveAt ?? null,
+      },
+      items,
+    };
+  }
+
+  private collectCurrentRewardLedgerIds(
+    ledgers: PrismaRewardLedger[],
+  ): Set<string> {
+    const currentByUserId = new Map<string, PrismaRewardLedger>();
+
+    for (const ledger of ledgers) {
+      const current = currentByUserId.get(ledger.userId);
+      if (
+        !current ||
+        ledger.ledgerVersion > current.ledgerVersion ||
+        (ledger.ledgerVersion === current.ledgerVersion &&
+          ledger.createdAt.getTime() > current.createdAt.getTime())
+      ) {
+        currentByUserId.set(ledger.userId, ledger);
+      }
+    }
+
+    return new Set([...currentByUserId.values()].map((ledger) => ledger.id));
+  }
+
+  private toRequesterBudgetLedgerEntry(
+    ledger: PrismaRewardLedger,
+    currentLedgerIds: Set<string>,
+  ): RequesterPropositionBudgetLedgerEntryViewModel {
+    return {
+      entryId: ledger.id,
+      entryType: getBudgetEntryType(ledger),
+      ledgerStatus: ledger.status,
+      reviewStatus: ledger.reviewStatus,
+      pendingAmount: ledger.pendingAmount,
+      finalAmount: ledger.finalAmount,
+      reservedAmount: toAmountString(getReservedBudgetAmount(ledger)),
+      spentAmount: toAmountString(getSpentBudgetAmount(ledger)),
+      releasedAmount: toAmountString(getReleasedBudgetAmount(ledger)),
+      adjustedAmount: toAmountString(getAdjustedBudgetAmount(ledger)),
+      reasonCode: ledger.reasonCode,
+      createdAt: ledger.createdAt.toISOString(),
+      effectiveAt: toEffectiveBudgetTimestamp(ledger).toISOString(),
+      finalizedAt: toIso(ledger.finalizedAt),
+      voidedAt: toIso(ledger.voidedAt),
+      reversedAt: toIso(ledger.reversedAt),
+      ledgerVersion: ledger.ledgerVersion,
+      isCurrent: currentLedgerIds.has(ledger.id),
+    };
   }
 
   private async getRequiredOwnedProposition(
@@ -2737,23 +3185,29 @@ export class RequesterPropositionViewService {
     return `${REQUESTER_COMPARISON_SET_EXPORT_NAMESPACE}.${userId}.${comparisonSetId}`;
   }
 
-  private buildExportFileName(userId: string, requestedAt: string): string {
+  private buildExportFileName(
+    userId: string,
+    requestedAt: string,
+    format: RequesterExportFormat,
+  ): string {
     const compactTimestamp = requestedAt.replace(/[:.]/g, "-");
-    return `arena-requester-${userId}-${compactTimestamp}.json`;
+    return `arena-requester-${userId}-${compactTimestamp}.${format}`;
   }
 
   private buildComparisonSetExportFileName(
     userId: string,
     comparisonSetId: string,
     requestedAt: string,
+    format: RequesterExportFormat,
   ): string {
     const compactTimestamp = requestedAt.replace(/[:.]/g, "-");
-    return `arena-requester-comparison-${userId}-${comparisonSetId}-${compactTimestamp}.json`;
+    return `arena-requester-comparison-${userId}-${comparisonSetId}-${compactTimestamp}.${format}`;
   }
 
   private buildOverviewFromSnapshots(
     userId: string,
     snapshots: OwnedPropositionSnapshot[],
+    budgetSummaries: RequesterPropositionBudgetSummaryViewModel[],
   ): RequesterOwnedPropositionOverviewViewModel {
     const latestSettled = snapshots
       .filter(({ proposition }) => proposition.status === "settled")
@@ -2826,6 +3280,69 @@ export class RequesterPropositionViewService {
           ({ proposition }) => proposition.marketEnabled && proposition.status === "revealing",
         ).length,
       },
+      budgetSummary: {
+        configuredAmount: toAmountString(
+          budgetSummaries.reduce(
+            (total, summary) => total + toAmountBigInt(summary.configuredAmount),
+            0n,
+          ),
+        ),
+        reservedAmount: toAmountString(
+          budgetSummaries.reduce(
+            (total, summary) => total + toAmountBigInt(summary.reservedAmount),
+            0n,
+          ),
+        ),
+        spentAmount: toAmountString(
+          budgetSummaries.reduce(
+            (total, summary) => total + toAmountBigInt(summary.spentAmount),
+            0n,
+          ),
+        ),
+        remainingAmount: toAmountString(
+          budgetSummaries.reduce(
+            (total, summary) => total + toAmountBigInt(summary.remainingAmount),
+            0n,
+          ),
+        ),
+        releasedAmount: toAmountString(
+          budgetSummaries.reduce(
+            (total, summary) => total + toAmountBigInt(summary.releasedAmount),
+            0n,
+          ),
+        ),
+        adjustedAmount: toAmountString(
+          budgetSummaries.reduce(
+            (total, summary) => total + toAmountBigInt(summary.adjustedAmount),
+            0n,
+          ),
+        ),
+        currentEntryCount: budgetSummaries.reduce(
+          (total, summary) => total + summary.currentEntryCount,
+          0,
+        ),
+        pendingEntryCount: budgetSummaries.reduce(
+          (total, summary) => total + summary.pendingEntryCount,
+          0,
+        ),
+        finalizedEntryCount: budgetSummaries.reduce(
+          (total, summary) => total + summary.finalizedEntryCount,
+          0,
+        ),
+        voidedEntryCount: budgetSummaries.reduce(
+          (total, summary) => total + summary.voidedEntryCount,
+          0,
+        ),
+        adjustedEntryCount: budgetSummaries.reduce(
+          (total, summary) => total + summary.adjustedEntryCount,
+          0,
+        ),
+        lastEventAt:
+          budgetSummaries
+            .map((summary) => summary.lastEventAt)
+            .filter((value): value is string => value !== null)
+            .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null,
+      },
       recent: snapshots.slice(0, 5).map(({ listItem, proposition }) => ({
         ...listItem,
         revealSettlement: {
@@ -2833,6 +3350,30 @@ export class RequesterPropositionViewService {
           winningOption: proposition.status === "settled" ? proposition.winningOption : null,
         },
       })),
+    };
+  }
+
+  private buildExportArtifactBase(
+    record: StoredRequesterExportRecord,
+  ): Omit<RequesterOwnedPropositionExportArtifactViewModel, "serialized"> {
+    return {
+      exportId: record.exportId,
+      userId: record.userId,
+      status: record.status,
+      format: record.format,
+      requestedAt: record.requestedAt,
+      completedAt: record.completedAt,
+      fileName: record.fileName,
+      preset: structuredClone(record.preset ?? null),
+      overview: structuredClone(record.overview),
+      analytics: structuredClone(
+        record.analytics ?? this.buildLegacyExportAnalytics(record),
+      ),
+      reports: structuredClone(record.reports),
+      metrics: {
+        settledReportCount: record.reports.length,
+        openLifecycleCount: record.overview.totals.unresolvedCount,
+      },
     };
   }
 
@@ -2863,24 +3404,12 @@ export class RequesterPropositionViewService {
   private toExportArtifact(
     record: StoredRequesterExportRecord,
   ): RequesterOwnedPropositionExportArtifactViewModel {
+    const artifact = this.buildExportArtifactBase(record);
     return {
-      exportId: record.exportId,
-      userId: record.userId,
-      status: record.status,
-      format: record.format,
-      requestedAt: record.requestedAt,
-      completedAt: record.completedAt,
-      fileName: record.fileName,
-      preset: structuredClone(record.preset ?? null),
-      overview: structuredClone(record.overview),
-      analytics: structuredClone(
-        record.analytics ?? this.buildLegacyExportAnalytics(record),
-      ),
-      reports: structuredClone(record.reports),
-      metrics: {
-        settledReportCount: record.reports.length,
-        openLifecycleCount: record.overview.totals.unresolvedCount,
-      },
+      ...artifact,
+      serialized:
+        record.serialized ??
+        this.buildSerializedPropositionExportArtifact(artifact),
     };
   }
 
@@ -2903,9 +3432,9 @@ export class RequesterPropositionViewService {
     };
   }
 
-  private toComparisonSetExportArtifact(
+  private buildComparisonSetExportArtifactBase(
     record: StoredRequesterComparisonSetExportRecord,
-  ): RequesterOwnedComparisonSetExportArtifactViewModel {
+  ): Omit<RequesterOwnedComparisonSetExportArtifactViewModel, "serialized"> {
     return {
       exportId: record.exportId,
       userId: record.userId,
@@ -2927,6 +3456,118 @@ export class RequesterPropositionViewService {
           }),
       ),
       items: structuredClone(record.items),
+    };
+  }
+
+  private toComparisonSetExportArtifact(
+    record: StoredRequesterComparisonSetExportRecord,
+  ): RequesterOwnedComparisonSetExportArtifactViewModel {
+    const artifact = this.buildComparisonSetExportArtifactBase(record);
+    return {
+      ...artifact,
+      serialized:
+        record.serialized ??
+        this.buildSerializedComparisonSetExportArtifact(artifact),
+    };
+  }
+
+  private buildSerializedPropositionExportArtifact(
+    artifact: Omit<RequesterOwnedPropositionExportArtifactViewModel, "serialized">,
+  ): RequesterSerializedArtifactViewModel {
+    if (artifact.format === "csv") {
+      const lines = [
+        toCsvRow([
+          "propositionId",
+          "title",
+          "category",
+          "status",
+          "resultKind",
+          "winningOptionLabel",
+          "settledAt",
+          "effectiveSampleCount",
+          "reviewedResponseCount",
+          "validCount",
+          "partialValidCount",
+          "invalidCount",
+        ]),
+        ...artifact.reports.map((report) =>
+          toCsvRow([
+            report.proposition.id,
+            report.proposition.title,
+            report.proposition.category,
+            report.proposition.status,
+            report.result.resultKind,
+            report.result.winningOptionLabel ?? "",
+            report.result.settledAt,
+            report.sample.effectiveSampleCount,
+            report.sample.reviewedResponses,
+            report.reviewSummary.validCount,
+            report.reviewSummary.partialValidCount,
+            report.reviewSummary.invalidCount,
+          ]),
+        ),
+      ];
+
+      return {
+        mediaType: "text/csv",
+        fileName: artifact.fileName,
+        content: `${lines.join("\n")}\n`,
+      };
+    }
+
+    return {
+      mediaType: "application/json",
+      fileName: artifact.fileName,
+      content: serializeJsonArtifact(artifact),
+    };
+  }
+
+  private buildSerializedComparisonSetExportArtifact(
+    artifact: Omit<RequesterOwnedComparisonSetExportArtifactViewModel, "serialized">,
+  ): RequesterSerializedArtifactViewModel {
+    if (artifact.format === "csv") {
+      const lines = [
+        toCsvRow([
+          "rank",
+          "presetId",
+          "presetName",
+          "createdCount",
+          "settledCount",
+          "unresolvedCount",
+          "totalEffectiveSampleCount",
+          "totalReviewedResponseCount",
+          "totalBetCount",
+          "totalBetStakeAmount",
+          "uniqueTraderCount",
+        ]),
+        ...artifact.report.rows.map((row) =>
+          toCsvRow([
+            row.rank,
+            row.preset.presetId,
+            row.preset.name,
+            row.createdCount,
+            row.settledCount,
+            row.unresolvedCount,
+            row.totalEffectiveSampleCount,
+            row.totalReviewedResponseCount,
+            row.totalBetCount,
+            row.totalBetStakeAmount,
+            row.uniqueTraderCount,
+          ]),
+        ),
+      ];
+
+      return {
+        mediaType: "text/csv",
+        fileName: artifact.fileName,
+        content: `${lines.join("\n")}\n`,
+      };
+    }
+
+    return {
+      mediaType: "application/json",
+      fileName: artifact.fileName,
+      content: serializeJsonArtifact(artifact),
     };
   }
 

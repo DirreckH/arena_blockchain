@@ -26,6 +26,8 @@ async function prepareValidationLocal(options = {}) {
   const isRpcReachable = options.isRpcReachable || defaultIsRpcReachable;
   const inspectRuntimeDependenciesFn =
     options.inspectRuntimeDependencies || inspectRuntimeDependencies;
+  const rpcPollIntervalMs = options.rpcPollIntervalMs ?? 1500;
+  const rpcReadyTimeoutMs = options.rpcReadyTimeoutMs ?? 60_000;
 
   const bootstrapResult = await runCommand(
     createCommand({
@@ -112,12 +114,15 @@ async function prepareValidationLocal(options = {}) {
       return 1;
     }
 
-    const rpcNowReachable = await isRpcReachable({
+    const rpcNowReachable = await waitForRpcReachable({
       env: process.env,
       cwd,
+      isRpcReachable,
+      pollIntervalMs: rpcPollIntervalMs,
+      timeoutMs: rpcReadyTimeoutMs,
     });
 
-    if (!rpcNowReachable) {
+    if (!rpcNowReachable.ok) {
       logger.fail(
         "Local Hardhat RPC still looks unavailable after startup. Wait for the node to finish booting, then rerun `pnpm run validation:prepare:local`.",
       );
@@ -143,7 +148,14 @@ async function prepareValidationLocal(options = {}) {
       createCommand({
         label: "validation:deploy",
         command: "pnpm",
-        args: ["run", "validation:deploy", "--", "--network", "localhost"],
+        args: [
+          "exec",
+          "hardhat",
+          "run",
+          "scripts/deploy-validation-market.cjs",
+          "--network",
+          "localhost",
+        ],
         cwd,
         env: process.env,
       }),
@@ -235,6 +247,38 @@ async function defaultIsRpcReachable({ env }) {
   }
 }
 
+async function waitForRpcReachable({
+  env,
+  cwd,
+  isRpcReachable,
+  pollIntervalMs,
+  timeoutMs,
+}) {
+  const deadline = Date.now() + timeoutMs;
+  let attempts = 0;
+
+  while (Date.now() <= deadline) {
+    attempts += 1;
+    if (await isRpcReachable({ env, cwd })) {
+      return {
+        ok: true,
+        attempts,
+      };
+    }
+
+    if (Date.now() + pollIntervalMs > deadline) {
+      break;
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  return {
+    ok: false,
+    attempts,
+  };
+}
+
 function emitDependencyDiagnostics(logger, results) {
   for (const result of results) {
     if (result.ok) {
@@ -308,6 +352,12 @@ function detectDockerCli() {
       reason: error instanceof Error ? error.message : "unknown docker detection error",
     };
   }
+}
+
+function sleep(durationMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function defaultRunCommand(command) {

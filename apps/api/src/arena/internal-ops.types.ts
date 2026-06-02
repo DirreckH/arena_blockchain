@@ -386,6 +386,19 @@ export interface ValidationChainHealthAlertViewModel {
   createdAt: string;
 }
 
+export interface ValidationChainSchedulerWorkerViewModel {
+  status: "up" | "down";
+  checkedAt: string;
+  startedAt: string | null;
+  lastSeenAt: string | null;
+  lastJobProcessedAt: string | null;
+  lastJobName: string | null;
+  lastWorkerErrorAt: string | null;
+  lastWorkerErrorMessage: string | null;
+  details?: string;
+  operatorActions: string[];
+}
+
 export interface ValidationChainStalePayoutMarketViewModel {
   marketId: string;
   propositionId: string;
@@ -724,6 +737,7 @@ export interface ValidationChainMonitoringViewModel {
   pollIntervalMs: number;
   cursorStaleThresholdMs: number;
   isCursorStalled: boolean;
+  schedulerWorker: ValidationChainSchedulerWorkerViewModel | null;
   recentAlerts: ValidationChainHealthAlertViewModel[];
   metrics: {
     recentRetryExhaustedCount: number;

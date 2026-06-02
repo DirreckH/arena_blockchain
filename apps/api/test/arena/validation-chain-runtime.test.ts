@@ -1079,6 +1079,10 @@ function createQueuedRehearsal(
     new FakePropositionLifecycleAutomationService() as PropositionLifecycleAutomationService,
     new FakeRequesterComparisonSetDeliveryAutomationService() as RequesterComparisonSetDeliveryAutomationService,
     alerts as never,
+    {
+      async recordJobProcessed() {},
+      async recordWorkerError() {},
+    } as never,
   );
 
   return { queue, alerts, commandRuntime, processor };

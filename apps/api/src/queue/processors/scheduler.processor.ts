@@ -11,12 +11,13 @@ import { ValidationChainSyncWorker } from "../../arena/validation-chain/validati
 import {
   PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
   REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
-  VALIDATION_CHAIN_COMMAND_JOB,
   SCHEDULER_HEARTBEAT_JOB,
   SCHEDULER_QUEUE,
+  VALIDATION_CHAIN_COMMAND_JOB,
   VALIDATION_CHAIN_SYNC_JOB,
 } from "../queue.constants";
 import { buildJobLogContext } from "../job-log-context.util";
+import { SchedulerWorkerHeartbeatService } from "../scheduler-worker-heartbeat.service";
 
 @Processor(SCHEDULER_QUEUE, {
   skipWaitingForReady: true,
@@ -29,6 +30,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
     private readonly propositionLifecycle: PropositionLifecycleAutomationService,
     private readonly requesterComparisonSetDeliveryAutomation: RequesterComparisonSetDeliveryAutomationService,
     private readonly validationChainAlerts: ValidationChainAlertService,
+    private readonly workerHeartbeat: SchedulerWorkerHeartbeatService,
   ) {
     super();
     this.logger.setContext(SchedulerQueueProcessor.name);
@@ -36,6 +38,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
 
   async process(job: Job): Promise<Record<string, string> | null> {
     if (job.name === SCHEDULER_HEARTBEAT_JOB) {
+      await this.workerHeartbeat.recordJobProcessed(job.name);
       this.logger.info(
         { jobId: job.id, payload: job.data },
         "Processed scheduler heartbeat job",
@@ -48,6 +51,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
 
     if (job.name === VALIDATION_CHAIN_SYNC_JOB) {
       const snapshot = await this.validationChainSyncWorker.syncOnce();
+      await this.workerHeartbeat.recordJobProcessed(job.name);
 
       return {
         processedAt: new Date().toISOString(),
@@ -61,6 +65,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
       await this.validationChainCommands.executeQueuedCommand(
         job.data as ValidationChainCommandJobPayload,
       );
+      await this.workerHeartbeat.recordJobProcessed(job.name);
 
       return {
         processedAt: new Date().toISOString(),
@@ -75,6 +80,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
         result.published.processedCount +
         result.revealPrepared.processedCount +
         result.settled.processedCount;
+      await this.workerHeartbeat.recordJobProcessed(job.name);
 
       return {
         processedAt: new Date().toISOString(),
@@ -92,6 +98,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
         await this.requesterComparisonSetDeliveryAutomation.runDuePolicies({
           now: requestedAt,
         });
+      await this.workerHeartbeat.recordJobProcessed(job.name);
 
       return {
         processedAt: new Date().toISOString(),
@@ -109,6 +116,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
 
   @OnWorkerEvent("error")
   onWorkerError(error: Error): void {
+    void this.workerHeartbeat.recordWorkerError(error.message);
     this.logger.warn({ error: error.message }, "Scheduler queue worker connection error");
   }
 

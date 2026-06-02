@@ -153,6 +153,9 @@ class FakeBullQueue {
       typeof opts.jobId === "string" && opts.jobId.length > 0
         ? opts.jobId
         : `job_${this.addCalls.length}`;
+    if (configuredJobId.includes(":")) {
+      throw new Error("Custom Id cannot contain :");
+    }
     const existing = this.jobs.get(configuredJobId);
 
     if (existing && !existing.removed) {
@@ -403,6 +406,19 @@ class FakeAlertService {
 
   async record(input: Record<string, unknown>): Promise<void> {
     this.audits.push(input);
+  }
+}
+
+class FakeRedisService {
+  schedulerWorkerHeartbeat: Record<string, unknown> | null = null;
+  schedulerWorkerHeartbeatError: Error | null = null;
+
+  async getSchedulerWorkerHeartbeat() {
+    if (this.schedulerWorkerHeartbeatError) {
+      throw this.schedulerWorkerHeartbeatError;
+    }
+
+    return this.schedulerWorkerHeartbeat as never;
   }
 }
 
@@ -709,7 +725,7 @@ describe("Validation chain phase six runtime integration", () => {
     });
 
     const firstJobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
-    assert.equal(firstJobId, "validation-chain:resolve_market:prop_1");
+    assert.equal(firstJobId, "validation-chain.resolve_market.prop_1");
 
     const retainedJob = schedulerQueue.jobs.get(firstJobId);
     assert.equal(retainedJob?.removed, false);
@@ -791,7 +807,7 @@ describe("Validation chain phase six runtime integration", () => {
     await service.enqueueValidationChainSync();
 
     const syncJobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
-    assert.equal(syncJobId, "validation-chain:sync");
+    assert.equal(syncJobId, "validation-chain.sync");
 
     const retainedJob = schedulerQueue.jobs.get(syncJobId);
     assert.equal(retainedJob?.removed, false);
@@ -1022,6 +1038,7 @@ describe("Validation chain phase six runtime integration", () => {
         validationSyncPollIntervalMs: 15_000,
       } as never,
       new FakeCursorRepository(staleCursor) as never,
+      new FakeRedisService() as never,
       audit as never,
     );
 
@@ -1114,6 +1131,7 @@ describe("Validation chain phase six runtime integration", () => {
         validationSyncPollIntervalMs: 15_000,
       } as never,
       new FakeCursorRepository(staleCursor) as never,
+      new FakeRedisService() as never,
       audit as never,
     );
 
@@ -1187,6 +1205,7 @@ describe("Validation chain phase six runtime integration", () => {
         validationSyncPollIntervalMs: 15_000,
       } as never,
       new FakeCursorRepository(staleCursor) as never,
+      new FakeRedisService() as never,
       audit as never,
     );
 
@@ -1196,6 +1215,138 @@ describe("Validation chain phase six runtime integration", () => {
       audit.records.some(
         (record) =>
           record.action === "validation_chain.alert.unsynced_bet_backlog",
+      ),
+      true,
+    );
+  });
+
+  it("includes scheduler worker heartbeat state in validation-chain health snapshots", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+    const redis = new FakeRedisService();
+    redis.schedulerWorkerHeartbeat = {
+      processRole: "worker",
+      startedAt: "2026-04-24T00:58:00.000Z",
+      lastSeenAt: "2026-04-24T00:59:55.000Z",
+      lastJobProcessedAt: "2026-04-24T00:59:50.000Z",
+      lastJobName: "validation-chain.sync",
+      lastWorkerErrorAt: null,
+      lastWorkerErrorMessage: null,
+    };
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      redis as never,
+      audit as never,
+    );
+
+    const snapshot = await alerts.getHealthSnapshot("2026-04-24T01:00:00.000Z");
+
+    assert.equal(snapshot.schedulerWorker?.status, "up");
+    assert.equal(
+      snapshot.schedulerWorker?.lastJobName,
+      "validation-chain.sync",
+    );
+    assert.deepEqual(snapshot.schedulerWorker?.operatorActions, []);
+  });
+
+  it("raises sync worker unhealthy alert when scheduler worker heartbeat is down", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+    const redis = new FakeRedisService();
+    redis.schedulerWorkerHeartbeat = {
+      processRole: "worker",
+      startedAt: "2026-04-24T00:40:00.000Z",
+      lastSeenAt: "2026-04-24T00:45:00.000Z",
+      lastJobProcessedAt: "2026-04-24T00:45:00.000Z",
+      lastJobName: "validation-chain.sync",
+      lastWorkerErrorAt: null,
+      lastWorkerErrorMessage: null,
+    };
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      redis as never,
+      audit as never,
+    );
+
+    await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
+
+    assert.equal(
+      audit.records.some(
+        (record) =>
+          record.action === "validation_chain.alert.sync_worker_unhealthy" &&
+          record.reason === "validation_chain.sync.worker_heartbeat_down",
       ),
       true,
     );

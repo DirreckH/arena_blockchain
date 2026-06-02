@@ -1,0 +1,71 @@
+name: backend-release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "docker-compose.prod.yml"
+      - ".dockerignore"
+      - "ops/**"
+      - "docs/RELEASE_RUNBOOK.md"
+      - "docs/contracts/arena-backend-release-runbook.md"
+      - "packages/shared/**"
+      - "scripts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/backend-release.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Shared tests
+        run: pnpm run shared:test
+
+      - name: API typecheck
+        run: pnpm run api:typecheck
+
+      - name: Arena API tests
+        run: pnpm --filter @arena/api test:arena
+
+      - name: Validation-chain tests
+        run: pnpm --filter @arena/api test:validation-chain
+
+      - name: Backend build
+        run: pnpm run backend:build
+
+      - name: Backend release repo tests
+        run: pnpm run backend:release:repo:test
+
+      - name: Backend release repo contract
+        run: pnpm run backend:release:repo:check
+
+  docker:
+    needs: verify
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        run: docker build -f apps/api/Dockerfile -t arena-api:${{ github.sha }} .

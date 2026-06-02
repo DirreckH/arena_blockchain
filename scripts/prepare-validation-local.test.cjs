@@ -30,12 +30,14 @@ test("prepare-validation-local bootstraps, starts the local RPC, deploys, and fi
     },
     isRpcReachable: async () => {
       rpcChecks += 1;
-      return rpcChecks >= 2;
+      return rpcChecks >= 3;
     },
     startBackgroundCommand: async (command) => {
       backgroundStarts.push(command.label);
       return { started: true, pid: 4242 };
     },
+    rpcPollIntervalMs: 0,
+    rpcReadyTimeoutMs: 1000,
   });
 
   assert.equal(exitCode, 0);
@@ -50,6 +52,7 @@ test("prepare-validation-local bootstraps, starts the local RPC, deploys, and fi
     "validation:db:status",
   ]);
   assert.deepEqual(backgroundStarts, ["hardhat:node"]);
+  assert.equal(rpcChecks, 3);
 });
 
 test("prepare-validation-local reuses a healthy local validation deployment instead of redeploying it", async () => {
@@ -258,12 +261,14 @@ test("prepare-validation-local continues when deps:up fails and diagnostics show
     }),
     isRpcReachable: async () => {
       rpcChecks += 1;
-      return rpcChecks >= 2;
+      return rpcChecks >= 3;
     },
     startBackgroundCommand: async (command) => {
       backgroundStarts.push(command.label);
       return { started: true, pid: 4242 };
     },
+    rpcPollIntervalMs: 0,
+    rpcReadyTimeoutMs: 1000,
   });
 
   assert.equal(exitCode, 0);
@@ -278,6 +283,7 @@ test("prepare-validation-local continues when deps:up fails and diagnostics show
     "validation:db:status",
   ]);
   assert.deepEqual(backgroundStarts, ["hardhat:node"]);
+  assert.equal(rpcChecks, 3);
 });
 
 function createLogger() {

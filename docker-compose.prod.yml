@@ -1,0 +1,105 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-arena}
+      POSTGRES_USER: ${POSTGRES_USER:-arena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-arena}
+    volumes:
+      - arena-postgres-prod-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-arena} -d ${POSTGRES_DB:-arena}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - arena-redis-prod-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        BUILDER_IMAGE: ${ARENA_BUILDER_IMAGE:-node:22-bookworm-slim}
+        RUNTIME_IMAGE: ${ARENA_RUNTIME_IMAGE:-gcr.io/distroless/nodejs22-debian12}
+    env_file:
+      - ${ARENA_ENV_FILE:-.env.prod}
+    environment:
+      NODE_ENV: production
+      ARENA_PROCESS_ROLE: api
+      PORT: 4000
+      DATABASE_URL: ${ARENA_COMPOSE_DATABASE_URL:-postgresql://arena:arena@postgres:5432/arena?schema=public&connect_timeout=5}
+      REDIS_URL: ${ARENA_COMPOSE_REDIS_URL:-redis://redis:6379/0}
+      RPC_URL: ${ARENA_COMPOSE_RPC_URL:-http://host.docker.internal:8545}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+
+  scheduler-worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        BUILDER_IMAGE: ${ARENA_BUILDER_IMAGE:-node:22-bookworm-slim}
+        RUNTIME_IMAGE: ${ARENA_RUNTIME_IMAGE:-gcr.io/distroless/nodejs22-debian12}
+    env_file:
+      - ${ARENA_ENV_FILE:-.env.prod}
+    environment:
+      NODE_ENV: production
+      ARENA_PROCESS_ROLE: worker
+      PORT: 4000
+      DATABASE_URL: ${ARENA_COMPOSE_DATABASE_URL:-postgresql://arena:arena@postgres:5432/arena?schema=public&connect_timeout=5}
+      REDIS_URL: ${ARENA_COMPOSE_REDIS_URL:-redis://redis:6379/0}
+      RPC_URL: ${ARENA_COMPOSE_RPC_URL:-http://host.docker.internal:8545}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/nodejs/bin/node",
+          "/app/apps/api/dist/apps/api/src/worker-healthcheck.js",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 5
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "8080:80"
+    volumes:
+      - ./ops/nginx/arena.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+volumes:
+  arena-postgres-prod-data:
+  arena-redis-prod-data:

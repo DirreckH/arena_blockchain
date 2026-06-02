@@ -14,6 +14,7 @@ import { ValidationChainContractService } from "./validation-chain-contract.serv
 import { ValidationChainIdService } from "./validation-chain-id.service";
 import { ValidationChainAlertService } from "./validation-chain-alert.service";
 import { ValidationChainBetReconciliationService } from "./validation-chain-bet-reconciliation.service";
+import { ValidationChainCommandRuntimeService } from "./validation-chain-command-runtime.service";
 import { ValidationChainCommandRecoveryService } from "./validation-chain-command-recovery.service";
 import { ValidationChainManualSyncService } from "./validation-chain-manual-sync.service";
 import { ValidationChainOperatorCommandService } from "./validation-chain-operator-command.service";
@@ -22,8 +23,10 @@ import { ValidationChainPauserService } from "./validation-chain-pauser.service"
 import { ValidationChainProjectionService } from "./validation-chain-projection.service";
 import { ValidationChainProjectionReplayService } from "./validation-chain-projection-replay.service";
 import { ValidationChainSyncWorker } from "./validation-chain-sync.worker";
+import { QueueClientModule } from "../../queue/queue-client.module";
 
 @Module({
+  imports: [QueueClientModule],
   providers: [
     ArenaIdService,
     PropositionRepository,
@@ -35,6 +38,7 @@ import { ValidationChainSyncWorker } from "./validation-chain-sync.worker";
     ValidationChainIdService,
     ValidationChainAlertService,
     ValidationChainBetReconciliationService,
+    ValidationChainCommandRuntimeService,
     ValidationChainCommandRecoveryService,
     ValidationChainManualSyncService,
     ValidationChainProjectionReplayService,
@@ -53,6 +57,7 @@ import { ValidationChainSyncWorker } from "./validation-chain-sync.worker";
     ValidationChainIdService,
     ValidationChainAlertService,
     ValidationChainBetReconciliationService,
+    ValidationChainCommandRuntimeService,
     ValidationChainCommandRecoveryService,
     ValidationChainManualSyncService,
     ValidationChainProjectionReplayService,

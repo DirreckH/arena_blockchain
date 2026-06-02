@@ -34,6 +34,7 @@ const webhookBearerTokenMappingsSchema = z
 export const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    ARENA_PROCESS_ROLE: z.enum(["api", "worker", "all"]).default("all"),
     PORT: z.coerce.number().int().positive().default(4000),
     DATABASE_URL: z.string().url(),
     REDIS_URL: z.string().min(1),

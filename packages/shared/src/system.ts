@@ -51,6 +51,17 @@ export interface QueueStatusSnapshot {
   paused?: boolean;
   counts?: QueueJobCountsSnapshot;
   details?: string;
+  worker?: {
+    status: "up" | "down";
+    checkedAt: string;
+    startedAt: string | null;
+    lastSeenAt: string | null;
+    lastJobProcessedAt: string | null;
+    lastJobName: string | null;
+    lastWorkerErrorAt: string | null;
+    lastWorkerErrorMessage: string | null;
+    details?: string;
+  };
 }
 
 export interface QueueOverviewSnapshot {

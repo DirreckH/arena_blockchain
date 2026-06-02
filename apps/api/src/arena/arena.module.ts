@@ -1,7 +1,5 @@
 import { Module } from "@nestjs/common";
 import { HealthModule } from "../health/health.module";
-import { HealthService } from "../health/health.service";
-
 import { ArenaAdjudicationController } from "./adjudication.controller";
 import { ArenaDiscussionController } from "./discussion.controller";
 import { ArenaRespondentAccountController } from "./respondent-account.controller";
@@ -167,7 +165,7 @@ const services = [
     ArenaPropositionsController,
     ArenaValidationController,
   ],
-  providers: [ArenaIdService, HealthService, ...repositories, ...services],
+  providers: [ArenaIdService, ...repositories, ...services],
   exports: [...services, ValidationChainModule],
 })
 export class ArenaModule {}

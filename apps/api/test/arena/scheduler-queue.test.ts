@@ -48,6 +48,9 @@ class FakeBullQueue {
       typeof opts.jobId === "string" && opts.jobId.length > 0
         ? opts.jobId
         : `job_${this.addCalls.length}`;
+    if (configuredJobId.includes(":")) {
+      throw new Error("Custom Id cannot contain :");
+    }
     const existing = this.jobs.get(configuredJobId);
 
     if (existing && !existing.removed) {
@@ -113,7 +116,13 @@ class FakeBullQueue {
 }
 
 class FakeRedisService {
+  schedulerWorkerHeartbeat: Record<string, unknown> | null = null;
+
   async ping(): Promise<void> {}
+
+  async getSchedulerWorkerHeartbeat() {
+    return this.schedulerWorkerHeartbeat as never;
+  }
 
   getStateSnapshot() {
     return {
@@ -183,19 +192,33 @@ class FakeValidationChainCommandRuntimeService {
   async executeQueuedCommand(): Promise<void> {}
 }
 
+class FakeSchedulerWorkerHeartbeatService {
+  readonly processedJobNames: string[] = [];
+  readonly errors: string[] = [];
+
+  async recordJobProcessed(jobName: string): Promise<void> {
+    this.processedJobNames.push(jobName);
+  }
+
+  async recordWorkerError(errorMessage: string): Promise<void> {
+    this.errors.push(errorMessage);
+  }
+}
+
 function createQueueServiceHarness() {
   const systemQueue = new FakeBullQueue();
   const authQueue = new FakeBullQueue();
   const schedulerQueue = new FakeBullQueue();
+  const redis = new FakeRedisService();
   const service = new AppQueueService(
     systemQueue as never,
     authQueue as never,
     schedulerQueue as never,
-    new FakeRedisService() as never,
+    redis as never,
     new FakeLogger() as never,
   );
 
-  return { service, schedulerQueue };
+  return { service, schedulerQueue, redis };
 }
 
 describe("Scheduler queue automations", () => {
@@ -205,7 +228,7 @@ describe("Scheduler queue automations", () => {
     await service.enqueuePropositionLifecycleAutomation();
 
     const jobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
-    assert.equal(jobId, "automation:proposition-lifecycle");
+    assert.equal(jobId, "automation.proposition-lifecycle");
 
     const retainedJob = schedulerQueue.jobs.get(jobId);
     assert.equal(retainedJob?.removed, false);
@@ -228,7 +251,7 @@ describe("Scheduler queue automations", () => {
     });
 
     const jobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
-    assert.equal(jobId, "automation:requester-comparison-set-delivery");
+    assert.equal(jobId, "automation.requester-comparison-set-delivery");
 
     const pendingJob = schedulerQueue.jobs.get(jobId);
 
@@ -241,6 +264,68 @@ describe("Scheduler queue automations", () => {
     assert.equal(String(schedulerQueue.addCalls[1]?.opts.jobId ?? ""), jobId);
   });
 
+  it("marks the scheduler queue down when the worker heartbeat is missing", async () => {
+    const { service } = createQueueServiceHarness();
+
+    const overview = await service.getQueueOverview();
+    const schedulerQueue = overview.queues.find((queue) => queue.name === "scheduler");
+
+    assert.equal(overview.status, "degraded");
+    assert.equal(schedulerQueue?.status, "down");
+    assert.equal(
+      schedulerQueue?.details,
+      "scheduler worker heartbeat is missing",
+    );
+  });
+
+  it("marks the scheduler queue up when the worker heartbeat is fresh", async () => {
+    const { service, redis } = createQueueServiceHarness();
+    const nowIso = new Date().toISOString();
+    redis.schedulerWorkerHeartbeat = {
+      processRole: "worker",
+      startedAt: nowIso,
+      lastSeenAt: nowIso,
+      lastJobProcessedAt: nowIso,
+      lastJobName: PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+      lastWorkerErrorAt: null,
+      lastWorkerErrorMessage: null,
+    };
+
+    const overview = await service.getQueueOverview();
+    const schedulerQueue = overview.queues.find((queue) => queue.name === "scheduler");
+
+    assert.equal(overview.status, "ok");
+    assert.equal(schedulerQueue?.status, "up");
+    assert.equal(
+      schedulerQueue?.worker?.lastJobName,
+      PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+    );
+  });
+
+  it("marks the scheduler queue down when the worker heartbeat carries a fresh worker error", async () => {
+    const { service, redis } = createQueueServiceHarness();
+    const nowIso = new Date().toISOString();
+    redis.schedulerWorkerHeartbeat = {
+      processRole: "worker",
+      startedAt: nowIso,
+      lastSeenAt: nowIso,
+      lastJobProcessedAt: null,
+      lastJobName: null,
+      lastWorkerErrorAt: nowIso,
+      lastWorkerErrorMessage: "scheduler queue worker is disconnected",
+    };
+
+    const overview = await service.getQueueOverview();
+    const schedulerQueue = overview.queues.find((queue) => queue.name === "scheduler");
+
+    assert.equal(overview.status, "degraded");
+    assert.equal(schedulerQueue?.status, "down");
+    assert.equal(
+      schedulerQueue?.details,
+      "scheduler queue worker is disconnected",
+    );
+  });
+
   it("enqueues proposition lifecycle automation from the scheduler cron entrypoint", async () => {
     const queueCalls: Array<Record<string, unknown>> = [];
     const queueService = {
@@ -248,7 +333,7 @@ describe("Scheduler queue automations", () => {
         const snapshot = {
           queue: "scheduler",
           name: PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
-          jobId: "automation:proposition-lifecycle",
+          jobId: "automation.proposition-lifecycle",
         };
         queueCalls.push(snapshot);
         return snapshot;
@@ -292,7 +377,7 @@ describe("Scheduler queue automations", () => {
         const snapshot = {
           queue: "scheduler",
           name: REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
-          jobId: "automation:requester-comparison-set-delivery",
+          jobId: "automation.requester-comparison-set-delivery",
           payload,
         };
         queueCalls.push(snapshot);
@@ -323,6 +408,7 @@ describe("Scheduler queue automations", () => {
       new FakePropositionLifecycleAutomationService();
     const requesterDelivery =
       new FakeRequesterComparisonSetDeliveryAutomationService();
+    const workerHeartbeat = new FakeSchedulerWorkerHeartbeatService();
     const processor = new SchedulerQueueProcessor(
       new FakeLogger() as never,
       new FakeValidationChainSyncWorker() as never,
@@ -330,6 +416,7 @@ describe("Scheduler queue automations", () => {
       propositionLifecycle as never,
       requesterDelivery as never,
       new FakeValidationChainAlertService() as never,
+      workerHeartbeat as never,
     );
 
     const result = await processor.process({
@@ -343,6 +430,9 @@ describe("Scheduler queue automations", () => {
     } as never);
 
     assert.equal(propositionLifecycle.calls.length, 1);
+    assert.deepEqual(workerHeartbeat.processedJobNames, [
+      PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+    ]);
     assert.equal(result?.processedAt !== undefined, true);
     assert.equal(result?.jobName, PROPOSITION_LIFECYCLE_AUTOMATION_JOB);
   });
@@ -352,6 +442,7 @@ describe("Scheduler queue automations", () => {
       new FakePropositionLifecycleAutomationService();
     const requesterDelivery =
       new FakeRequesterComparisonSetDeliveryAutomationService();
+    const workerHeartbeat = new FakeSchedulerWorkerHeartbeatService();
     const processor = new SchedulerQueueProcessor(
       new FakeLogger() as never,
       new FakeValidationChainSyncWorker() as never,
@@ -359,6 +450,7 @@ describe("Scheduler queue automations", () => {
       propositionLifecycle as never,
       requesterDelivery as never,
       new FakeValidationChainAlertService() as never,
+      workerHeartbeat as never,
     );
 
     const result = await processor.process({
@@ -376,6 +468,9 @@ describe("Scheduler queue automations", () => {
       typeof requesterDelivery.calls[0]?.now,
       "string",
     );
+    assert.deepEqual(workerHeartbeat.processedJobNames, [
+      REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
+    ]);
     assert.equal(result?.processedAt !== undefined, true);
     assert.equal(
       result?.jobName,

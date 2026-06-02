@@ -34,6 +34,7 @@ function main() {
 
   const desiredValues = {
     NODE_ENV: "development",
+    ARENA_PROCESS_ROLE: "all",
     PORT: "4000",
     DATABASE_URL:
       "postgresql://arena:arena@127.0.0.1:5432/arena?schema=public&connect_timeout=5",

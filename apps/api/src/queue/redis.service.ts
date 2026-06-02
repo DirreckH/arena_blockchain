@@ -3,6 +3,12 @@ import Redis from "ioredis";
 import { PinoLogger } from "nestjs-pino";
 
 import { AppConfigService } from "../config/app-config.service";
+import type { SchedulerWorkerHeartbeatRecord } from "./scheduler-worker-heartbeat";
+import {
+  parseSchedulerWorkerHeartbeatRecord,
+  SCHEDULER_WORKER_HEARTBEAT_KEY,
+  SCHEDULER_WORKER_HEARTBEAT_TTL_SECONDS,
+} from "./scheduler-worker-heartbeat";
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
@@ -64,6 +70,21 @@ export class RedisService implements OnModuleDestroy {
 
   get(key: string): Promise<string | null> {
     return this.client.get(key);
+  }
+
+  async setSchedulerWorkerHeartbeat(
+    record: SchedulerWorkerHeartbeatRecord,
+  ): Promise<void> {
+    await this.setWithTtl(
+      SCHEDULER_WORKER_HEARTBEAT_KEY,
+      JSON.stringify(record),
+      SCHEDULER_WORKER_HEARTBEAT_TTL_SECONDS,
+    );
+  }
+
+  async getSchedulerWorkerHeartbeat(): Promise<SchedulerWorkerHeartbeatRecord | null> {
+    const rawValue = await this.get(SCHEDULER_WORKER_HEARTBEAT_KEY);
+    return parseSchedulerWorkerHeartbeatRecord(rawValue);
   }
 
   async del(key: string): Promise<void> {

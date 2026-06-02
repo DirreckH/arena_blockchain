@@ -27,12 +27,24 @@ import {
   toJobOptions,
 } from "./queue-job-options";
 import { RedisService } from "./redis.service";
+import { evaluateSchedulerWorkerHealth } from "./scheduler-worker-heartbeat";
 
-const VALIDATION_CHAIN_SYNC_JOB_ID = "validation-chain:sync";
-const PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID =
-  "automation:proposition-lifecycle";
+const VALIDATION_CHAIN_SYNC_JOB_ID = buildSchedulerJobId(
+  "validation-chain",
+  "sync",
+);
+const PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID = buildSchedulerJobId(
+  "automation",
+  "proposition-lifecycle",
+);
 const REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID =
-  "automation:requester-comparison-set-delivery";
+  buildSchedulerJobId("automation", "requester-comparison-set-delivery");
+
+function buildSchedulerJobId(...parts: Array<string>): string {
+  return parts
+    .map((part) => part.replaceAll(":", "."))
+    .join(".");
+}
 
 @Injectable()
 export class AppQueueService {
@@ -92,7 +104,11 @@ export class AppQueueService {
     payload: ValidationChainCommandJobPayload,
     overrides: Partial<JobsOptions> = {},
   ): Promise<EnqueuedJobSnapshot> {
-    const jobId = `validation-chain:${payload.command}:${payload.propositionId}`;
+    const jobId = buildSchedulerJobId(
+      "validation-chain",
+      payload.command,
+      payload.propositionId,
+    );
 
     await this.releaseFinishedSchedulerJob(jobId);
 
@@ -258,10 +274,22 @@ export class AppQueueService {
         queue.getJobCounts("waiting", "active", "delayed", "completed", "failed"),
         queue.isPaused(),
       ]);
+      const worker =
+        queueName === SCHEDULER_QUEUE
+          ? evaluateSchedulerWorkerHealth(
+              await this.redisService.getSchedulerWorkerHeartbeat(),
+            )
+          : undefined;
+      const details = paused
+        ? "Scheduler queue is paused"
+        : worker?.status === "down"
+          ? worker.details
+          : undefined;
 
       return {
         name: queueName,
-        status: "up",
+        status:
+          paused || worker?.status === "down" ? "down" : "up",
         policy: this.toPolicySnapshot(this.resolveQueuePolicy(queueName)),
         paused,
         counts: {
@@ -271,6 +299,8 @@ export class AppQueueService {
           completed: counts.completed ?? 0,
           failed: counts.failed ?? 0,
         },
+        worker,
+        details,
       };
     } catch (error) {
       return {

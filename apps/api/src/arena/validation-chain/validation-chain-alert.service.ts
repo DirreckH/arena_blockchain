@@ -13,6 +13,10 @@ import { ValidationChainCursorRepository } from "../repositories/validation-chai
 import { InternalAuditService } from "../services/internal-audit.service";
 import { withArenaTransaction } from "../arena-transaction.utils";
 import { VALIDATION_CHAIN_STREAM_KEY } from "./validation-chain.types";
+import { RedisService } from "../../queue/redis.service";
+import {
+  evaluateSchedulerWorkerHealth,
+} from "../../queue/scheduler-worker-heartbeat";
 
 const RECENT_ALERT_WINDOW_MS = 15 * 60 * 1000;
 const STALE_PAYOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -46,6 +50,7 @@ export class ValidationChainAlertService {
     private readonly prisma: PrismaService,
     private readonly config: AppConfigService,
     private readonly cursors: ValidationChainCursorRepository,
+    private readonly redis: RedisService,
     private readonly audit: InternalAuditService,
   ) {}
 
@@ -413,6 +418,7 @@ export class ValidationChainAlertService {
       const isCursorStalled =
         cursor === null ||
         now.getTime() - cursor.updatedAt.getTime() > staleThresholdMs;
+      const schedulerWorker = await this.getSchedulerWorkerSnapshot(nowIso);
 
       const mappedAlerts = recentAlerts.map<ValidationChainHealthAlertViewModel>(
         (event) => ({
@@ -438,6 +444,7 @@ export class ValidationChainAlertService {
         pollIntervalMs: this.config.validationSyncPollIntervalMs,
         cursorStaleThresholdMs: staleThresholdMs,
         isCursorStalled,
+        schedulerWorker,
         recentAlerts: mappedAlerts,
         metrics: {
           recentRetryExhaustedCount: mappedAlerts.filter(
@@ -576,6 +583,27 @@ export class ValidationChainAlertService {
       });
     }
 
+    if (snapshot.schedulerWorker?.status === "down") {
+      await this.recordAlertOnce({
+        entityType: "validation_chain_stream",
+        entityId: snapshot.streamKey,
+        action: SYNC_WORKER_UNHEALTHY_ACTION,
+        reason: "validation_chain.sync.worker_heartbeat_down",
+        dedupeAfter: snapshot.cursorStaleThresholdMs,
+        metadata: {
+          schedulerWorkerStatus: snapshot.schedulerWorker.status,
+          workerStartedAt: snapshot.schedulerWorker.startedAt,
+          workerLastSeenAt: snapshot.schedulerWorker.lastSeenAt,
+          workerLastJobProcessedAt: snapshot.schedulerWorker.lastJobProcessedAt,
+          workerLastJobName: snapshot.schedulerWorker.lastJobName,
+          workerLastErrorAt: snapshot.schedulerWorker.lastWorkerErrorAt,
+          workerLastErrorMessage:
+            snapshot.schedulerWorker.lastWorkerErrorMessage,
+          workerDetails: snapshot.schedulerWorker.details ?? null,
+        },
+      });
+    }
+
     const oldestUnsyncedBet = snapshot.projection.unsyncedBetBacklog[0];
     if (
       oldestUnsyncedBet &&
@@ -632,5 +660,36 @@ export class ValidationChainAlertService {
       reason: input.reason,
       metadata: input.metadata as Prisma.InputJsonValue,
     });
+  }
+
+  private async getSchedulerWorkerSnapshot(
+    nowIso: string,
+  ): Promise<ValidationChainMonitoringViewModel["schedulerWorker"]> {
+    let snapshot = evaluateSchedulerWorkerHealth(null, nowIso);
+
+    try {
+      const record = await this.redis.getSchedulerWorkerHeartbeat();
+      snapshot = evaluateSchedulerWorkerHealth(record, nowIso);
+    } catch (error) {
+      snapshot = {
+        ...snapshot,
+        details:
+          error instanceof Error
+            ? `scheduler worker heartbeat read failed: ${error.message}`
+            : "scheduler worker heartbeat read failed",
+      };
+    }
+
+    return {
+      ...snapshot,
+      operatorActions:
+        snapshot.status === "down"
+          ? [
+              "docker compose --env-file $env:ARENA_ENV_FILE -f docker-compose.prod.yml ps scheduler-worker",
+              "docker logs --tail 200 <scheduler-worker-container>",
+              "GET /system/queues/overview",
+            ]
+          : [],
+    };
   }
 }

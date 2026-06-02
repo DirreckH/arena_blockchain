@@ -15,6 +15,18 @@ export class AppConfigService {
     return this.configService.get("NODE_ENV", { infer: true });
   }
 
+  get processRole(): EnvironmentVariables["ARENA_PROCESS_ROLE"] {
+    return this.configService.get("ARENA_PROCESS_ROLE", { infer: true });
+  }
+
+  get isApiProcess(): boolean {
+    return this.processRole === "api" || this.processRole === "all";
+  }
+
+  get isWorkerProcess(): boolean {
+    return this.processRole === "worker" || this.processRole === "all";
+  }
+
   get isProduction(): boolean {
     return this.nodeEnv === "production";
   }

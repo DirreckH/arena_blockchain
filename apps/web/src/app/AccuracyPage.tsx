@@ -77,7 +77,7 @@ function toHistoricalResult(result: PublicSettledResultItemViewModel): Historica
   }
 }
 
-function buildSourceDetail(_sourceMode: 'live' | 'demo' | 'mixed') {
+function buildSourceDetail(_sourceMode: 'live' | 'demo' | 'mixed' | 'unavailable') {
   return undefined
 }
 
@@ -151,7 +151,9 @@ export function AccuracyPage() {
 
   const displayedSourceMode = sessionMode === 'demo'
     ? 'demo'
-    : sourceMode
+    : errorMessage
+      ? 'unavailable'
+      : sourceMode
 
   const settledResultHeading = useMemo(() => {
     return '近期已结算命题'

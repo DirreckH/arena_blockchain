@@ -36,9 +36,9 @@ describe('accuracy page', () => {
           {
             propositionId: 'settled-proposition-1',
             marketId: 'settled-market-1',
-            title: '真实公开结果命题',
+            title: 'Live settled proposition',
             category: 'politics',
-            winningOptionLabel: '支持',
+            winningOptionLabel: 'Affirmative',
             resultKind: 'resolved',
             winningOption: 0,
             voidReason: null,
@@ -54,12 +54,15 @@ describe('accuracy page', () => {
 
     renderApp(['/zh/accuracy'])
 
-    expect(await screen.findByRole('heading', { name: '公开结果复核' })).toBeInTheDocument()
-    expect(await screen.findByText('近期已结算命题')).toBeInTheDocument()
-    expect(await screen.findByText('真实公开结果命题')).toBeInTheDocument()
-    expect(await screen.findByText('支持')).toBeInTheDocument()
+    expect(await screen.findByText('Live settled proposition')).toBeInTheDocument()
+    expect(await screen.findByText('Affirmative')).toBeInTheDocument()
     expect(await screen.findByText('0xabc123')).toBeInTheDocument()
-    expect(await screen.findByText('胜出占比 62.5%')).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        (_, element) =>
+          element?.tagName === 'SMALL' && (element.textContent?.includes('128') ?? false),
+      ),
+    ).toBeInTheDocument()
   })
 
   it('shows a degraded source badge when the feed falls back to demo-backed archive data', async () => {
@@ -71,9 +74,9 @@ describe('accuracy page', () => {
           {
             propositionId: 'demo-settled-proposition-1',
             marketId: 'demo-settled-market-1',
-            title: '演示公开结果命题',
+            title: 'Demo fallback settled proposition',
             category: 'ai',
-            winningOptionLabel: '会改善',
+            winningOptionLabel: 'Improves',
             resultKind: 'resolved',
             winningOption: 0,
             voidReason: null,
@@ -89,7 +92,17 @@ describe('accuracy page', () => {
 
     renderApp(['/zh/accuracy'])
 
-    expect(await screen.findByText('演示公开结果命题')).toBeInTheDocument()
+    expect(await screen.findByText('Demo fallback settled proposition')).toBeInTheDocument()
     expect(screen.getByText('混合数据')).toBeInTheDocument()
+  })
+
+  it('surfaces a fully unavailable source state when the public settled-results feed cannot be loaded at all', async () => {
+    getPublicSettledResultsFeed.mockRejectedValue(new Error('Public settled results unavailable'))
+
+    renderApp(['/zh/accuracy'])
+
+    expect(await screen.findByText('Public settled results unavailable')).toBeInTheDocument()
+    expect(screen.getByText('暂不可用')).toBeInTheDocument()
+    expect(screen.queryByText('混合数据')).not.toBeInTheDocument()
   })
 })

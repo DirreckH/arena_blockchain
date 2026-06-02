@@ -75,7 +75,7 @@ function formatSettledAtLabel(settledAt: string | null) {
   })
 }
 
-function buildSourceDetail(_sourceMode: 'live' | 'demo' | 'mixed') {
+function buildSourceDetail(_sourceMode: 'live' | 'demo' | 'mixed' | 'unavailable') {
   return undefined
 }
 
@@ -141,7 +141,9 @@ export function MarketIntegrityPage() {
 
   const displayedSourceMode = sessionMode === 'demo'
     ? 'demo'
-    : sourceMode
+    : errorMessage
+      ? 'unavailable'
+      : sourceMode
 
   const phaseSummary = useMemo(() => overview?.live.phaseBreakdown ?? [], [overview])
   const liveItems = useMemo(() => overview?.live.items ?? [], [overview])

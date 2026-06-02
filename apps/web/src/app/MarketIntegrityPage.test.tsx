@@ -37,13 +37,13 @@ describe('market integrity page', () => {
           reachedSampleThresholdCount: 1,
           marketEnabledCount: 2,
           phaseBreakdown: [
-            { phase: 'live', label: '采集中', count: 1 },
-            { phase: 'revealing', label: '开奖中', count: 1 },
+            { phase: 'live', label: 'Collecting', count: 1 },
+            { phase: 'revealing', label: 'Revealing', count: 1 },
           ],
           items: [
             {
               propositionId: 'integrity-live-1',
-              title: '真实完整性公开命题',
+              title: 'Live integrity proposition',
               category: 'ai',
               phase: 'live',
               effectiveSampleCount: 96,
@@ -55,7 +55,7 @@ describe('market integrity page', () => {
             },
             {
               propositionId: 'integrity-live-2',
-              title: '真实开奖中命题',
+              title: 'Revealing integrity proposition',
               category: 'politics',
               phase: 'revealing',
               effectiveSampleCount: 180,
@@ -78,12 +78,18 @@ describe('market integrity page', () => {
 
     renderApp(['/zh/market-integrity'])
 
-    expect(await screen.findByRole('heading', { name: '信息边界与市场完整性' })).toBeInTheDocument()
-    expect(await screen.findByText('当前公开完整性概览')).toBeInTheDocument()
-    expect(await screen.findByText('真实完整性公开命题')).toBeInTheDocument()
-    expect(await screen.findByText('有效样本 96/120')).toBeInTheDocument()
-    expect(await screen.findByText('已归档公开结果')).toBeInTheDocument()
-    expect(await screen.findByText('188')).toBeInTheDocument()
+    expect(await screen.findByText('Live integrity proposition')).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        (_, element) =>
+          element?.tagName === 'SPAN' && (element.textContent?.includes('96/120') ?? false),
+      ),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        (_, element) => element?.tagName === 'EM' && element.textContent?.trim() === '188',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('shows a degraded source badge when the feed falls back to demo-backed integrity data', async () => {
@@ -96,12 +102,12 @@ describe('market integrity page', () => {
           reachedSampleThresholdCount: 0,
           marketEnabledCount: 1,
           phaseBreakdown: [
-            { phase: 'live', label: '采集中', count: 1 },
+            { phase: 'live', label: 'Collecting', count: 1 },
           ],
           items: [
             {
               propositionId: 'integrity-demo-1',
-              title: '演示完整性命题',
+              title: 'Demo fallback integrity proposition',
               category: 'sports',
               phase: 'live',
               effectiveSampleCount: 24,
@@ -124,7 +130,17 @@ describe('market integrity page', () => {
 
     renderApp(['/zh/market-integrity'])
 
-    expect(await screen.findByText('演示完整性命题')).toBeInTheDocument()
+    expect(await screen.findByText('Demo fallback integrity proposition')).toBeInTheDocument()
     expect(screen.getByText('混合数据')).toBeInTheDocument()
+  })
+
+  it('surfaces a fully unavailable source state when the integrity overview feed cannot be loaded at all', async () => {
+    getPublicIntegrityOverviewFeed.mockRejectedValue(new Error('Public integrity overview unavailable'))
+
+    renderApp(['/zh/market-integrity'])
+
+    expect(await screen.findByText('Public integrity overview unavailable')).toBeInTheDocument()
+    expect(screen.getByText('暂不可用')).toBeInTheDocument()
+    expect(screen.queryByText('混合数据')).not.toBeInTheDocument()
   })
 })

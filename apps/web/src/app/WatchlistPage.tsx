@@ -1,9 +1,10 @@
-import { LogIn, Search } from 'lucide-react'
+import { EyeOff, LogIn, Search } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { MarketCardView } from '../components/market/MarketCardView'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { WalletStatusCard } from '../components/shared/WalletStatusCard'
 import { useRulesIntro } from '../components/shared/RulesIntroContext'
+import { formatCategoryLabel, formatRelativeTime } from '../features/arena/arena-ui-mappers'
 import { useWatchlistData } from '../features/arena/watchlist-data'
 import { useValidationMarketData } from '../features/validation/validation-market-data'
 import { useAuthSession } from '../features/auth/auth-session'
@@ -27,6 +28,9 @@ export function WatchlistPage() {
   const watchlistItems = watchlist?.items ?? []
   const watchlistMarketIds = watchlistItems.map((item) => item.marketId)
   const visibleMarkets = markets.filter((market) => watchlistMarketIds.includes(market.id))
+  const hiddenWatchlistItems = watchlistItems.filter(
+    (item) => !visibleMarkets.some((market) => market.id === item.marketId),
+  )
 
   const selectedMarketMeta = requestedMarketId
     ? markets.find((market) => market.id === requestedMarketId) ?? null
@@ -37,7 +41,19 @@ export function WatchlistPage() {
     ? 'unavailable'
     : sessionMode === 'demo'
       ? 'demo'
-      : 'live'
+      : errorMessage
+        ? 'unavailable'
+        : 'live'
+  const showEmptyState = isAuthenticated
+    && !isLoading
+    && !errorMessage
+    && watchlist !== null
+    && visibleMarkets.length === 0
+    && hiddenWatchlistItems.length === 0
+  const showHiddenState = isAuthenticated
+    && !isLoading
+    && !errorMessage
+    && hiddenWatchlistItems.length > 0
 
   return (
     <section className="route-page utility-page">
@@ -127,8 +143,8 @@ export function WatchlistPage() {
           </section>
         ) : null}
 
-        {isAuthenticated && !isLoading && visibleMarkets.length === 0 ? (
-          <section className="account-empty-card">
+        {showEmptyState ? (
+          <section className="account-empty-card" data-testid="watchlist-empty-state">
             <div className="account-empty-icon" aria-hidden="true">
               <Search size={28} />
             </div>
@@ -141,6 +157,47 @@ export function WatchlistPage() {
               <Link className="secondary-action" to="/zh/markets">
                 浏览排行榜
               </Link>
+            </div>
+          </section>
+        ) : null}
+
+        {showHiddenState ? (
+          <section className="account-menu-panel" data-testid="watchlist-hidden-state">
+            <div className="account-menu-panel-head">
+              <div>
+                <h2>已保存但暂未出现在当前公开市场流里的命题</h2>
+                <span>
+                  这些收藏仍然保存在你的账户里，只是当前公开市场列表暂时没有返回对应卡片。
+                </span>
+              </div>
+            </div>
+
+            <div className="rewards-ledger-list">
+              {hiddenWatchlistItems.map((item) => (
+                <article
+                  className="rewards-ledger-item"
+                  key={item.marketId}
+                  data-testid={`watchlist-hidden-item-${item.marketId}`}
+                >
+                  <div className="rewards-ledger-top">
+                    <div className="rewards-ledger-copy">
+                      <strong>{item.propositionTitle}</strong>
+                      <p>{formatCategoryLabel(item.category)}</p>
+                    </div>
+                    <div className="rewards-ledger-amounts">
+                      <strong>
+                        <EyeOff size={16} aria-hidden="true" /> 暂未返回卡片
+                      </strong>
+                      <span>收藏于 {formatRelativeTime(item.savedAt)}</span>
+                    </div>
+                  </div>
+
+                  <div className="rewards-ledger-meta">
+                    <span>Market ID: {item.marketId}</span>
+                    <span>Proposition ID: {item.propositionId}</span>
+                  </div>
+                </article>
+              ))}
             </div>
           </section>
         ) : null}

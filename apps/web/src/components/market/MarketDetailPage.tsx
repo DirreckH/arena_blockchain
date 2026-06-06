@@ -233,7 +233,7 @@ export function MarketDetailPage() {
             </div>
 
             <div className={market.imageSrc ? 'detail-title-row' : 'detail-title-row without-media'}>
-              {market.imageSrc ? <img src={market.imageSrc} alt={`${market.title} icon`} /> : null}
+              {market.imageSrc ? <span className="detail-title-media market-media-placeholder" aria-hidden="true" /> : null}
               <div className="detail-title-copy">
                 <h2>{market.title}</h2>
               </div>
@@ -371,12 +371,6 @@ export function MarketDetailPage() {
                       </div>
                     </div>
                     <span className="discussion-comment-time">{comment.timeLabel}</span>
-                  </div>
-
-                  <div className="discussion-comment-tags">
-                    <span className="discussion-comment-tone">{comment.tone}</span>
-                    {comment.optionIndex !== undefined ? <span className="discussion-comment-option">{market.options[comment.optionIndex]?.label}</span> : null}
-                    {comment.replyCount > 0 ? <span className="discussion-comment-meta">{comment.replyCount} 条回复</span> : null}
                   </div>
 
                   <p>{comment.body}</p>

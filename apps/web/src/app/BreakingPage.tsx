@@ -51,6 +51,8 @@ export function BreakingPage() {
         config={toRankedMarketPageConfig(breaking)}
         showSearch
         searchPlaceholder="搜索市场标题"
+        showScoreMetrics={false}
+        showTrendSparkline={false}
       />
     </>
   )

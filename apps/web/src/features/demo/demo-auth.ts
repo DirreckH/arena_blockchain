@@ -16,6 +16,6 @@ export function buildDemoIdentity(chainId: number): JwtIdentity {
     sub: 'demo-user',
     walletAddress: DEMO_WALLET_ADDRESS,
     chainId,
-    roles: [SystemRole.User],
+    roles: [SystemRole.Operator],
   }
 }

@@ -6,10 +6,11 @@ import { BreakingPage } from './BreakingPage'
 import { CategoryDirectoryPage } from './CategoryDirectoryPage'
 import { ChallengePage } from './ChallengePage'
 import { ClosingSoonPage } from './ClosingSoonPage'
+import { DevSessionSeedPage } from './DevSessionSeedPage'
 import { DraftsPage } from './DraftsPage'
 import { HelpPage } from './HelpPage'
 import { LatestPage } from './LatestPage'
-import { PublicResultsPage } from './PublicResultsPage'
+import { PublicResultsPage } from './PublicResultsPage.tsx'
 import { SubmissionsPage } from './SubmissionsPage'
 import { WatchlistPage } from './WatchlistPage'
 import { RewardsPage } from './RewardsPage'
@@ -24,6 +25,7 @@ import { NotFoundPage } from '../components/shared/NotFoundPage'
 import { useQuickMenu } from '../components/shared/QuickMenuContext'
 import { UtilityPage } from '../components/shared/UtilityPage'
 import { useDiscoveryData } from '../features/arena/discovery-data'
+import { OpsConsolePage } from './OpsConsolePage'
 
 const staticDirectoryPageTitles: Record<string, string> = {
   '/zh/brand': knownPageTitles['/zh/brand'],
@@ -56,6 +58,10 @@ export function SmartRoutePage() {
 
   if (pathname === '/zh/watchlist') {
     return <WatchlistPage />
+  }
+
+  if (pathname === '/zh/dev/session-seed') {
+    return <DevSessionSeedPage />
   }
 
   if (pathname === '/zh/drafts') {
@@ -132,6 +138,10 @@ export function SmartRoutePage() {
 
   if (pathname === '/zh/new') {
     return <LatestPage />
+  }
+
+  if (pathname === '/zh/ops' || pathname.startsWith('/zh/ops/')) {
+    return <OpsConsolePage />
   }
 
   if (removedPredictionRoutes.has(pathname)) {

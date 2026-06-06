@@ -8,7 +8,6 @@ import {
   Eye,
   FileDown,
   Laptop2,
-  LogIn,
   Mail,
   Shield,
   UserCircle2,
@@ -23,6 +22,7 @@ import {
   type UpdateRespondentAccountPreferencesInput,
 } from '@arena/shared'
 import { DataSourceBadge } from './DataSourceBadge'
+import { AuthRequiredBlankGate } from './AuthRequiredBlankGate'
 import { useArenaAccountData } from '../../features/arena/account-data'
 import {
   formatRelativeTime,
@@ -262,7 +262,7 @@ function buildPreferencesDraft(
 }
 
 export function AccountActivityPage() {
-  const { isAuthenticated, logout, user: sessionUser, openAuthModal } = useRulesIntro()
+  const { isAuthenticated, logout, user: sessionUser } = useRulesIntro()
   const {
     overview,
     rewards,
@@ -1601,23 +1601,7 @@ export function AccountActivityPage() {
   }
 
   if (!isAuthenticated) {
-    return (
-      <section className="route-page account-activity-page">
-        <section className="account-empty-card">
-          <div className="account-empty-icon" aria-hidden="true">
-            <UserCircle2 size={28} />
-          </div>
-          <strong>尚未登录</strong>
-          <p>当前头像入口对应账户设置页。请先进入静态已登录态，再查看账户设置内容。</p>
-          <div className="account-summary-actions">
-            <button className="primary-action" onClick={() => openAuthModal('login')} type="button">
-              <LogIn size={16} />
-              <span>打开登录弹窗</span>
-            </button>
-          </div>
-        </section>
-      </section>
-    )
+    return <AuthRequiredBlankGate className="route-page account-activity-page" ariaLabel="账户设置" />
   }
 
   if (accountSurfaceUnavailable) {

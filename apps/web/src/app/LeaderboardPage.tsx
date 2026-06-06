@@ -212,17 +212,15 @@ export function LeaderboardPage() {
                       </th>
                       <td>
                         <div className="leaderboard-user-cell">
-                          <strong>{row.handle}</strong>
-                          <span>{row.walletShort}</span>
+                          <span className="leaderboard-avatar-placeholder" aria-hidden="true" />
+                          <div className="leaderboard-user-copy">
+                            <strong>{row.handle}</strong>
+                            <span>{row.walletShort}</span>
+                          </div>
                         </div>
                       </td>
                       <td>
                         <div className="leaderboard-progress-cell">
-                          <span
-                            className="leaderboard-progress-bar"
-                            aria-hidden="true"
-                            style={{ width: `${Math.min(100, row.responseRatePercent)}%` }}
-                          />
                           <strong>{formatPercent(row.responseRatePercent)}</strong>
                         </div>
                       </td>
@@ -263,10 +261,6 @@ export function LeaderboardPage() {
             role="menu"
             aria-label="排行榜话题筛选"
           >
-            <div className="leaderboard-filter-menu-head">
-              <strong>筛选话题</strong>
-              <span>选择一个话题查看对应回答率排行。</span>
-            </div>
             <div className="leaderboard-filter-menu-list">
               {responseRateLeaderboards.map((category) => {
                 const isActive = category.id === resolvedActiveCategoryId
@@ -285,7 +279,6 @@ export function LeaderboardPage() {
                   >
                     <div className="leaderboard-filter-menu-copy">
                       <strong>{category.label}</strong>
-                      <span>{category.description}</span>
                     </div>
                     {isActive ? <Check size={16} aria-hidden="true" /> : null}
                   </button>

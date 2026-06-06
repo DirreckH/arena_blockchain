@@ -9,7 +9,6 @@ import {
   FolderOpen,
   FileClock,
   Link2,
-  Plus,
   ShieldCheck,
   Sparkles,
   X,
@@ -68,6 +67,7 @@ const modalProgressSteps = [
 ] as const
 
 type SubmitModalStep = 0 | 1 | 2
+type RewardCurrency = 'USDC' | 'USDT'
 
 type DraftFormState = {
   propositionId: string | null
@@ -76,9 +76,42 @@ type DraftFormState = {
   optionA: string
   optionB: string
   category: string
+  rewardBudget: string
+  rewardCurrency: RewardCurrency
   tags: string[]
   referenceLink: string
   submissionStatus: 'draft' | 'submitted'
+}
+
+function parseRewardBudgetValue(value: string | null | undefined): { amount: string; currency: RewardCurrency } {
+  const normalized = (value ?? '').trim()
+  const match = normalized.match(/^(.+?)\s+(USDC|USDT)$/i)
+
+  if (!match) {
+    return {
+      amount: normalized,
+      currency: 'USDC',
+    }
+  }
+
+  return {
+    amount: match[1].trim(),
+    currency: match[2].toUpperCase() as RewardCurrency,
+  }
+}
+
+function formatRewardBudgetLabel(amount: string, currency: RewardCurrency) {
+  const normalizedAmount = amount.trim()
+  return normalizedAmount ? `${normalizedAmount} ${currency}` : '未填写'
+}
+
+function resolveRewardBudgetAmount(input: string, fallback: string | null | undefined) {
+  const normalizedInput = input.trim()
+  if (normalizedInput) {
+    return normalizedInput
+  }
+
+  return parseRewardBudgetValue(fallback).amount || '1000'
 }
 
 function mapCategoryLabelToApiValue(label: string): PropositionCategory {
@@ -100,6 +133,8 @@ function mapCategoryLabelToApiValue(label: string): PropositionCategory {
 }
 
 function toDraftFormState(draft: PropositionDraftRecord | null): DraftFormState {
+  const parsedRewardBudget = parseRewardBudgetValue(draft?.rewardBudget)
+
   return {
     propositionId: draft?.propositionId ?? null,
     title: draft?.title ?? '',
@@ -107,6 +142,8 @@ function toDraftFormState(draft: PropositionDraftRecord | null): DraftFormState 
     optionA: draft?.optionA ?? '',
     optionB: draft?.optionB ?? '',
     category: draft ? formatCategoryLabel(draft.category) : 'AI / Technology',
+    rewardBudget: parsedRewardBudget.amount,
+    rewardCurrency: parsedRewardBudget.currency,
     tags: draft ? buildDraftTags(draft) : [],
     referenceLink: buildDraftReferenceLink(),
     submissionStatus: draft?.submissionStatus === 'submitted' ? 'submitted' : 'draft',
@@ -118,9 +155,10 @@ function ChallengeSubmitModal({
   optionA,
   optionB,
   referenceLink,
+  rewardBudget,
+  rewardCurrency,
   step,
   summary,
-  tags,
   title,
   onBack,
   onClose,
@@ -130,9 +168,10 @@ function ChallengeSubmitModal({
   optionA: string
   optionB: string
   referenceLink: string
+  rewardBudget: string
+  rewardCurrency: RewardCurrency
   step: SubmitModalStep | null
   summary: string
-  tags: string[]
   title: string
   onBack: () => void
   onClose: () => void
@@ -244,7 +283,7 @@ function ChallengeSubmitModal({
                   </div>
                   <div className="challenge-submit-pill-row">
                     <span className="challenge-submit-pill">{category}</span>
-                    <span className="challenge-submit-pill">{tags.length} 个标签</span>
+                    <span className="challenge-submit-pill">赏金 {formatRewardBudgetLabel(rewardBudget, rewardCurrency)}</span>
                   </div>
                 </div>
                 <div className="challenge-submit-options">
@@ -423,7 +462,7 @@ export function ChallengePage() {
       minBetAmount: draftRecord?.minBetAmount ?? '10',
       minDurationSeconds: draftRecord?.minDurationSeconds ?? 60,
       maxDurationSeconds: draftRecord?.maxDurationSeconds ?? 3600,
-      rewardBudget: draftRecord?.rewardBudget ?? '1000',
+      rewardBudget: resolveRewardBudgetAmount(form.rewardBudget, draftRecord?.rewardBudget),
       baseResponseReward: draftRecord?.baseResponseReward ?? '20',
       marketEnabled: draftRecord?.marketEnabled ?? true,
       status: 'draft',
@@ -467,16 +506,8 @@ export function ChallengePage() {
     }))
   }
 
-  const appendTag = () => {
-    const nextTag = ['Workflow', 'Research', 'Comparison'].find((item) => !form.tags.includes(item))
-
-    if (nextTag) {
-      updateForm('tags', [...form.tags, nextTag])
-    }
-  }
-
-  const removeTag = (tag: string) => {
-    updateForm('tags', form.tags.filter((item) => item !== tag))
+  const toggleRewardCurrency = () => {
+    updateForm('rewardCurrency', form.rewardCurrency === 'USDC' ? 'USDT' : 'USDC')
   }
 
   const saveDraft = async () => {
@@ -500,7 +531,7 @@ export function ChallengePage() {
         minBetAmount: draftRecord?.minBetAmount ?? '10',
         minDurationSeconds: draftRecord?.minDurationSeconds ?? 60,
         maxDurationSeconds: draftRecord?.maxDurationSeconds ?? 3600,
-        rewardBudget: draftRecord?.rewardBudget ?? '1000',
+        rewardBudget: resolveRewardBudgetAmount(form.rewardBudget, draftRecord?.rewardBudget),
         baseResponseReward: draftRecord?.baseResponseReward ?? '20',
         marketEnabled: draftRecord?.marketEnabled ?? true,
       }
@@ -816,20 +847,20 @@ export function ChallengePage() {
 
               <div className="challenge-field">
                 <div className="challenge-label-row">
-                  <span>5. 标签</span>
-                  <small>当前映射到 sampleConstraints 持久化</small>
+                  <span>5. 赏金</span>
+                  <small>你愿意为此话题的答案支付多少赏金</small>
                 </div>
                 <div className="challenge-tag-editor">
-                  <div className="challenge-tag-list">
-                    {form.tags.map((tag) => (
-                      <button className="challenge-tag" key={tag} onClick={() => removeTag(tag)} type="button">
-                        <span>{tag}</span>
-                        <X size={12} />
-                      </button>
-                    ))}
-                  </div>
-                  <button className="challenge-tag-plus" onClick={appendTag} type="button" aria-label="新增标签">
-                    <Plus size={15} />
+                  <input
+                    className="challenge-bounty-input"
+                    inputMode="numeric"
+                    onChange={(event) => updateForm('rewardBudget', event.target.value)}
+                    placeholder="例如：500"
+                    type="text"
+                    value={form.rewardBudget}
+                  />
+                  <button className="challenge-bounty-unit-button" onClick={toggleRewardCurrency} type="button" aria-label="切换赏金单位">
+                    {form.rewardCurrency}
                   </button>
                 </div>
               </div>
@@ -880,7 +911,7 @@ export function ChallengePage() {
             <div className="challenge-preview-card">
               <div className="challenge-preview-meta">
                 <span>{form.category}</span>
-                <span>{form.tags.length} 个标签</span>
+                <span>赏金 {formatRewardBudgetLabel(form.rewardBudget, form.rewardCurrency)}</span>
               </div>
               <strong style={{ color: form.title ? undefined : 'var(--arena-text-secondary, #6b7280)', fontStyle: form.title ? 'normal' : 'italic' }}>
                 {form.title || '（话题标题将在此显示）'}
@@ -942,9 +973,10 @@ export function ChallengePage() {
         optionA={form.optionA}
         optionB={form.optionB}
         referenceLink={form.referenceLink}
+        rewardBudget={form.rewardBudget}
+        rewardCurrency={form.rewardCurrency}
         step={submitModalStep}
         summary={form.summary}
-        tags={form.tags}
         title={form.title}
         onBack={handleSubmitModalBack}
         onClose={closeSubmitModal}

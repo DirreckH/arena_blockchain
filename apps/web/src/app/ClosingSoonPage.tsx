@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Clock3, Hourglass } from 'lucide-react'
 import type { PublicClosingSoonItemViewModel } from '@arena/shared'
 import { CategoryCompactMarketCard } from '../components/market/CategoryDirectoryCards'
+import { MarketSearchBar } from '../components/market/MarketSearchBar'
 import { FilterStrip } from '../components/navigation/FilterStrip'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { arenaApi } from '../features/api/arena-api'
@@ -54,6 +55,7 @@ export function ClosingSoonPage() {
   const [closingSoonSourceMode, setClosingSoonSourceMode] = useState<'live' | 'demo' | 'mixed'>('live')
   const [isClosingSoonLoading, setIsClosingSoonLoading] = useState(true)
   const [closingSoonErrorMessage, setClosingSoonErrorMessage] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     let disposed = false
@@ -141,8 +143,26 @@ export function ClosingSoonPage() {
   const isLoading = isMarketLoading || isClosingSoonLoading
   const errorMessage = marketErrorMessage ?? closingSoonErrorMessage
   const totalCandidateCount = closingSoonItems.urgent.length + closingSoonItems.upcoming.length
-
-  const showFallbackUpcoming = urgentMarkets.length === 0 && upcomingMarkets.length > 0
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const visibleUrgentMarkets = useMemo(
+    () => normalizedSearchQuery.length === 0
+      ? urgentMarkets
+      : urgentMarkets.filter(({ market }) => market.title.toLowerCase().includes(normalizedSearchQuery)),
+    [normalizedSearchQuery, urgentMarkets],
+  )
+  const visibleUpcomingMarkets = useMemo(
+    () => normalizedSearchQuery.length === 0
+      ? upcomingMarkets
+      : upcomingMarkets.filter(({ market }) => market.title.toLowerCase().includes(normalizedSearchQuery)),
+    [normalizedSearchQuery, upcomingMarkets],
+  )
+  const showSearchEmptyState =
+    !isLoading
+    && !errorMessage
+    && normalizedSearchQuery.length > 0
+    && totalCandidateCount > 0
+    && visibleUrgentMarkets.length === 0
+    && visibleUpcomingMarkets.length === 0
 
   return (
     <section className="route-page market-page closing-soon-page">
@@ -152,18 +172,13 @@ export function ClosingSoonPage() {
       <header className="route-header compact closing-soon-header">
         <h1>即将开奖</h1>
         <p>距离公开结果裁决只剩 3 小时以内的命题，帮助你在样本门槛收尾前完成最后一轮判断。</p>
-        <div className="closing-soon-meta">
-          <span className="closing-soon-meta-pill alert">
-            <Hourglass size={14} />
-            3 小时内开奖
-          </span>
-          <span className="closing-soon-meta-pill">即将进入 {urgentMarkets.length} 个</span>
-          <span className="closing-soon-meta-pill">
-            <Clock3 size={14} />
-            按裁决时间升序
-          </span>
-        </div>
       </header>
+
+      <MarketSearchBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="搜索即将开奖"
+      />
 
       {errorMessage ? (
         <section className="account-menu-panel">
@@ -183,7 +198,7 @@ export function ClosingSoonPage() {
         </section>
       ) : null}
 
-      {urgentMarkets.length > 0 ? (
+      {visibleUrgentMarkets.length > 0 ? (
         <section className="prediction-topic-section closing-soon-urgent" aria-label="3 小时内即将开奖">
           <div className="prediction-topic-section-head">
             <div>
@@ -193,7 +208,7 @@ export function ClosingSoonPage() {
             <span className="prediction-topic-count alert">紧急</span>
           </div>
           <div className="market-grid prediction-topic-grid closing-soon-grid">
-            {urgentMarkets.map(({ market, differenceMs }) => (
+            {visibleUrgentMarkets.map(({ market, differenceMs }) => (
               <article className="closing-soon-card-shell" key={`urgent-${market.id}`}>
                 <div className="closing-soon-card-eyebrow">
                   <Hourglass size={14} />
@@ -206,17 +221,10 @@ export function ClosingSoonPage() {
         </section>
       ) : null}
 
-      {upcomingMarkets.length > 0 ? (
-        <section className="prediction-topic-section" aria-label="接下来即将开奖">
-          <div className="prediction-topic-section-head">
-            <div>
-              <h2>接下来即将开奖</h2>
-              <p>按裁决时间升序排列的命题，可在进入紧急窗口前提前判断。</p>
-            </div>
-            <span className="prediction-topic-count">{upcomingMarkets.length} 个</span>
-          </div>
+      {visibleUpcomingMarkets.length > 0 ? (
+        <section className="prediction-topic-section closing-soon-upcoming-section" aria-label="接下来即将开奖">
           <div className="market-grid prediction-topic-grid closing-soon-grid">
-            {upcomingMarkets.map(({ market, differenceMs }) => (
+            {visibleUpcomingMarkets.map(({ market, differenceMs }) => (
               <article className="closing-soon-card-shell" key={`upcoming-${market.id}`}>
                 <div className="closing-soon-card-eyebrow upcoming">
                   <Clock3 size={14} />
@@ -227,6 +235,12 @@ export function ClosingSoonPage() {
             ))}
           </div>
         </section>
+      ) : null}
+
+      {showSearchEmptyState ? (
+        <p className="market-page-search-empty" role="status">
+          没有匹配“{searchQuery.trim()}”的命题，换个关键词试试。
+        </p>
       ) : null}
 
       {!isLoading && totalCandidateCount === 0 && !errorMessage ? (

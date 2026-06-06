@@ -78,6 +78,7 @@ import { HOT_PAGE_CONFIG } from '../../mocks/hot-page.mock'
 import { marketCards, navItems } from '../../mocks/arena-market.mock'
 import { DEMO_DISCUSSION_COMMENTS } from '../arena/discussion'
 import { buildDemoIdentity, DEMO_SESSION_TOKEN, DEMO_WALLET_ADDRESS } from './demo-auth'
+import { demoOpsBackend } from './demo-ops-backend'
 
 type DemoState = {
   identity: JwtIdentity
@@ -158,6 +159,10 @@ function plusDays(days: number) {
 
 function minusHours(hours: number) {
   return new Date(Date.parse(DEMO_NOW) - hours * 60 * 60 * 1000).toISOString()
+}
+
+function minusMinutes(minutes: number) {
+  return new Date(Date.parse(DEMO_NOW) - minutes * 60 * 1000).toISOString()
 }
 
 function minusDays(days: number) {
@@ -756,59 +761,299 @@ function buildDemoWatchlist(markets: ValidationMarketViewModel[]): RespondentWat
 }
 
 function buildDemoTasks(markets: ValidationMarketViewModel[]): AdjudicationTaskViewModel[] {
-  const marketA = markets.find((market) => market.marketId === 'public-trust')!
-  const marketB = markets.find((market) => market.marketId === 'ai-model-review')!
-  const marketC = markets.find((market) => market.marketId === 'ceasefire-durability')!
+  const marketIndex = new Map(markets.map((market) => [market.marketId, market]))
+  const toBinaryOptions = (options: string[]): [string, string] => [
+    options[0] ?? 'Option A',
+    options[1] ?? 'Option B',
+  ]
+
+  const requireMarket = (marketId: string) => {
+    const market = marketIndex.get(marketId)
+    if (!market) {
+      throw new Error(`Demo market ${marketId} not found`)
+    }
+
+    return market
+  }
+
+  const buildTask = (task: {
+    taskId: string
+    propositionId: string
+    title: string
+    description: string
+    options: [string, string]
+    propositionStatus: PropositionStatus
+    taskStatus: AdjudicationTaskViewModel['taskStatus']
+    assignedAt: string
+    startedAt: string | null
+    expiresAt: string
+    submittedAt: string | null
+    hasSubmitted: boolean
+    timeRemainingSeconds: number
+    latestResponseStatus: AdjudicationTaskViewModel['latestResponseStatus']
+    rewardStatus: AdjudicationTaskViewModel['rewardStatus']
+    rewardPendingAmount: string | null
+    rewardFinalAmount: string | null
+    publicProgress: PublicProgressViewModel
+  }): AdjudicationTaskViewModel => ({
+    ...task,
+    skipReason: null,
+    expiryReason: null,
+    cooldownUntil: null,
+  })
+
+  const buildMarketTask = (
+    taskId: string,
+    marketId: string,
+    task: Omit<
+      Parameters<typeof buildTask>[0],
+      'taskId' | 'propositionId' | 'title' | 'options' | 'propositionStatus' | 'publicProgress'
+    >,
+  ) => {
+    const market = requireMarket(marketId)
+
+    return buildTask({
+      taskId,
+      propositionId: market.propositionId,
+      title: market.title,
+      options: toBinaryOptions(market.options),
+      propositionStatus: market.publicProgress.status,
+      publicProgress: market.publicProgress,
+      ...task,
+    })
+  }
+
+  const buildSyntheticTask = (task: {
+    taskId: string
+    title: string
+    description: string
+    options: [string, string]
+    currentEffectiveSample: number
+    totalRequired: number
+    progressPercent: number
+    taskStatus: AdjudicationTaskViewModel['taskStatus']
+    assignedAt: string
+    startedAt: string | null
+    expiresAt: string
+    submittedAt: string | null
+    hasSubmitted: boolean
+    timeRemainingSeconds: number
+    latestResponseStatus: AdjudicationTaskViewModel['latestResponseStatus']
+    rewardStatus: AdjudicationTaskViewModel['rewardStatus']
+    rewardPendingAmount: string | null
+    rewardFinalAmount: string | null
+  }) => {
+    const propositionId = `demo-proposition-${task.taskId}`
+
+    return buildTask({
+      taskId: task.taskId,
+      propositionId,
+      title: task.title,
+      description: task.description,
+      options: task.options,
+      propositionStatus: 'live',
+      taskStatus: task.taskStatus,
+      assignedAt: task.assignedAt,
+      startedAt: task.startedAt,
+      expiresAt: task.expiresAt,
+      submittedAt: task.submittedAt,
+      hasSubmitted: task.hasSubmitted,
+      timeRemainingSeconds: task.timeRemainingSeconds,
+      latestResponseStatus: task.latestResponseStatus,
+      rewardStatus: task.rewardStatus,
+      rewardPendingAmount: task.rewardPendingAmount,
+      rewardFinalAmount: task.rewardFinalAmount,
+      publicProgress: buildPublicProgress(
+        propositionId,
+        task.title,
+        'live',
+        task.currentEffectiveSample,
+        task.totalRequired,
+        task.progressPercent,
+        'live',
+      ),
+    })
+  }
 
   return [
-    {
-      taskId: 'demo-task-1',
-      propositionId: marketA.propositionId,
-      title: marketA.title,
+    buildMarketTask('demo-task-1', 'public-trust', {
       description: '请基于公开样本与材料判断哪一侧更接近当前可验证共识。',
-      options: marketA.options,
-      propositionStatus: 'live',
       taskStatus: 'assigned',
+      assignedAt: minusHours(1),
+      startedAt: null,
+      expiresAt: plusHours(8),
+      submittedAt: null,
       hasSubmitted: false,
       timeRemainingSeconds: 8 * 60 * 60,
       latestResponseStatus: null,
       rewardStatus: 'pending',
       rewardPendingAmount: '12',
       rewardFinalAmount: null,
-      publicProgress: marketA.publicProgress,
-    },
-    {
-      taskId: 'demo-task-2',
-      propositionId: marketB.propositionId,
-      title: marketB.title,
+    }),
+    buildMarketTask('demo-task-2', 'ai-model-review', {
       description: '二选一判断当前公开样本更支持哪一边。',
-      options: marketB.options,
-      propositionStatus: 'live',
       taskStatus: 'started',
+      assignedAt: minusHours(2),
+      startedAt: minusMinutes(45),
+      expiresAt: plusHours(15),
+      submittedAt: null,
       hasSubmitted: false,
       timeRemainingSeconds: 15 * 60 * 60,
       latestResponseStatus: 'pending_review',
       rewardStatus: null,
       rewardPendingAmount: '10',
       rewardFinalAmount: null,
-      publicProgress: marketB.publicProgress,
-    },
-    {
-      taskId: 'demo-task-3',
-      propositionId: marketC.propositionId,
-      title: marketC.title,
+    }),
+    buildMarketTask('demo-task-4', 'btc-network-fee', {
+      description: '请根据公开链上迹象判断本月拥堵状态是否仍会持续。',
+      taskStatus: 'assigned',
+      assignedAt: minusHours(3),
+      startedAt: null,
+      expiresAt: plusHours(16),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 16 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: 'pending',
+      rewardPendingAmount: '9',
+      rewardFinalAmount: null,
+    }),
+    buildMarketTask('demo-task-5', 'ceasefire-durability', {
+      description: '围绕停火观察期内的公开证据，判断哪一侧更接近当前共识。',
+      taskStatus: 'started',
+      assignedAt: minusHours(4),
+      startedAt: minusMinutes(90),
+      expiresAt: plusHours(18),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 18 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: null,
+      rewardPendingAmount: '11',
+      rewardFinalAmount: null,
+    }),
+    buildMarketTask('demo-task-6', 'nba-final-consensus', {
+      description: '请基于最新公开样本判断赛前共识更偏向哪一边。',
+      taskStatus: 'assigned',
+      assignedAt: minusHours(5),
+      startedAt: null,
+      expiresAt: plusHours(20),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 20 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: 'pending',
+      rewardPendingAmount: '8',
+      rewardFinalAmount: null,
+    }),
+    buildMarketTask('demo-task-7', 'f1-season-result', {
+      description: '结合赛季公开动态，判断哪一项结果更接近可验证结论。',
+      taskStatus: 'started',
+      assignedAt: minusHours(6),
+      startedAt: minusMinutes(120),
+      expiresAt: plusHours(22),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 22 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: null,
+      rewardPendingAmount: '7',
+      rewardFinalAmount: null,
+    }),
+    buildSyntheticTask({
+      taskId: 'demo-task-8',
+      title: '企业是否会在本季度扩大私有 AI 助手采购预算？',
+      description: '根据公开采购信号与团队反馈，判断预算是否会继续扩大。',
+      options: ['会扩大采购预算', '不会扩大采购预算'],
+      currentEffectiveSample: 292,
+      totalRequired: 520,
+      progressPercent: 56,
+      taskStatus: 'assigned',
+      assignedAt: minusHours(7),
+      startedAt: null,
+      expiresAt: plusHours(24),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 24 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: 'pending',
+      rewardPendingAmount: '9',
+      rewardFinalAmount: null,
+    }),
+    buildSyntheticTask({
+      taskId: 'demo-task-9',
+      title: '城市夜间出行安全感是否会在本月出现可验证改善？',
+      description: '请结合公开样本与事件记录判断改善是否已经形成稳定趋势。',
+      options: ['会出现明显改善', '不会出现明显改善'],
+      currentEffectiveSample: 344,
+      totalRequired: 600,
+      progressPercent: 57,
+      taskStatus: 'started',
+      assignedAt: minusHours(8),
+      startedAt: minusMinutes(150),
+      expiresAt: plusHours(26),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 26 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: null,
+      rewardPendingAmount: '10',
+      rewardFinalAmount: null,
+    }),
+    buildSyntheticTask({
+      taskId: 'demo-task-10',
+      title: '跨境电商卖家是否认为本月物流时效明显修复？',
+      description: '基于公开物流反馈和交付时延样本，判断修复是否已经被验证。',
+      options: ['明显修复', '未明显修复'],
+      currentEffectiveSample: 251,
+      totalRequired: 540,
+      progressPercent: 46,
+      taskStatus: 'assigned',
+      assignedAt: minusHours(9),
+      startedAt: null,
+      expiresAt: plusHours(28),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 28 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: 'pending',
+      rewardPendingAmount: '8',
+      rewardFinalAmount: null,
+    }),
+    buildSyntheticTask({
+      taskId: 'demo-task-11',
+      title: '开发者是否会在未来两周提高对 AI 代码审查代理的使用频率？',
+      description: '请根据公开使用反馈判断代码审查代理是否正进入更高频使用阶段。',
+      options: ['会提高使用频率', '不会提高使用频率'],
+      currentEffectiveSample: 412,
+      totalRequired: 620,
+      progressPercent: 66,
+      taskStatus: 'started',
+      assignedAt: minusHours(10),
+      startedAt: minusMinutes(180),
+      expiresAt: plusHours(30),
+      submittedAt: null,
+      hasSubmitted: false,
+      timeRemainingSeconds: 30 * 60 * 60,
+      latestResponseStatus: null,
+      rewardStatus: null,
+      rewardPendingAmount: '11',
+      rewardFinalAmount: null,
+    }),
+    buildMarketTask('demo-task-3', 'ceasefire-durability', {
       description: '该任务已提交，等待奖励决议。',
-      options: marketC.options,
-      propositionStatus: 'frozen',
       taskStatus: 'submitted',
+      assignedAt: minusHours(6),
+      startedAt: minusHours(5),
+      expiresAt: plusHours(2),
+      submittedAt: minusHours(3),
       hasSubmitted: true,
       timeRemainingSeconds: 2 * 60 * 60,
       latestResponseStatus: 'valid',
       rewardStatus: 'finalized',
       rewardPendingAmount: '0',
       rewardFinalAmount: '16',
-      publicProgress: marketC.publicProgress,
-    },
+    }),
   ]
 }
 
@@ -3556,7 +3801,73 @@ export const demoBackend = {
   listAdjudicationTasks(): AdjudicationTaskViewModel[] {
     return structuredClone(demoState.tasks)
   },
-  submitAdjudicationResponse(taskId: string, selectedOption: 0 | 1): SubmitAdjudicationResponseResult {
+  startAdjudicationTask(
+    taskId: string,
+    body: {
+      startedAt: string
+    },
+  ): AdjudicationTaskViewModel {
+    let nextTask: AdjudicationTaskViewModel | null = null
+
+    demoState.tasks = demoState.tasks.map((task) => {
+      if (task.taskId !== taskId) {
+        return task
+      }
+
+      nextTask = {
+        ...task,
+        taskStatus: 'started',
+        startedAt: body.startedAt,
+      }
+
+      return nextTask
+    })
+
+    if (!nextTask) {
+      throw new Error('Demo adjudication task not found')
+    }
+
+    return structuredClone(nextTask)
+  },
+  skipAdjudicationTask(
+    taskId: string,
+    body: {
+      skippedAt: string
+      skipReason: string
+    },
+  ): AdjudicationTaskViewModel {
+    let nextTask: AdjudicationTaskViewModel | null = null
+
+    demoState.tasks = demoState.tasks.map((task) => {
+      if (task.taskId !== taskId) {
+        return task
+      }
+
+      nextTask = {
+        ...task,
+        taskStatus: 'skipped',
+        timeRemainingSeconds: 0,
+        skipReason: body.skipReason,
+        cooldownUntil: new Date(new Date(body.skippedAt).getTime() + 12 * 60 * 60 * 1000).toISOString(),
+      }
+
+      return nextTask
+    })
+
+    if (!nextTask) {
+      throw new Error('Demo adjudication task not found')
+    }
+
+    return structuredClone(nextTask)
+  },
+  submitAdjudicationResponse(
+    taskId: string,
+    body: {
+      selectedOption: 0 | 1
+      clientStartedAt: string
+      submittedAt: string
+    },
+  ): SubmitAdjudicationResponseResult {
     let nextTask: AdjudicationTaskViewModel | null = null
 
     demoState.tasks = demoState.tasks.map((task) => {
@@ -3568,7 +3879,9 @@ export const demoBackend = {
         ...task,
         hasSubmitted: true,
         taskStatus: 'submitted',
-        latestResponseStatus: selectedOption === 0 ? 'valid' : 'pending_review',
+        startedAt: task.startedAt ?? body.clientStartedAt,
+        submittedAt: body.submittedAt,
+        latestResponseStatus: body.selectedOption === 0 ? 'valid' : 'pending_review',
         rewardStatus: 'pending',
         rewardPendingAmount: task.rewardPendingAmount ?? '10',
       }
@@ -3802,5 +4115,6 @@ export const demoBackend = {
   },
   reset() {
     demoState = createInitialState()
+    demoOpsBackend.reset()
   },
 }

@@ -17,6 +17,7 @@ describe('auth-guarded routes', () => {
   it.each([
     '/zh/adjudication',
     '/zh/challenges',
+    '/zh/activity',
     '/zh/results',
   ])('opens the existing login modal for unauthenticated route %s', async (path) => {
     const { container } = renderApp([path], <LocationProbe />)
@@ -75,6 +76,7 @@ describe('auth-guarded routes', () => {
 
   it.each([
     ['/zh/adjudication', '/zh/help'],
+    ['/zh/activity', '/zh/help'],
     ['/zh/challenges', '/zh/help'],
     ['/zh/results', '/zh/help'],
   ])('returns to the previous route when %s is dismissed after navigating from %s', async (targetPath, sourcePath) => {

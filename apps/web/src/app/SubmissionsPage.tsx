@@ -1,6 +1,6 @@
-import { ChevronDown, ChevronUp, Download, FileClock, LogIn, Pencil, Play, Plus, Search, Trash2, Undo2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronUp, Download, FileClock, LogIn, Pencil, Play, Plus, Search, Trash2, Undo2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { WalletStatusCard } from '../components/shared/WalletStatusCard'
 import {
@@ -803,6 +803,7 @@ function buildEditComparisonDeliveryFormState(
 
 export function SubmissionsPage() {
   const { token, isAuthenticated, sessionMode } = useAuthSession()
+  const navigate = useNavigate()
   const [submissions, setSubmissions] = useState<SubmissionCardRecord[]>([])
   const [overview, setOverview] = useState<RequesterOwnedPropositionOverviewRecord | null>(null)
   const [detailById, setDetailById] = useState<Record<string, RequesterOwnedPropositionDetailRecord>>({})
@@ -967,11 +968,6 @@ export function SubmissionsPage() {
         label: 'Submitted',
         value: String(overview.submissionSummary.submittedCount),
         detail: 'Already handed off into the real requester review queue.',
-      },
-      {
-        label: 'Drafts',
-        value: String(overview.submissionSummary.draftCount),
-        detail: 'Can still be edited, expanded, and submitted again later.',
       },
       {
         label: 'Market-enabled',
@@ -2261,6 +2257,10 @@ export function SubmissionsPage() {
 
   return (
     <section className="route-page utility-page">
+      <button className="page-back-button" type="button" onClick={() => navigate(-1)}>
+        <ChevronLeft size={16} />
+        <span>返回上一页</span>
+      </button>
       <div className="route-header compact">
         <span>Arena</span>
         <h1>已提交命题</h1>

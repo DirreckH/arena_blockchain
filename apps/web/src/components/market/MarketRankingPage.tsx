@@ -59,12 +59,16 @@ interface MarketRankingPageProps {
   config: RankedMarketPageConfig
   showSearch?: boolean
   searchPlaceholder?: string
+  showScoreMetrics?: boolean
+  showTrendSparkline?: boolean
 }
 
 export function MarketRankingPage({
   config,
   showSearch = false,
   searchPlaceholder = '搜索市场标题',
+  showScoreMetrics = true,
+  showTrendSparkline = true,
 }: MarketRankingPageProps) {
   const [activeCategoryId, setActiveCategoryId] = useState<RankedMarketFilterId>(
     config.categories[0]?.id ?? 'all',
@@ -111,36 +115,28 @@ export function MarketRankingPage({
               <span className="breaking-rank">{index + 1}</span>
 
               <div className="breaking-thumbnail-shell">
-                {item.imageSrc ? (
-                  <img className="breaking-thumbnail" src={item.imageSrc} alt={item.imageAlt ?? item.title} />
-                ) : (
-                  <span
-                    className={`breaking-thumbnail breaking-thumbnail-tile ${
-                      item.tileTone === 'f1' ? 'breaking-thumbnail-f1' : 'breaking-thumbnail-neutral'
-                    }`}
-                    aria-hidden="true"
-                  >
-                    {item.tileLabel}
-                  </span>
-                )}
-                {item.isVerified ? <span className="breaking-verified-marker" aria-hidden="true" /> : null}
+                <span className="breaking-thumbnail market-media-placeholder" aria-hidden="true" />
               </div>
 
               <div className="breaking-row-copy">
                 <h2>{item.title}</h2>
 
-                <div className="breaking-row-metrics">
-                  <strong>{item.score}</strong>
-                  <span className={item.change >= 0 ? 'positive' : 'negative'}>
-                    <span aria-hidden="true">{item.change >= 0 ? '↗' : '↘'}</span>
-                    {formatChange(item.change)}
-                  </span>
-                </div>
+                {showScoreMetrics ? (
+                  <div className="breaking-row-metrics">
+                    <strong>{item.score}</strong>
+                    <span className={item.change >= 0 ? 'positive' : 'negative'}>
+                      <span aria-hidden="true">{item.change >= 0 ? '↗' : '↘'}</span>
+                      {formatChange(item.change)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
 
-              <div className="breaking-row-trend">
-                <RankingSparkline points={item.sparkline} />
-              </div>
+              {showTrendSparkline ? (
+                <div className="breaking-row-trend">
+                  <RankingSparkline points={item.sparkline} />
+                </div>
+              ) : null}
 
               <span className="breaking-row-arrow" aria-hidden="true">
                 <ChevronRight size={22} />

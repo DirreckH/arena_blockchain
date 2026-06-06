@@ -2,6 +2,7 @@ import { ChevronRight, Globe2, Info, Menu } from 'lucide-react'
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { NavLink } from 'react-router-dom'
+import { hasAnySystemRole, SystemRole } from '@arena/shared'
 import { useAuthSession } from '../../features/auth/auth-session'
 import { ARENA_LOGO_SRC, productNavItems } from '../../features/app-shell/navigation-contract'
 import { computeAnchoredDropdownLayout } from '../shared/anchored-dropdown-position'
@@ -26,7 +27,9 @@ const MORE_DROPDOWN_VIEWPORT_PADDING = 12
 
 export function TopNavigation() {
   const { isAuthenticated, user, openAuthModal, openRulesIntro } = useRulesIntro()
-  const { sessionMode } = useAuthSession()
+  const { sessionMode, identity } = useAuthSession()
+  const isOperator = identity != null &&
+    hasAnySystemRole(identity.roles, [SystemRole.Operator, SystemRole.Admin, SystemRole.System])
   const desktopMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const mobileMenuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const moreChipRef = useRef<HTMLButtonElement | null>(null)
@@ -125,6 +128,15 @@ export function TopNavigation() {
         </nav>
 
         <div className="account-actions">
+          {isOperator && (
+            <NavLink
+              className={({ isActive }) => `nav-chip${isActive ? ' active' : ''}`}
+              to="/zh/ops"
+              aria-label="运营控制台"
+            >
+              运营
+            </NavLink>
+          )}
           {isAuthenticated ? (
             <NavLink
               className="account-button"

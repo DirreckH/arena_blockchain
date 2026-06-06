@@ -1,4 +1,4 @@
-import { AlertTriangle, FolderOpen, Search, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, FolderOpen, Search, Trash2, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -250,6 +250,10 @@ export function DraftsPage() {
 
   return (
     <section className="route-page drafts-page">
+      <button className="page-back-button" type="button" onClick={() => navigate(-1)}>
+        <ChevronLeft size={16} />
+        <span>返回上一页</span>
+      </button>
       <section className="drafts-workspace">
         <div className="drafts-list-panel">
           <div className="drafts-panel-head">

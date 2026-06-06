@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ops-mobile": "vitest run src/app/OpsConsolePage.test.tsx -t \"keeps core ops workspaces usable at a mobile viewport width\""
   },
   "dependencies": {
     "@arena/shared": "workspace:*",

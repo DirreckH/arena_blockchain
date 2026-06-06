@@ -41,14 +41,18 @@ import type {
   PublicRespondentLeaderboardViewModel,
   PublicSettledResultsViewModel,
   PublicProgressSnapshot,
+  QueueFailedJobRequeueResultSnapshot,
+  QueueOverviewSnapshot,
   RespondentAccountOverviewViewModel,
   RespondentAccountPreferencesViewModel,
   RespondentAccountExportArtifactViewModel,
   RespondentAccountExportListViewModel,
+  RespondentReputationInternalViewModel,
   RespondentReputationSummaryViewModel,
   RespondentResultOverviewViewModel,
   RespondentResultListViewModel,
   RespondentRewardLedgerViewModel,
+  RespondentTagInternalViewModel,
   RespondentTagSummaryViewModel,
   RespondentWatchlistViewModel,
   SubmitAdjudicationResponseResult,
@@ -58,8 +62,35 @@ import type {
 } from '@arena/shared'
 import { demoBackend } from '../demo/demo-backend'
 import { DEMO_SESSION_TOKEN, isDemoToken, isDemoWalletAddress } from '../demo/demo-auth'
+import { demoOpsBackend } from '../demo/demo-ops-backend'
 import { toPublicValidationMarket } from '../validation/validation-market-adapter'
 import type { PublicValidationMarketCard } from '../validation/validation-market.types'
+import type {
+  BackendRuntimeContractViewModel,
+  InternalAuditEventListPageViewModel,
+  InternalPropositionListPageViewModel,
+  InternalResponseReviewQueuePageViewModel,
+  InternalRewardAuditListPageViewModel,
+  OpsAuditFilters,
+  OpsDispatchPreviewViewModel,
+  OpsDispatchTaskViewModel,
+  InternalPropositionDetailViewModel,
+  InternalPropositionEvidenceBundleViewModel,
+  InternalResponseReviewDetailViewModel,
+  InternalRewardAuditDetailViewModel,
+  OpsPropositionFilters,
+  OpsResponseQueueFilters,
+  OpsRewardFilters,
+  OpsValidationChainPropositionCommand,
+  PropositionValidationRehearsalCheckpointViewModel,
+  QualityAnomalyMonitoringItemViewModel,
+  ResponseReviewWorkflowViewModel,
+  SampleShortageMonitoringItemViewModel,
+  ValidationChainCommandResultViewModel,
+  ValidationChainMonitoringViewModel,
+  ValidationChainRuntimeReadinessViewModel,
+  ValidationLifecycleDriftMonitoringItemViewModel,
+} from '../arena/internal-ops.types'
 
 export type ArenaApiErrorPayload = {
   statusCode?: number
@@ -267,6 +298,16 @@ async function requestWithDemoFallback<T>(request: () => Promise<T>, demoFallbac
 
 function maybeUseDemoToken(token?: string | null) {
   return isDemoToken(token) ? DEMO_SESSION_TOKEN : null
+}
+
+function withDemoOperatorToken<T>(
+  token: string,
+  demoLoader: () => T | Promise<T>,
+  liveLoader: () => Promise<T>,
+) {
+  return maybeUseDemoToken(token)
+    ? Promise.resolve(demoLoader())
+    : liveLoader()
 }
 
 export const arenaApi = {
@@ -1015,6 +1056,39 @@ export const arenaApi = {
   getAdjudicationTask(taskId: string, token: string) {
     return requestJson<AdjudicationTaskViewModel>(`/arena/adjudication/tasks/${taskId}`, { token })
   },
+  startAdjudicationTask(
+    taskId: string,
+    body: {
+      startedAt: string
+    },
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.startAdjudicationTask(taskId, body))
+    }
+    return requestJson<AdjudicationTaskViewModel>(`/arena/adjudication/tasks/${taskId}/start`, {
+      method: 'POST',
+      body,
+      token,
+    })
+  },
+  skipAdjudicationTask(
+    taskId: string,
+    body: {
+      skippedAt: string
+      skipReason: string
+    },
+    token: string,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.skipAdjudicationTask(taskId, body))
+    }
+    return requestJson<AdjudicationTaskViewModel>(`/arena/adjudication/tasks/${taskId}/skip`, {
+      method: 'POST',
+      body,
+      token,
+    })
+  },
   submitAdjudicationResponse(
     taskId: string,
     body: {
@@ -1029,7 +1103,7 @@ export const arenaApi = {
     token: string,
   ) {
     if (maybeUseDemoToken(token)) {
-      return Promise.resolve(demoBackend.submitAdjudicationResponse(taskId, body.selectedOption))
+      return Promise.resolve(demoBackend.submitAdjudicationResponse(taskId, body))
     }
     return requestJson<SubmitAdjudicationResponseResult>(
       `/arena/adjudication/tasks/${taskId}/responses`,
@@ -1141,5 +1215,639 @@ export const arenaApi = {
       return Promise.resolve(demoBackend.getAccountOverview().tags)
     }
     return requestJson<RespondentTagSummaryViewModel>('/arena/adjudication/tags', { token })
+  },
+
+  // --- Operator console (internal). Demo operator sessions use a local
+  // mutable fixture backend so the ops workspace remains verifiable even when
+  // no live operator API is available on localhost. ---
+
+  getOpsReviewQueue(
+    token: string,
+    filters?: OpsPropositionFilters,
+  ) {
+    const params = new URLSearchParams()
+    if (filters?.category) {
+      params.set('category', filters.category)
+    }
+    if (filters?.marketEnabled !== undefined) {
+      params.set('marketEnabled', String(filters.marketEnabled))
+    }
+    if (filters?.search) {
+      params.set('search', filters.search)
+    }
+    if (filters?.sortBy) {
+      params.set('sortBy', filters.sortBy)
+    }
+    if (filters?.sortDirection) {
+      params.set('sortDirection', filters.sortDirection)
+    }
+    if (typeof filters?.limit === 'number') {
+      params.set('limit', String(filters.limit))
+    }
+    if (typeof filters?.offset === 'number') {
+      params.set('offset', String(filters.offset))
+    }
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsReviewQueue(filters),
+      () => requestJson<InternalPropositionListPageViewModel>(
+        `/arena/internal/propositions/review-queue${params.size > 0 ? `?${params.toString()}` : ''}`,
+        { token },
+      ),
+    )
+  },
+  getOpsPropositions(
+    token: string,
+    filters?: OpsPropositionFilters,
+  ) {
+    const params = new URLSearchParams()
+    if (filters?.status) {
+      params.set('status', filters.status)
+    }
+    if (filters?.category) {
+      params.set('category', filters.category)
+    }
+    if (filters?.marketEnabled !== undefined) {
+      params.set('marketEnabled', String(filters.marketEnabled))
+    }
+    if (filters?.search) {
+      params.set('search', filters.search)
+    }
+    if (filters?.sortBy) {
+      params.set('sortBy', filters.sortBy)
+    }
+    if (filters?.sortDirection) {
+      params.set('sortDirection', filters.sortDirection)
+    }
+    if (typeof filters?.limit === 'number') {
+      params.set('limit', String(filters.limit))
+    }
+    if (typeof filters?.offset === 'number') {
+      params.set('offset', String(filters.offset))
+    }
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsPropositions(filters),
+      () => requestJson<InternalPropositionListPageViewModel>(
+        `/arena/internal/propositions${params.size > 0 ? `?${params.toString()}` : ''}`,
+        { token },
+      ),
+    )
+  },
+  getOpsProposition(propositionId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsProposition(propositionId),
+      () => requestJson<InternalPropositionDetailViewModel>(
+        `/arena/internal/propositions/${propositionId}`,
+        { token },
+      ),
+    )
+  },
+  previewOpsDispatchCandidates(
+    propositionId: string,
+    body: {
+      userIds: string[]
+      assignedAt: string
+      maxAssignments?: number
+    },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.previewOpsDispatchCandidates(propositionId, body),
+      () => requestJson<OpsDispatchPreviewViewModel>(
+        `/arena/internal/propositions/${propositionId}/dispatch-preview`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  createOpsDispatchTasks(
+    propositionId: string,
+    body: {
+      userIds: string[]
+      assignedAt: string
+      expiresAt: string
+      maxAssignments?: number
+    },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.createOpsDispatchTasks(propositionId, body),
+      () => requestJson<OpsDispatchTaskViewModel[]>(
+        `/arena/internal/propositions/${propositionId}/dispatch`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  getOpsPropositionRehearsalCheckpoints(propositionId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsPropositionRehearsalCheckpoints(propositionId),
+      () => requestJson<PropositionValidationRehearsalCheckpointViewModel[]>(
+        `/arena/internal/propositions/${propositionId}/rehearsal-checkpoints`,
+        { token },
+      ),
+    )
+  },
+  recordOpsRehearsalCheckpoint(
+    propositionId: string,
+    body: {
+      stepId: string
+      reason: string
+      status?: string
+      note?: string
+      evidence?: string[]
+      txHash?: string
+      blockNumber?: number
+    },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.recordOpsRehearsalCheckpoint(propositionId, body),
+      () => requestJson<PropositionValidationRehearsalCheckpointViewModel>(
+        `/arena/internal/validation-chain/propositions/${propositionId}/rehearsal-checkpoints`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  getOpsRespondentReputation(userId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsRespondentReputation(userId),
+      () => requestJson<RespondentReputationInternalViewModel>(
+        `/arena/internal/respondents/${userId}/reputation`,
+        { token },
+      ),
+    )
+  },
+  getOpsRespondentTags(userId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsRespondentTags(userId),
+      () => requestJson<RespondentTagInternalViewModel>(
+        `/arena/internal/respondents/${userId}/tags`,
+        { token },
+      ),
+    )
+  },
+  getOpsAuditEvents(token: string, filters?: OpsAuditFilters) {
+    const params = new URLSearchParams()
+    if (filters?.entityType) {
+      params.set('entityType', filters.entityType)
+    }
+    if (filters?.entityId) {
+      params.set('entityId', filters.entityId)
+    }
+    if (filters?.actorUserId) {
+      params.set('actorUserId', filters.actorUserId)
+    }
+    if (filters?.action) {
+      params.set('action', filters.action)
+    }
+    if (filters?.search) {
+      params.set('search', filters.search)
+    }
+    if (filters?.sortDirection) {
+      params.set('sortDirection', filters.sortDirection)
+    }
+    if (typeof filters?.limit === 'number') {
+      params.set('limit', String(filters.limit))
+    }
+    if (typeof filters?.offset === 'number') {
+      params.set('offset', String(filters.offset))
+    }
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsAuditEvents(filters),
+      () => requestJson<InternalAuditEventListPageViewModel>(
+        `/arena/internal/audit-events${params.size > 0 ? `?${params.toString()}` : ''}`,
+        { token },
+      ),
+    )
+  },
+  getOpsPropositionExport(propositionId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsPropositionExport(propositionId),
+      () => requestJson<InternalPropositionDetailViewModel & { exportedAt: string }>(
+        `/arena/internal/propositions/${propositionId}/export`,
+        { token },
+      ),
+    )
+  },
+  getOpsPropositionEvidenceBundle(propositionId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsPropositionEvidenceBundle(propositionId),
+      () => requestJson<InternalPropositionEvidenceBundleViewModel>(
+        `/arena/internal/propositions/${propositionId}/evidence-bundle`,
+        { token },
+      ),
+    )
+  },
+  getOpsSampleShortage(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsSampleShortage(),
+      () => requestJson<SampleShortageMonitoringItemViewModel[]>(
+        '/arena/internal/monitoring/sample-shortage',
+        { token },
+      ),
+    )
+  },
+  getOpsAnomalies(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsAnomalies(),
+      () => requestJson<QualityAnomalyMonitoringItemViewModel[]>(
+        '/arena/internal/monitoring/anomalies',
+        { token },
+      ),
+    )
+  },
+  getOpsLifecycleDrift(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsLifecycleDrift(),
+      () => requestJson<ValidationLifecycleDriftMonitoringItemViewModel[]>(
+        '/arena/internal/monitoring/validation-lifecycle-drift',
+        { token },
+      ),
+    )
+  },
+  getOpsValidationChainHealth(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsValidationChainHealth(),
+      () => requestJson<ValidationChainMonitoringViewModel | null>(
+        '/arena/internal/monitoring/validation-chain',
+        { token },
+      ),
+    )
+  },
+  getOpsValidationChainRuntimeReadiness(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsValidationChainRuntimeReadiness(),
+      () => requestJson<ValidationChainRuntimeReadinessViewModel>(
+        '/arena/internal/monitoring/validation-chain/runtime-readiness',
+        { token },
+      ),
+    )
+  },
+  getOpsRuntimeContract(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsRuntimeContract(),
+      () => requestJson<BackendRuntimeContractViewModel>(
+        '/arena/internal/monitoring/runtime-contract',
+        { token },
+      ),
+    )
+  },
+  getOpsQueueOverview(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsQueueOverview(),
+      () => requestJson<QueueOverviewSnapshot>('/system/queues/overview', { token }),
+    )
+  },
+  requeueFailedOpsQueue(queueName: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.requeueFailedOpsQueue(queueName),
+      () => requestJson<QueueFailedJobRequeueResultSnapshot>(`/system/queues/${encodeURIComponent(queueName)}/requeue-failed`, {
+        method: 'POST',
+        token,
+      }),
+    )
+  },
+  approveOpsProposition(
+    propositionId: string,
+    body: { publishedAt: string; reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.approveOpsProposition(propositionId, body),
+      () => requestJson<InternalPropositionDetailViewModel>(
+        `/arena/internal/propositions/${propositionId}/approve`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  rejectOpsProposition(
+    propositionId: string,
+    body: { reason: string; rejectedAt?: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.rejectOpsProposition(propositionId, body),
+      () => requestJson<InternalPropositionDetailViewModel>(
+        `/arena/internal/propositions/${propositionId}/reject`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  emergencyFreezeOpsProposition(
+    propositionId: string,
+    body: { frozenAt: string; reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.emergencyFreezeOpsProposition(propositionId, body),
+      () => requestJson<InternalPropositionDetailViewModel>(
+        `/arena/internal/propositions/${propositionId}/emergency-freeze`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  getOpsResponseReviewState(responseId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsResponseReviewState(responseId),
+      () => requestJson<ResponseReviewWorkflowViewModel>(
+        `/arena/internal/responses/${responseId}/review-state`,
+        { token },
+      ),
+    )
+  },
+  getOpsResponseQueue(token: string, filters?: OpsResponseQueueFilters) {
+    const params = new URLSearchParams()
+    if (filters?.workflowState) {
+      params.set('workflowState', filters.workflowState)
+    }
+    if (filters?.propositionId) {
+      params.set('propositionId', filters.propositionId)
+    }
+    if (filters?.claimStaleOnly) {
+      params.set('claimStaleOnly', 'true')
+    }
+    if (filters?.claimedByUserId) {
+      params.set('claimedByUserId', filters.claimedByUserId)
+    }
+    if (filters?.reviewStatus) {
+      params.set('reviewStatus', filters.reviewStatus)
+    }
+    if (filters?.search) {
+      params.set('search', filters.search)
+    }
+    if (filters?.sortBy) {
+      params.set('sortBy', filters.sortBy)
+    }
+    if (filters?.sortDirection) {
+      params.set('sortDirection', filters.sortDirection)
+    }
+    if (typeof filters?.limit === 'number') {
+      params.set('limit', String(filters.limit))
+    }
+    if (typeof filters?.offset === 'number') {
+      params.set('offset', String(filters.offset))
+    }
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsResponseQueue(filters),
+      () => requestJson<InternalResponseReviewQueuePageViewModel>(
+        `/arena/internal/responses${params.size > 0 ? `?${params.toString()}` : ''}`,
+        { token },
+      ),
+    )
+  },
+  getOpsResponseDetail(responseId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsResponseDetail(responseId),
+      () => requestJson<InternalResponseReviewDetailViewModel>(
+        `/arena/internal/responses/${responseId}`,
+        { token },
+      ),
+    )
+  },
+  claimOpsResponseReview(
+    responseId: string,
+    body: { claimedAt: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.claimOpsResponseReview(responseId, body),
+      () => requestJson<ResponseReviewWorkflowViewModel>(
+        `/arena/internal/responses/${responseId}/claim`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  releaseOpsResponseReview(
+    responseId: string,
+    body: { releasedAt: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.releaseOpsResponseReview(responseId, body),
+      () => requestJson<ResponseReviewWorkflowViewModel>(
+        `/arena/internal/responses/${responseId}/release`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  reviewOpsResponse(
+    responseId: string,
+    body: { reviewedAt: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.reviewOpsResponse(responseId, body),
+      () => requestJson<ResponseReviewWorkflowViewModel>(
+        `/arena/internal/responses/${responseId}/review`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  getOpsRewards(token: string, filters?: OpsRewardFilters) {
+    const params = new URLSearchParams()
+    if (filters?.propositionId) {
+      params.set('propositionId', filters.propositionId)
+    }
+    if (filters?.userId) {
+      params.set('userId', filters.userId)
+    }
+    if (filters?.responseId) {
+      params.set('responseId', filters.responseId)
+    }
+    if (filters?.status) {
+      params.set('status', filters.status)
+    }
+    if (filters?.sourceType) {
+      params.set('sourceType', filters.sourceType)
+    }
+    if (filters?.search) {
+      params.set('search', filters.search)
+    }
+    if (filters?.sortBy) {
+      params.set('sortBy', filters.sortBy)
+    }
+    if (filters?.sortDirection) {
+      params.set('sortDirection', filters.sortDirection)
+    }
+    if (typeof filters?.limit === 'number') {
+      params.set('limit', String(filters.limit))
+    }
+    if (typeof filters?.offset === 'number') {
+      params.set('offset', String(filters.offset))
+    }
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsRewards(filters),
+      () => requestJson<InternalRewardAuditListPageViewModel>(
+        `/arena/internal/rewards${params.size > 0 ? `?${params.toString()}` : ''}`,
+        { token },
+      ),
+    )
+  },
+  getOpsRewardDetail(ledgerId: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getOpsRewardDetail(ledgerId),
+      () => requestJson<InternalRewardAuditDetailViewModel>(
+        `/arena/internal/rewards/${ledgerId}`,
+        { token },
+      ),
+    )
+  },
+  retriggerOpsRewardResolution(
+    ledgerId: string,
+    body: { resolvedAt: string; reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.retriggerOpsRewardResolution(ledgerId, body),
+      () => requestJson<InternalRewardAuditDetailViewModel>(
+        `/arena/internal/rewards/${ledgerId}/retrigger-review-resolution`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  runOpsValidationChainPropositionCommand(
+    kind: OpsValidationChainPropositionCommand,
+    propositionId: string,
+    body: { reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.runOpsValidationChainPropositionCommand(kind, propositionId, body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        `/arena/internal/validation-chain/propositions/${propositionId}/${kind}`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  cancelOpsValidationChainMarket(
+    propositionId: string,
+    body: { reason: string; reasonCode: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.cancelOpsValidationChainMarket(propositionId, body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        `/arena/internal/validation-chain/propositions/${propositionId}/cancel-market`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  recoverOpsValidationChainCommand(
+    propositionId: string,
+    body: { reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.recoverOpsValidationChainCommand(propositionId, body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        `/arena/internal/validation-chain/propositions/${propositionId}/recover-command`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  syncOpsValidationChain(body: { reason: string; note?: string }, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.syncOpsValidationChain(body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        '/arena/internal/validation-chain/sync',
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  reconcileOpsValidationChainBacklog(
+    body: { reason: string; note?: string; limit?: number },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.reconcileOpsValidationChainBacklog(body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        '/arena/internal/validation-chain/backlog/reconcile',
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  replayOpsValidationChainProjection(
+    marketId: string,
+    body: { reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.replayOpsValidationChainProjection(marketId, body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        `/arena/internal/validation-chain/markets/${marketId}/replay-projection`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  reconcileOpsValidationChainBet(
+    marketId: string,
+    userId: string,
+    body: { reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.reconcileOpsValidationChainBet(marketId, userId, body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        `/arena/internal/validation-chain/markets/${marketId}/bets/${userId}/reconcile`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  pauseOpsValidationChain(body: { reason: string; note?: string }, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.pauseOpsValidationChain(body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        '/arena/internal/validation-chain/pause',
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  unpauseOpsValidationChain(body: { reason: string; note?: string }, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.unpauseOpsValidationChain(body),
+      () => requestJson<ValidationChainCommandResultViewModel>(
+        '/arena/internal/validation-chain/unpause',
+        { method: 'POST', body, token },
+      ),
+    )
   },
 }

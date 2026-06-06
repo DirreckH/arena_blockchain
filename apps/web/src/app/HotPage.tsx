@@ -51,6 +51,8 @@ export function HotPage() {
         config={toRankedMarketPageConfig(hot)}
         showSearch
         searchPlaceholder="搜索市场标题"
+        showScoreMetrics={false}
+        showTrendSparkline={false}
       />
     </>
   )

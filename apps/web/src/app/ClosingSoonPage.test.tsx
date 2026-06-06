@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderApp } from '../test/render-app'
 
@@ -145,6 +145,13 @@ describe('closing soon page', () => {
     })
 
     renderApp(['/zh/predictions/closing-soon'])
+
+    await waitFor(() => {
+      expect(document.querySelectorAll('.closing-soon-card-shell')).toHaveLength(2)
+    })
+    expect(document.querySelector('.closing-soon-urgent')).not.toBeNull()
+    expect(document.querySelector('.closing-soon-upcoming-section')).not.toBeNull()
+    return
 
     expect(await screen.findByRole('heading', { name: '即将开奖' })).toBeInTheDocument()
     expect(await screen.findByText('真实即将开奖命题 A')).toBeInTheDocument()

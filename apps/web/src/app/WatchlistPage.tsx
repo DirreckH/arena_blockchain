@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { EyeOff, LogIn, Search } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { MarketCardView } from '../components/market/MarketCardView'
+import { MarketSearchBar } from '../components/market/MarketSearchBar'
+import { FilterStrip } from '../components/navigation/FilterStrip'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { WalletStatusCard } from '../components/shared/WalletStatusCard'
 import { useRulesIntro } from '../components/shared/RulesIntroContext'
@@ -22,6 +25,7 @@ export function WatchlistPage() {
     saveMarket,
     removeMarket,
   } = useWatchlistData()
+  const [searchQuery, setSearchQuery] = useState('')
 
   const params = new URLSearchParams(location.search)
   const requestedMarketId = params.get('market')
@@ -31,6 +35,21 @@ export function WatchlistPage() {
   const hiddenWatchlistItems = watchlistItems.filter(
     (item) => !visibleMarkets.some((market) => market.id === item.marketId),
   )
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase()
+  const filteredVisibleMarkets = normalizedSearchQuery.length === 0
+    ? visibleMarkets
+    : visibleMarkets.filter((market) => {
+      const searchableText = [market.title, formatCategoryLabel(market.category)].join(' ').toLowerCase()
+
+      return searchableText.includes(normalizedSearchQuery)
+    })
+  const filteredHiddenWatchlistItems = normalizedSearchQuery.length === 0
+    ? hiddenWatchlistItems
+    : hiddenWatchlistItems.filter((item) => {
+      const searchableText = [item.propositionTitle, formatCategoryLabel(item.category)].join(' ').toLowerCase()
+
+      return searchableText.includes(normalizedSearchQuery)
+    })
 
   const selectedMarketMeta = requestedMarketId
     ? markets.find((market) => market.id === requestedMarketId) ?? null
@@ -53,17 +72,31 @@ export function WatchlistPage() {
   const showHiddenState = isAuthenticated
     && !isLoading
     && !errorMessage
-    && hiddenWatchlistItems.length > 0
+    && filteredHiddenWatchlistItems.length > 0
+  const showSearchEmptyState = isAuthenticated
+    && !isLoading
+    && !errorMessage
+    && normalizedSearchQuery.length > 0
+    && (visibleMarkets.length > 0 || hiddenWatchlistItems.length > 0)
+    && filteredVisibleMarkets.length === 0
+    && filteredHiddenWatchlistItems.length === 0
 
   return (
     <section className="route-page utility-page">
+      <DataSourceBadge mode={sourceMode} />
+      <FilterStrip className="market-category-strip" dividerBeforeHref="/zh/politics" />
+
       <div className="route-header compact">
-        <h1>收藏命题</h1>
+        <h1>我的收藏</h1>
       </div>
 
-      <div className="utility-stack">
-        <DataSourceBadge mode={sourceMode} />
+      <MarketSearchBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        placeholder="搜索收藏命题"
+      />
 
+      <div className="utility-stack">
         {requestedMarketId && isAuthenticated ? (
           <section className="account-menu-panel watchlist-inline-action">
             <div className="account-menu-panel-head">
@@ -173,7 +206,7 @@ export function WatchlistPage() {
             </div>
 
             <div className="rewards-ledger-list">
-              {hiddenWatchlistItems.map((item) => (
+              {filteredHiddenWatchlistItems.map((item) => (
                 <article
                   className="rewards-ledger-item"
                   key={item.marketId}
@@ -202,10 +235,16 @@ export function WatchlistPage() {
           </section>
         ) : null}
 
-        {isAuthenticated && visibleMarkets.length > 0 ? (
+        {showSearchEmptyState ? (
+          <p className="market-page-search-empty" role="status">
+            没有匹配“{searchQuery.trim()}”的收藏命题，换个关键词试试。
+          </p>
+        ) : null}
+
+        {isAuthenticated && filteredVisibleMarkets.length > 0 ? (
           <>
             <div className="market-grid route-grid">
-              {visibleMarkets.map((market) => (
+              {filteredVisibleMarkets.map((market) => (
                 <MarketCardView market={market} key={`watchlist-${market.id}`} />
               ))}
             </div>

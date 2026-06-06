@@ -11,6 +11,7 @@ import { useAuthSession } from '../features/auth/auth-session'
 
 const DISCOVER_PREVIEW_LIMIT = 4
 const DISCOVER_DEFAULT_HREF = '/zh'
+const DISCOVER_HERO_PAGER_SLOT_COUNT = 10
 
 export function HomePage() {
   const [activeSectionHref, setActiveSectionHref] = useState(DISCOVER_DEFAULT_HREF)
@@ -32,17 +33,28 @@ export function HomePage() {
   const sections = home?.sections ?? []
   const activeSection = sections.find((section) => section.href === activeSectionHref) ?? sections[0] ?? null
   const featuredPager = heroMarkets.length > 1 ? (
-    <div className="discover-hero-pager" aria-label="Featured discover card pagination">
-      {heroMarkets.map((market, index) => (
-        <button
-          type="button"
-          key={market.id}
-          className={index === featuredIndex ? 'discover-hero-dot active' : 'discover-hero-dot'}
-          aria-label={`切换精选命题 ${index + 1}：${market.title}`}
-          aria-pressed={index === featuredIndex}
-          onClick={() => setActiveFeaturedIndex(index)}
-        />
-      ))}
+    <div className="discover-hero-pager" aria-label="精选命题翻页">
+      {Array.from({ length: DISCOVER_HERO_PAGER_SLOT_COUNT }, (_, index) => {
+        const market = heroMarkets[index]
+        const isActive = index === featuredIndex
+        const isAvailable = market !== undefined
+
+        return (
+          <button
+            type="button"
+            key={market?.id ?? `discover-hero-slot-${index + 1}`}
+            className={isActive ? 'discover-hero-dot active' : 'discover-hero-dot'}
+            aria-label={market ? `精选命题第 ${index + 1} 页：${market.title}` : `精选命题第 ${index + 1} 页`}
+            aria-pressed={isActive}
+            disabled={!isAvailable}
+            onClick={() => {
+              if (isAvailable) {
+                setActiveFeaturedIndex(index)
+              }
+            }}
+          />
+        )
+      })}
     </div>
   ) : null
   const previewMarkets = useMemo(

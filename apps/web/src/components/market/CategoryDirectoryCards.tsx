@@ -30,11 +30,7 @@ export function CategoryFeaturedMarketCard({ market }: { market: PublicValidatio
         </div>
 
         <div className="category-featured-media">
-          {market.imageSrc ? (
-            <img src={market.imageSrc} alt={`${market.title} cover`} />
-          ) : (
-            <div className="category-featured-placeholder" />
-          )}
+          <div className="category-featured-placeholder market-media-placeholder" aria-hidden="true" />
         </div>
       </Link>
 
@@ -69,14 +65,10 @@ export function CategoryCompactMarketCard({ market }: { market: PublicValidation
   const effectiveSample = effectiveSampleLabel(market)
 
   return (
-    <article className={`category-card category-compact-card${market.imageSrc ? '' : ' category-compact-card-no-media'}`}>
+    <article className="category-card category-compact-card">
       <div className="category-compact-top">
         <Link className="category-compact-media" to={href} aria-label={`${market.title} details`}>
-          {market.imageSrc ? (
-            <img src={market.imageSrc} alt={`${market.title} cover`} />
-          ) : (
-            <div className="category-compact-media-placeholder" aria-hidden="true" />
-          )}
+          <div className="category-compact-media-placeholder market-media-placeholder" aria-hidden="true" />
         </Link>
 
         <div className="category-compact-title-shell">

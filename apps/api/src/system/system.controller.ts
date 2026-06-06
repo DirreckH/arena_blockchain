@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Req } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
 
 import {
   SystemRole,
   type ChainSnapshot,
   type EnqueuedJobSnapshot,
+  type QueueFailedJobRequeueResultSnapshot,
   type QueueOverviewSnapshot,
 } from "@arena/shared";
 
@@ -57,6 +58,14 @@ export class SystemController {
   @Get("queues/overview")
   getQueueOverview(): Promise<QueueOverviewSnapshot> {
     return this.queueService.getQueueOverview();
+  }
+
+  @Roles(SystemRole.Admin, SystemRole.System)
+  @Post("queues/:queueName/requeue-failed")
+  requeueFailedJobs(
+    @Param("queueName") queueName: string,
+  ): Promise<QueueFailedJobRequeueResultSnapshot> {
+    return this.queueService.requeueFailedJobs(queueName);
   }
 
   @Roles(SystemRole.Admin, SystemRole.System)

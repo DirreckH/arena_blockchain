@@ -1,5 +1,14 @@
-import { Body, Controller, Param, Post, Req } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+  Res,
+} from "@nestjs/common";
 import { SystemRole } from "@arena/shared";
+import type { Response } from "express";
 
 import { Roles } from "../common/decorators/roles.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
@@ -9,6 +18,7 @@ import { InternalValidationChainCommandDto } from "./dto/internal-validation-cha
 import { InternalValidationChainPauseDto } from "./dto/internal-validation-chain-pause.dto";
 import { InternalValidationRehearsalCheckpointDto } from "./dto/internal-validation-rehearsal-checkpoint.dto";
 import type { PropositionValidationRehearsalStepId } from "./internal-ops.types";
+import type { ValidationChainBetReconciliationBatchViewModel } from "./internal-ops.types";
 import type { ValidationChainBetReconciliationViewModel } from "./internal-ops.types";
 import type { ValidationChainProjectionReplayViewModel } from "./internal-ops.types";
 import type { ValidationChainCommandResult } from "./validation-chain/validation-chain.types";
@@ -82,7 +92,7 @@ export class ArenaInternalValidationChainController {
     );
   }
 
-  @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
+  @Roles(SystemRole.Admin, SystemRole.System)
   @Post("propositions/:propositionId/freeze-market")
   freezeMarket(
     @Param("propositionId") propositionId: string,
@@ -106,7 +116,7 @@ export class ArenaInternalValidationChainController {
     );
   }
 
-  @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
+  @Roles(SystemRole.Admin, SystemRole.System)
   @Post("propositions/:propositionId/resolve-market")
   resolveMarket(
     @Param("propositionId") propositionId: string,
@@ -130,7 +140,7 @@ export class ArenaInternalValidationChainController {
     );
   }
 
-  @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
+  @Roles(SystemRole.Admin, SystemRole.System)
   @Post("propositions/:propositionId/cancel-market")
   cancelMarket(
     @Param("propositionId") propositionId: string,
@@ -187,17 +197,22 @@ export class ArenaInternalValidationChainController {
 
   @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
   @Post("propositions/:propositionId/recover-command")
-  recoverValidationChainCommands(
+  async recoverValidationChainCommands(
     @Param("propositionId") propositionId: string,
     @Body() body: InternalValidationChainCommandDto,
     @Req() request: RequestWithUser,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.commandRecovery.recoverQueuedCommands({
+    const result = await this.commandRecovery.recoverQueuedCommands({
       propositionId,
       actorUserId: request.user?.sub,
       reason: body.reason,
       note: body.note,
     });
+
+    response.status(this.resolveRecoveryStatusCode(result.requestStatus));
+
+    return result;
   }
 
   @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
@@ -211,7 +226,13 @@ export class ArenaInternalValidationChainController {
       reason: body.reason,
       note: body.note,
       limit: body.limit,
-    });
+    }).then((result) =>
+      this.recordAutomaticBatchBetReconciliationCheckpoints({
+        result,
+        actorUserId: request.user?.sub,
+        note: body.note,
+      }),
+    );
   }
 
   @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
@@ -342,6 +363,63 @@ export class ArenaInternalValidationChainController {
     return input.result;
   }
 
+  private async recordAutomaticBatchBetReconciliationCheckpoints(input: {
+    result: ValidationChainBetReconciliationBatchViewModel;
+    actorUserId?: string | null;
+    note?: string;
+  }): Promise<ValidationChainBetReconciliationBatchViewModel> {
+    const itemsByPropositionId = new Map<
+      string,
+      ValidationChainBetReconciliationBatchViewModel["items"]
+    >();
+
+    for (const item of input.result.items) {
+      const existing = itemsByPropositionId.get(item.propositionId) ?? [];
+      existing.push(item);
+      itemsByPropositionId.set(item.propositionId, existing);
+    }
+
+    await Promise.all(
+      Array.from(itemsByPropositionId.entries()).map(
+        async ([propositionId, propositionItems]) => {
+          const matchedCount = propositionItems.filter(
+            (item) => item.status === "matched",
+          ).length;
+          const mismatchedCount = propositionItems.filter(
+            (item) => item.status === "mismatched",
+          ).length;
+          const failedCount = propositionItems.filter(
+            (item) => item.status === "failed",
+          ).length;
+          const status =
+            mismatchedCount === 0 && failedCount === 0 ? "complete" : "blocked";
+
+          await this.rehearsalCheckpoints.recordCheckpoint({
+            propositionId,
+            stepId: "local_bet_and_sync",
+            status,
+            reason:
+              status === "complete"
+                ? "validation_rehearsal.auto.batch_bet_reconciliation_matched"
+                : "validation_rehearsal.auto.batch_bet_reconciliation_incomplete",
+            note: input.note,
+            evidence: [
+              `processedCount=${String(propositionItems.length)}`,
+              `matchedCount=${String(matchedCount)}`,
+              `mismatchedCount=${String(mismatchedCount)}`,
+              `failedCount=${String(failedCount)}`,
+              `betIds=${propositionItems.map((item) => item.betId).join(",")}`,
+            ],
+            actorUserId: input.actorUserId,
+            recordedAt: input.result.processedAt,
+          });
+        },
+      ),
+    );
+
+    return input.result;
+  }
+
   private async recordAutomaticProjectionReplayCheckpoint(input: {
     result: ValidationChainProjectionReplayViewModel;
     actorUserId?: string | null;
@@ -402,5 +480,23 @@ export class ArenaInternalValidationChainController {
     });
 
     return input.result;
+  }
+
+  private resolveRecoveryStatusCode(
+    requestStatus:
+      | "queued"
+      | "already_pending"
+      | "partial_failure"
+      | "failed",
+  ): number {
+    switch (requestStatus) {
+      case "queued":
+        return HttpStatus.CREATED;
+      case "already_pending":
+        return HttpStatus.OK;
+      case "partial_failure":
+      case "failed":
+        return HttpStatus.SERVICE_UNAVAILABLE;
+    }
   }
 }

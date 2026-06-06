@@ -240,3 +240,34 @@ all four surfaces align:
 - internal proposition rehearsal `status=ready`
 - proposition is visible in `GET /arena/public/results/settled`
 - proposition is visible in `GET /arena/public/integrity/overview?propositionId=<id>`
+
+## 8. Unified operator briefing
+
+For one proposition-scoped operator entrypoint that bridges release gating,
+runtime hardening, beta proof, and internal operating follow-through, use:
+
+```powershell
+pnpm run validation:ops:brief -- --proposition-id <id> [--base-url <url>] [--auth-token <token>]
+```
+
+Behavior:
+
+- writes one proposition-scoped operator artifact to
+  `validation-rehearsal/<id>/operator-briefing.json`
+- refreshes the backing artifacts that the operator path depends on:
+  - `backend-release-readiness.json`
+  - `validation-chain-monitoring.json`
+  - `evidence-bundle.json`
+  - `public-settled-result.json`
+  - `public-integrity-overview.json`
+- prioritizes the current operator focus in this order:
+  - release readiness
+  - validation-chain runtime health
+  - proposition rehearsal / recovery follow-through
+  - public beta proof visibility
+- exits `0` only when the current proposition is green across the four no-B-track
+  lanes:
+  - `A-track`: release + operations closure
+  - `A-track`: core runtime hardening
+  - `A+B`: MVP beta gate
+  - `A+B`: internal operations closure

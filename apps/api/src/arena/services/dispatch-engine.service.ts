@@ -20,6 +20,7 @@ import type {
   DispatchSelectionInternalViewModel,
   ExpireDispatchTaskInput,
   PreviewDispatchCandidatesInput,
+  SkipDispatchTaskInput,
   StartDispatchTaskInput,
 } from "../arena.types";
 import { withArenaTransaction } from "../arena-transaction.utils";
@@ -182,6 +183,13 @@ export class DispatchEngineService {
     db?: ArenaDbClient,
   ): Promise<DispatchTask> {
     return this.dispatchTasks.startTask(input, db);
+  }
+
+  async skipTask(
+    input: SkipDispatchTaskInput,
+    db?: ArenaDbClient,
+  ): Promise<DispatchTask> {
+    return this.dispatchTasks.skipTask(input, db);
   }
 
   async expireTask(

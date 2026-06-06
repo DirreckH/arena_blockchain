@@ -10,7 +10,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:migrate:status": "prisma migrate status --schema prisma/schema.prisma",
     "typecheck": "pnpm --filter @arena/shared build && tsc -p tsconfig.json --noEmit",
-    "test:arena": "pnpm --filter @arena/shared build && node --require ts-node/register --test test/arena/arena.test.ts test/arena/http-error-mapping.test.ts test/arena/process-role-bootstrap.test.ts test/arena/start-worker-script.test.ts test/arena/requester-delivery-transport.test.ts",
+    "test:arena": "pnpm --filter @arena/shared build && node --require ts-node/register --test test/arena/arena.test.ts test/arena/adjudication-http.test.ts test/arena/dispatch-task-expiry-automation.test.ts test/arena/http-error-mapping.test.ts test/arena/process-role-bootstrap.test.ts test/arena/start-worker-script.test.ts test/arena/requester-delivery-transport.test.ts test/arena/runtime-contract-alerts.test.ts test/arena/scheduler-queue.test.ts test/arena/internal-responses-http.test.ts",
     "test:validation-chain": "pnpm --filter @arena/shared build && node --require ts-node/register --test test/arena/validation-chain-id.service.test.ts test/arena/validation-chain-repositories.test.ts test/arena/validation-chain-contract.service.test.ts test/arena/validation-chain-runtime.test.ts test/arena/validation-chain-phase6.test.ts",
     "predev": "pnpm --filter @arena/shared build",
     "dev": "nest start --watch",

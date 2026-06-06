@@ -85,4 +85,28 @@ export class ResponseRepository {
       orderBy: { submittedAt: "desc" },
     });
   }
+
+  async listLatest(
+    filters: {
+      propositionId?: string;
+      userId?: string;
+      limit?: number;
+    } = {},
+    db: ArenaDbClient = this.prisma,
+  ): Promise<Response[]> {
+    return db.response.findMany({
+      where: {
+        isLatest: true,
+        ...(filters.propositionId
+          ? { propositionId: filters.propositionId }
+          : {}),
+        ...(filters.userId ? { userId: filters.userId } : {}),
+      },
+      orderBy: [
+        { submittedAt: "desc" },
+        { createdAt: "desc" },
+      ],
+      take: filters.limit,
+    });
+  }
 }

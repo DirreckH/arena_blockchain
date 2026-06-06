@@ -1,10 +1,13 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 
-import type { Prisma, ValidationChainMarketStatus } from "@prisma/client";
+import type { Prisma, PropositionStatus, ValidationChainMarketStatus } from "@prisma/client";
 
 import { AppConfigService } from "../../config/app-config.service";
 import { PrismaService } from "../../database/prisma.service";
 import type {
+  OperatorCurrentSummaryViewModel,
+  OperatorSummaryEvidenceViewModel,
+  ValidationChainContractStateViewModel,
   ValidationChainHealthAlertViewModel,
   ValidationChainMonitoringViewModel,
 } from "../internal-ops.types";
@@ -12,11 +15,24 @@ import type { ArenaDbClient } from "../prisma.types";
 import { ValidationChainCursorRepository } from "../repositories/validation-chain-cursor.repository";
 import { InternalAuditService } from "../services/internal-audit.service";
 import { withArenaTransaction } from "../arena-transaction.utils";
-import { VALIDATION_CHAIN_STREAM_KEY } from "./validation-chain.types";
+import {
+  VALIDATION_CHAIN_STREAM_KEY,
+  type ValidationContractMarketState,
+} from "./validation-chain.types";
 import { RedisService } from "../../queue/redis.service";
 import {
   evaluateSchedulerWorkerHealth,
 } from "../../queue/scheduler-worker-heartbeat";
+import {
+  buildValidationLifecycleSnapshot,
+  type ValidationLifecycleDriftReason,
+} from "../validation-lifecycle";
+import { ValidationChainContractService } from "./validation-chain-contract.service";
+import {
+  buildValidationLifecycleOperatorGuidance,
+  toValidationChainContractStateView,
+  VALIDATION_RUNBOOK_PATH,
+} from "./validation-lifecycle-guidance";
 
 const RECENT_ALERT_WINDOW_MS = 15 * 60 * 1000;
 const STALE_PAYOUT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -28,8 +44,10 @@ const COMMAND_RETRY_EXHAUSTED_ACTION =
   "validation_chain.alert.command_retry_exhausted";
 const PROJECTOR_ENTITY_MISSING_ACTION =
   "validation_chain.alert.projector_entity_missing";
+const LIFECYCLE_DRIFT_ACTION = "validation_chain.alert.lifecycle_drift";
 const SYNC_WORKER_UNHEALTHY_ACTION =
   "validation_chain.alert.sync_worker_unhealthy";
+const STALE_PAYOUT_ACTION = "validation_chain.alert.stale_payouts";
 const UNSYNCED_BET_BACKLOG_ACTION =
   "validation_chain.alert.unsynced_bet_backlog";
 
@@ -38,11 +56,27 @@ const RECENT_ALERT_ACTIONS = [
   COMMAND_TERMINAL_ACTION,
   COMMAND_RETRY_EXHAUSTED_ACTION,
   PROJECTOR_ENTITY_MISSING_ACTION,
+  LIFECYCLE_DRIFT_ACTION,
   SYNC_WORKER_UNHEALTHY_ACTION,
+  STALE_PAYOUT_ACTION,
   UNSYNCED_BET_BACKLOG_ACTION,
   "validation_chain.pause.submitted",
   "validation_chain.unpause.submitted",
 ] as const;
+
+const LIFECYCLE_ALERTABLE_STATUSES = [
+  "live",
+  "frozen",
+  "revealing",
+  "settled",
+] as const satisfies PropositionStatus[];
+
+type LifecycleDriftAlertInput = {
+  entityType: string;
+  entityId: string;
+  reason: string;
+  metadata: Record<string, unknown>;
+};
 
 @Injectable()
 export class ValidationChainAlertService {
@@ -52,6 +86,8 @@ export class ValidationChainAlertService {
     private readonly cursors: ValidationChainCursorRepository,
     private readonly redis: RedisService,
     private readonly audit: InternalAuditService,
+    @Optional()
+    private readonly validationContract?: ValidationChainContractService,
   ) {}
 
   async recordCommandRetryQueued(input: {
@@ -91,6 +127,30 @@ export class ValidationChainAlertService {
       entityType: "validation_chain_command",
       entityId: input.propositionId,
       action: "validation_chain.command.enqueued",
+      actorUserId: input.actorUserId ?? null,
+      reason: input.reason,
+      note: input.note,
+      metadata: {
+        command: input.command,
+        queueJobId: input.queueJobId,
+        delayMs: input.delayMs,
+      },
+    });
+  }
+
+  async recordCommandAlreadyPending(input: {
+    propositionId: string;
+    command: string;
+    actorUserId?: string | null;
+    reason: string;
+    note?: string;
+    queueJobId: string;
+    delayMs: number;
+  }): Promise<void> {
+    await this.audit.record({
+      entityType: "validation_chain_command",
+      entityId: input.propositionId,
+      action: "validation_chain.command.already_pending",
       actorUserId: input.actorUserId ?? null,
       reason: input.reason,
       note: input.note,
@@ -202,9 +262,11 @@ export class ValidationChainAlertService {
         this.config.validationSyncPollIntervalMs * 4,
         60_000,
       );
+      const cursor = await this.cursors.getCursor(VALIDATION_CHAIN_STREAM_KEY, tx);
+      const currentStreamFailureSince =
+        cursor?.syncStatus === "idle" ? cursor.updatedAt : null;
 
       const [
-        cursor,
         recentAlerts,
         stalePayoutMarkets,
         totalEventCount,
@@ -217,16 +279,11 @@ export class ValidationChainAlertService {
         syncFailuresCount,
         recentFailures,
       ] = await Promise.all([
-        this.cursors.getCursor(VALIDATION_CHAIN_STREAM_KEY, tx),
         tx.internalAuditEvent.findMany({
-          where: {
-            action: {
-              in: [...RECENT_ALERT_ACTIONS, "validation_chain.sync.failed"],
-            },
-            createdAt: {
-              gte: recentSince,
-            },
-          },
+          where: this.buildRecentAlertWhere(
+            recentSince,
+            currentStreamFailureSince,
+          ),
           orderBy: {
             createdAt: "desc",
           },
@@ -262,6 +319,7 @@ export class ValidationChainAlertService {
           select: {
             id: true,
             propositionId: true,
+            chainMarketId: true,
             chainStatus: true,
             chainResolvedAt: true,
             chainCancelledAt: true,
@@ -295,6 +353,7 @@ export class ValidationChainAlertService {
         ),
         tx.validationChainEvent.findMany({
           orderBy: [
+            { processedAt: "desc" },
             { blockNumber: "desc" },
             { transactionIndex: "desc" },
             { logIndex: "desc" },
@@ -392,28 +451,18 @@ export class ValidationChainAlertService {
           },
         }),
         tx.internalAuditEvent.count({
-          where: {
-            action: "validation_chain.sync.failed",
-          },
+          where: this.buildCurrentStreamFailureWhere(currentStreamFailureSince),
         }),
         tx.internalAuditEvent.findMany({
-          where: {
-            action: {
-              in: [
-                "validation_chain.project.failed",
-                "validation_chain.sync.failed",
-                PROJECTOR_ENTITY_MISSING_ACTION,
-                COMMAND_TERMINAL_ACTION,
-                COMMAND_RETRY_EXHAUSTED_ACTION,
-              ],
-            },
-          },
+          where: this.buildCurrentFailureWhere(currentStreamFailureSince),
           orderBy: {
             createdAt: "desc",
           },
           take: 10,
         }),
       ]);
+      const actionableStalePayoutMarkets =
+        await this.filterActionableStalePayoutMarkets(stalePayoutMarkets);
 
       const isCursorStalled =
         cursor === null ||
@@ -431,7 +480,7 @@ export class ValidationChainAlertService {
         }),
       );
 
-      return {
+      const snapshot = {
         streamKey: VALIDATION_CHAIN_STREAM_KEY,
         chainId: cursor?.chainId ?? null,
         contractAddress: cursor?.contractAddress ?? null,
@@ -459,7 +508,7 @@ export class ValidationChainAlertService {
           recentProjectorEntityMissingCount: mappedAlerts.filter(
             (item) => item.action === PROJECTOR_ENTITY_MISSING_ACTION,
           ).length,
-          stalePayoutMarketCount: stalePayoutMarkets.length,
+          stalePayoutMarketCount: actionableStalePayoutMarkets.length,
           unsyncedBetBacklogCount: unsyncedBetBacklog.length,
         },
         eventLedger: {
@@ -522,6 +571,10 @@ export class ValidationChainAlertService {
               0,
               now.getTime() - bet.placedAt.getTime(),
             ),
+            operatorActions: this.buildUnsyncedBetOperatorActions({
+              marketId: bet.marketId,
+              userId: bet.userId,
+            }),
           })),
         },
         failures: {
@@ -536,7 +589,7 @@ export class ValidationChainAlertService {
             createdAt: event.createdAt.toISOString(),
           })),
         },
-        stalePayoutMarkets: stalePayoutMarkets.map((market) => ({
+        stalePayoutMarkets: actionableStalePayoutMarkets.map((market) => ({
           marketId: market.id,
           propositionId: market.propositionId,
           chainStatus: market.chainStatus as ValidationChainMarketStatus,
@@ -544,86 +597,412 @@ export class ValidationChainAlertService {
             market.chainResolvedAt ?? market.chainCancelledAt ?? new Date(0)
           ).toISOString(),
           unclaimedBetCount: market.bets.length,
+          operatorActions: this.buildStalePayoutOperatorActions(market.id),
         })),
+      } satisfies Omit<ValidationChainMonitoringViewModel, "operatorSummary">;
+
+      return {
+        ...snapshot,
+        operatorSummary: this.buildOperatorSummary(snapshot),
       };
     });
   }
 
+  private async filterActionableStalePayoutMarkets<
+    T extends {
+      chainMarketId: string | null;
+    },
+  >(markets: T[]): Promise<T[]> {
+    if (!this.validationContract || markets.length === 0) {
+      return markets;
+    }
+
+    const decisions = await Promise.all(
+      markets.map(async (market) => ({
+        market,
+        actionable: await this.isActionableStalePayoutMarket(
+          market.chainMarketId,
+        ),
+      })),
+    );
+
+    return decisions
+      .filter((entry) => entry.actionable)
+      .map((entry) => entry.market);
+  }
+
+  private async isActionableStalePayoutMarket(
+    chainMarketId: string | null,
+  ): Promise<boolean> {
+    if (!this.validationContract || !chainMarketId) {
+      return true;
+    }
+
+    try {
+      const market = await this.validationContract.getMarketOrNull(chainMarketId);
+      return market !== null;
+    } catch {
+      // Preserve visibility when the current chain cannot be inspected.
+      return true;
+    }
+  }
+
+  private buildRecentAlertWhere(
+    recentSince: Date,
+    currentStreamFailureSince: Date | null,
+  ): Prisma.InternalAuditEventWhereInput {
+    return {
+      OR: [
+        {
+          action: {
+            in: [...RECENT_ALERT_ACTIONS],
+          },
+          createdAt: {
+            gte: recentSince,
+          },
+        },
+        this.buildCurrentStreamFailureWhere(
+          currentStreamFailureSince && currentStreamFailureSince > recentSince
+            ? currentStreamFailureSince
+            : recentSince,
+        ),
+      ],
+    };
+  }
+
+  private buildCurrentStreamFailureWhere(
+    currentStreamFailureSince: Date | null,
+  ): Prisma.InternalAuditEventWhereInput {
+    return {
+      action: "validation_chain.sync.failed",
+      ...(currentStreamFailureSince
+        ? {
+            createdAt: {
+              gte: currentStreamFailureSince,
+            },
+          }
+        : {}),
+    };
+  }
+
+  private buildCurrentFailureWhere(
+    currentStreamFailureSince: Date | null,
+  ): Prisma.InternalAuditEventWhereInput {
+    return {
+      OR: [
+        {
+          action: {
+            in: [
+              "validation_chain.project.failed",
+              PROJECTOR_ENTITY_MISSING_ACTION,
+              COMMAND_TERMINAL_ACTION,
+              COMMAND_RETRY_EXHAUSTED_ACTION,
+            ],
+          },
+        },
+        this.buildCurrentStreamFailureWhere(currentStreamFailureSince),
+      ],
+    };
+  }
+
   async runHealthCheck(nowIso = new Date().toISOString()): Promise<void> {
-    const snapshot = await this.getHealthSnapshot(nowIso);
+    await withArenaTransaction(this.prisma, undefined, async (tx) => {
+      const [snapshot, lifecycleDrifts] = await Promise.all([
+        this.getHealthSnapshot(nowIso, tx),
+        this.listLifecycleDriftAlerts(tx),
+      ]);
 
-    if (snapshot.isCursorStalled) {
-      await this.recordAlertOnce({
-        entityType: "validation_chain_stream",
-        entityId: snapshot.streamKey,
-        action: CURSOR_STALLED_ACTION,
-        reason: "validation_chain.cursor.stalled",
-        dedupeAfter: snapshot.cursorStaleThresholdMs,
-        metadata: {
-          lastProcessedBlock: snapshot.lastProcessedBlock,
-          lastFinalizedBlock: snapshot.lastFinalizedBlock,
-          cursorUpdatedAt: snapshot.cursorUpdatedAt,
-          pollIntervalMs: snapshot.pollIntervalMs,
-          cursorStaleThresholdMs: snapshot.cursorStaleThresholdMs,
+      if (snapshot.isCursorStalled) {
+        await this.recordAlertOnce({
+          entityType: "validation_chain_stream",
+          entityId: snapshot.streamKey,
+          action: CURSOR_STALLED_ACTION,
+          reason: "validation_chain.cursor.stalled",
+          dedupeAfter: snapshot.cursorStaleThresholdMs,
+          metadata: {
+            lastProcessedBlock: snapshot.lastProcessedBlock,
+            lastFinalizedBlock: snapshot.lastFinalizedBlock,
+            cursorUpdatedAt: snapshot.cursorUpdatedAt,
+            pollIntervalMs: snapshot.pollIntervalMs,
+            cursorStaleThresholdMs: snapshot.cursorStaleThresholdMs,
+          },
+        });
+      }
+
+      if (snapshot.metrics.recentSyncFailureCount >= 3) {
+        await this.recordAlertOnce({
+          entityType: "validation_chain_stream",
+          entityId: snapshot.streamKey,
+          action: SYNC_WORKER_UNHEALTHY_ACTION,
+          reason: "validation_chain.sync.unhealthy",
+          dedupeAfter: RECENT_ALERT_WINDOW_MS,
+          metadata: {
+            recentSyncFailureCount: snapshot.metrics.recentSyncFailureCount,
+            windowMs: RECENT_ALERT_WINDOW_MS,
+          },
+        });
+      }
+
+      if (snapshot.schedulerWorker?.status === "down") {
+        await this.recordAlertOnce({
+          entityType: "validation_chain_stream",
+          entityId: snapshot.streamKey,
+          action: SYNC_WORKER_UNHEALTHY_ACTION,
+          reason: "validation_chain.sync.worker_heartbeat_down",
+          dedupeAfter: snapshot.cursorStaleThresholdMs,
+          metadata: {
+            schedulerWorkerStatus: snapshot.schedulerWorker.status,
+            workerStartedAt: snapshot.schedulerWorker.startedAt,
+            workerLastSeenAt: snapshot.schedulerWorker.lastSeenAt,
+            workerLastJobProcessedAt: snapshot.schedulerWorker.lastJobProcessedAt,
+            workerLastJobName: snapshot.schedulerWorker.lastJobName,
+            workerLastErrorAt: snapshot.schedulerWorker.lastWorkerErrorAt,
+            workerLastErrorMessage:
+              snapshot.schedulerWorker.lastWorkerErrorMessage,
+            workerDetails: snapshot.schedulerWorker.details ?? null,
+            operatorActions: snapshot.schedulerWorker.operatorActions,
+          },
+        });
+      }
+
+      for (const lifecycleDrift of lifecycleDrifts) {
+        await this.recordLifecycleDriftAlert(lifecycleDrift);
+      }
+
+      const oldestStalePayoutMarket = snapshot.stalePayoutMarkets[0];
+      if (oldestStalePayoutMarket) {
+        await this.recordAlertOnce({
+          entityType: "validation_chain_stream",
+          entityId: snapshot.streamKey,
+          action: STALE_PAYOUT_ACTION,
+          reason: "validation_chain.payout.stale",
+          dedupeAfter: STALE_PAYOUT_WINDOW_MS,
+          metadata: {
+            stalePayoutMarketCount: snapshot.metrics.stalePayoutMarketCount,
+            oldestTerminalAt: oldestStalePayoutMarket.terminalAt,
+            marketId: oldestStalePayoutMarket.marketId,
+            propositionId: oldestStalePayoutMarket.propositionId,
+            unclaimedBetCount: oldestStalePayoutMarket.unclaimedBetCount,
+            operatorActions: oldestStalePayoutMarket.operatorActions,
+          },
+        });
+      }
+
+      const oldestUnsyncedBet = snapshot.projection.unsyncedBetBacklog[0];
+      if (
+        oldestUnsyncedBet &&
+        oldestUnsyncedBet.oldestUnsyncedAgeMs >= UNSYNCED_BET_BACKLOG_WINDOW_MS
+      ) {
+        await this.recordAlertOnce({
+          entityType: "validation_chain_stream",
+          entityId: snapshot.streamKey,
+          action: UNSYNCED_BET_BACKLOG_ACTION,
+          reason: "validation_chain.bet_projection.backlog",
+          dedupeAfter: UNSYNCED_BET_BACKLOG_WINDOW_MS,
+          metadata: {
+            unsyncedBetBacklogCount: snapshot.metrics.unsyncedBetBacklogCount,
+            oldestUnsyncedAgeMs: oldestUnsyncedBet.oldestUnsyncedAgeMs,
+            oldestUnsyncedBetId: oldestUnsyncedBet.betId,
+            marketId: oldestUnsyncedBet.marketId,
+            propositionId: oldestUnsyncedBet.propositionId,
+            operatorActions: oldestUnsyncedBet.operatorActions,
+          },
+        });
+      }
+    });
+  }
+
+  private async listLifecycleDriftAlerts(
+    db: ArenaDbClient,
+  ): Promise<LifecycleDriftAlertInput[]> {
+    const propositions = await db.proposition.findMany({
+      where: {
+        marketEnabled: true,
+        status: {
+          in: [...LIFECYCLE_ALERTABLE_STATUSES],
         },
-      });
+      },
+      select: {
+        id: true,
+        status: true,
+        marketEnabled: true,
+        resultComputedAt: true,
+        resultKind: true,
+      },
+    });
+
+    if (propositions.length === 0) {
+      return [];
     }
 
-    if (snapshot.metrics.recentSyncFailureCount >= 3) {
-      await this.recordAlertOnce({
-        entityType: "validation_chain_stream",
-        entityId: snapshot.streamKey,
-        action: SYNC_WORKER_UNHEALTHY_ACTION,
-        reason: "validation_chain.sync.unhealthy",
-        dedupeAfter: RECENT_ALERT_WINDOW_MS,
-        metadata: {
-          recentSyncFailureCount: snapshot.metrics.recentSyncFailureCount,
-          windowMs: RECENT_ALERT_WINDOW_MS,
+    const markets = await db.market.findMany({
+      where: {
+        propositionId: {
+          in: propositions.map((proposition) => proposition.id),
         },
-      });
+      },
+      select: {
+        id: true,
+        propositionId: true,
+        status: true,
+        chainMarketId: true,
+        chainStatus: true,
+      },
+    });
+    const marketByPropositionId = new Map(
+      markets.map((market) => [market.propositionId, market]),
+    );
+
+    const items = await Promise.all(
+      propositions.map(async (proposition) => {
+        const market = marketByPropositionId.get(proposition.id) ?? null;
+        const driftReason = buildValidationLifecycleSnapshot(
+          proposition,
+          market as never,
+        ).driftReason;
+
+        if (!driftReason) {
+          return null;
+        }
+
+        const onChainState = await this.readOnChainState(
+          market?.chainMarketId ?? null,
+        );
+        const operatorGuidance = buildValidationLifecycleOperatorGuidance({
+          propositionId: proposition.id,
+          marketId: market?.id ?? null,
+          propositionStatus: proposition.status,
+          marketStatus: market?.status ?? null,
+          localChainStatus:
+            (market?.chainStatus as ValidationChainMarketStatus | null) ?? null,
+          onChainState,
+          driftReason,
+          hasOfficialResult:
+            proposition.resultComputedAt !== null &&
+            proposition.resultKind !== null,
+        });
+
+        return {
+          entityType: market ? "validation_market" : "validation_proposition",
+          entityId: market?.id ?? proposition.id,
+          reason: `validation_chain.lifecycle_drift.${driftReason}.${operatorGuidance.kind}`,
+          metadata: {
+            propositionId: proposition.id,
+            marketId: market?.id ?? null,
+            propositionStatus: proposition.status,
+            marketStatus: market?.status ?? null,
+            localChainStatus: market?.chainStatus ?? null,
+            chainMarketId: market?.chainMarketId ?? null,
+            onChainState,
+            driftReason,
+            operatorGuidance,
+          },
+        };
+      }),
+    );
+
+    const driftAlerts = items.filter(
+      (item): item is NonNullable<(typeof items)[number]> => item !== null,
+    );
+
+    return driftAlerts;
+  }
+
+  private async readOnChainState(
+    chainMarketId: string | null,
+  ): Promise<ValidationChainContractStateViewModel | null> {
+    if (!this.validationContract || !chainMarketId) {
+      return null;
     }
 
-    if (snapshot.schedulerWorker?.status === "down") {
-      await this.recordAlertOnce({
-        entityType: "validation_chain_stream",
-        entityId: snapshot.streamKey,
-        action: SYNC_WORKER_UNHEALTHY_ACTION,
-        reason: "validation_chain.sync.worker_heartbeat_down",
-        dedupeAfter: snapshot.cursorStaleThresholdMs,
-        metadata: {
-          schedulerWorkerStatus: snapshot.schedulerWorker.status,
-          workerStartedAt: snapshot.schedulerWorker.startedAt,
-          workerLastSeenAt: snapshot.schedulerWorker.lastSeenAt,
-          workerLastJobProcessedAt: snapshot.schedulerWorker.lastJobProcessedAt,
-          workerLastJobName: snapshot.schedulerWorker.lastJobName,
-          workerLastErrorAt: snapshot.schedulerWorker.lastWorkerErrorAt,
-          workerLastErrorMessage:
-            snapshot.schedulerWorker.lastWorkerErrorMessage,
-          workerDetails: snapshot.schedulerWorker.details ?? null,
-        },
-      });
+    try {
+      const market = await this.validationContract.getMarketOrNull(chainMarketId);
+      return toValidationChainContractStateView(
+        (market?.state as ValidationContractMarketState | null) ?? null,
+      );
+    } catch {
+      return null;
     }
+  }
 
-    const oldestUnsyncedBet = snapshot.projection.unsyncedBetBacklog[0];
+  private async recordLifecycleDriftAlert(input: {
+    entityType: string;
+    entityId: string;
+    reason: string;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    const latest = await this.prisma.internalAuditEvent.findFirst({
+      where: {
+        entityType: input.entityType,
+        entityId: input.entityId,
+        action: LIFECYCLE_DRIFT_ACTION,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
     if (
-      oldestUnsyncedBet &&
-      oldestUnsyncedBet.oldestUnsyncedAgeMs >= UNSYNCED_BET_BACKLOG_WINDOW_MS
+      latest &&
+      this.buildLifecycleDriftSignature(
+        "metadataJson" in latest ? latest.metadataJson : null,
+      ) === this.buildLifecycleDriftSignature(input.metadata)
     ) {
-      await this.recordAlertOnce({
-        entityType: "validation_chain_stream",
-        entityId: snapshot.streamKey,
-        action: UNSYNCED_BET_BACKLOG_ACTION,
-        reason: "validation_chain.bet_projection.backlog",
-        dedupeAfter: UNSYNCED_BET_BACKLOG_WINDOW_MS,
-        metadata: {
-          unsyncedBetBacklogCount: snapshot.metrics.unsyncedBetBacklogCount,
-          oldestUnsyncedAgeMs: oldestUnsyncedBet.oldestUnsyncedAgeMs,
-          oldestUnsyncedBetId: oldestUnsyncedBet.betId,
-          marketId: oldestUnsyncedBet.marketId,
-          propositionId: oldestUnsyncedBet.propositionId,
-        },
-      });
+      return;
     }
+
+    await this.audit.record({
+      entityType: input.entityType,
+      entityId: input.entityId,
+      action: LIFECYCLE_DRIFT_ACTION,
+      reason: input.reason,
+      metadata: input.metadata as Prisma.InputJsonValue,
+    });
+  }
+
+  private buildLifecycleDriftSignature(metadata: unknown): string {
+    const payload =
+      metadata !== null && typeof metadata === "object"
+        ? (metadata as {
+            propositionId?: string | null;
+            marketId?: string | null;
+            propositionStatus?: string | null;
+            marketStatus?: string | null;
+            localChainStatus?: string | null;
+            chainMarketId?: string | null;
+            onChainState?: string | null;
+            driftReason?: string | null;
+            operatorGuidance?: {
+              kind?: string | null;
+              summary?: string | null;
+              recoveryReason?: string | null;
+              plannedCommands?: string[];
+              operatorActions?: string[];
+            } | null;
+          })
+        : {};
+
+    return JSON.stringify({
+      propositionId: payload.propositionId ?? null,
+      marketId: payload.marketId ?? null,
+      propositionStatus: payload.propositionStatus ?? null,
+      marketStatus: payload.marketStatus ?? null,
+      localChainStatus: payload.localChainStatus ?? null,
+      chainMarketId: payload.chainMarketId ?? null,
+      onChainState: payload.onChainState ?? null,
+      driftReason: payload.driftReason ?? null,
+      operatorGuidance: {
+        kind: payload.operatorGuidance?.kind ?? null,
+        summary: payload.operatorGuidance?.summary ?? null,
+        recoveryReason: payload.operatorGuidance?.recoveryReason ?? null,
+        plannedCommands: [...(payload.operatorGuidance?.plannedCommands ?? [])].sort(
+          (left, right) => left.localeCompare(right),
+        ),
+        operatorActions: [...(payload.operatorGuidance?.operatorActions ?? [])].sort(
+          (left, right) => left.localeCompare(right),
+        ),
+      },
+    });
   }
 
   private async recordAlertOnce(input: {
@@ -691,5 +1070,170 @@ export class ValidationChainAlertService {
             ]
           : [],
     };
+  }
+
+  private buildOperatorSummary(
+    snapshot: Omit<ValidationChainMonitoringViewModel, "operatorSummary">,
+  ): ValidationChainMonitoringViewModel["operatorSummary"] {
+    const latestRelevantEvidence = this.getLatestRelevantEvidence(snapshot);
+    const oldestUnsyncedBet = snapshot.projection.unsyncedBetBacklog[0] ?? null;
+    const backlogNeedsAction =
+      oldestUnsyncedBet !== null &&
+      oldestUnsyncedBet.oldestUnsyncedAgeMs >= UNSYNCED_BET_BACKLOG_WINDOW_MS;
+    const oldestStalePayoutMarket = snapshot.stalePayoutMarkets[0] ?? null;
+
+    if (snapshot.syncStatus === "missing") {
+      return {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "cursor_missing",
+        summary:
+          "Validation-chain cursor is missing. Rebuild sync state before trusting projection freshness.",
+        operatorActions: this.buildCursorRecoveryOperatorActions(),
+        blockers: ["cursor_missing"],
+        latestRelevantEvidence,
+      };
+    }
+
+    if (snapshot.syncStatus === "error") {
+      return {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "sync_error",
+        summary:
+          "Validation-chain sync is in an error state. Restore sync before trusting chain-derived market state.",
+        operatorActions: this.buildCursorRecoveryOperatorActions(),
+        blockers: ["sync_error"],
+        latestRelevantEvidence,
+      };
+    }
+
+    if (snapshot.schedulerWorker?.status === "down") {
+      return {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "scheduler_worker",
+        summary:
+          "Scheduler worker heartbeat is down. Restore worker processing before trusting sync or queued recovery flows.",
+        operatorActions: [...snapshot.schedulerWorker.operatorActions],
+        blockers: ["scheduler_worker"],
+        latestRelevantEvidence,
+      };
+    }
+
+    if (snapshot.isCursorStalled) {
+      return {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "cursor_stalled",
+        summary:
+          "Validation-chain cursor is stalled. Run sync and inspect worker/runtime health before trusting fresh chain state.",
+        operatorActions: this.buildCursorRecoveryOperatorActions(),
+        blockers: ["cursor_stalled"],
+        latestRelevantEvidence,
+      };
+    }
+
+    if (oldestStalePayoutMarket) {
+      return {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "stale_payouts",
+        summary:
+          "Stale payout recovery is required for at least one terminal market before settlement completeness can be trusted.",
+        operatorActions: [...oldestStalePayoutMarket.operatorActions],
+        blockers: ["stale_payouts"],
+        latestRelevantEvidence,
+      };
+    }
+
+    if (backlogNeedsAction) {
+      return {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "unsynced_bet_backlog",
+        summary:
+          "Unsynced local validation bets are backlogged. Run sync and reconciliation before trusting bet projections.",
+        operatorActions: [...oldestUnsyncedBet.operatorActions],
+        blockers: ["unsynced_bet_backlog"],
+        latestRelevantEvidence,
+      };
+    }
+
+    return {
+      status: "ready",
+      requiresActionNow: false,
+      focusArea: "healthy",
+      summary:
+        latestRelevantEvidence === null
+          ? "Validation-chain health is green. No operator recovery is required right now."
+          : "No active validation-chain blocker. Recent validation evidence remains available in monitoring history.",
+      operatorActions: [],
+      blockers: [],
+      latestRelevantEvidence,
+    };
+  }
+
+  private getLatestRelevantEvidence(
+    snapshot: Omit<ValidationChainMonitoringViewModel, "operatorSummary">,
+  ): OperatorCurrentSummaryViewModel["latestRelevantEvidence"] {
+    const alertEvidence = snapshot.recentAlerts.map((alert) =>
+      this.toOperatorSummaryEvidence(alert),
+    );
+    const failureEvidence = snapshot.failures.recentFailures.map((failure) =>
+      this.toOperatorSummaryEvidence(failure),
+    );
+
+    return [...alertEvidence, ...failureEvidence]
+      .sort(
+        (left, right) =>
+          Date.parse(right.createdAt) - Date.parse(left.createdAt),
+      )
+      .at(0) ?? null;
+  }
+
+  private toOperatorSummaryEvidence(input: {
+    action: string;
+    entityType: string;
+    entityId: string;
+    reason: string;
+    createdAt: string;
+  }): OperatorSummaryEvidenceViewModel {
+    return {
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      reason: input.reason,
+      createdAt: input.createdAt,
+    };
+  }
+
+  private buildCursorRecoveryOperatorActions(): string[] {
+    return [
+      "POST /arena/internal/validation-chain/sync",
+      "GET /system/queues/overview",
+      "GET /arena/internal/monitoring/validation-chain/runtime-readiness",
+      VALIDATION_RUNBOOK_PATH,
+    ];
+  }
+
+  private buildUnsyncedBetOperatorActions(input: {
+    marketId: string;
+    userId: string;
+  }): string[] {
+    return [
+      "POST /arena/internal/validation-chain/sync",
+      "POST /arena/internal/validation-chain/backlog/reconcile",
+      `POST /arena/internal/validation-chain/markets/${input.marketId}/bets/${input.userId}/reconcile`,
+      "GET /arena/internal/monitoring/validation-chain",
+    ];
+  }
+
+  private buildStalePayoutOperatorActions(marketId: string): string[] {
+    return [
+      "POST /arena/internal/validation-chain/sync",
+      `POST /arena/internal/validation-chain/markets/${marketId}/replay-projection`,
+      "GET /arena/internal/monitoring/validation-chain",
+    ];
   }
 }

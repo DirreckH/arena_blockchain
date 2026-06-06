@@ -6,6 +6,7 @@ ARG PNPM_VERSION
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate && pnpm --version
 
 FROM base AS build
@@ -22,7 +23,7 @@ COPY packages/shared/tsconfig.json packages/shared/tsconfig.json
 COPY packages/shared/src packages/shared/src
 COPY packages/shared/tests packages/shared/tests
 RUN pnpm install --offline --frozen-lockfile --filter @arena/api... --ignore-scripts --package-import-method=hardlink
-RUN pnpm --filter @arena/api exec prisma generate --schema prisma/schema.prisma
+RUN attempt=1; while [ "$attempt" -le 3 ]; do pnpm --filter @arena/api exec prisma generate --schema prisma/schema.prisma && break; if [ "$attempt" -eq 3 ]; then exit 1; fi; attempt=$((attempt + 1)); sleep 5; done
 RUN pnpm --filter @arena/api build
 
 FROM base AS prod-deps

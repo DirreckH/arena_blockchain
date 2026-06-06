@@ -6,7 +6,10 @@ import type { ValidationChainCursor, ValidationChainEvent } from "@prisma/client
 import {
   ArenaConflictError,
 } from "../../src/arena/arena.errors";
-import type { ValidationChainMonitoringViewModel } from "../../src/arena/internal-ops.types";
+import type {
+  ValidationChainCommandSubmissionViewModel,
+  ValidationChainMonitoringViewModel,
+} from "../../src/arena/internal-ops.types";
 import { AppQueueService } from "../../src/queue/queue.service";
 import { ValidationChainProjectionService } from "../../src/arena/validation-chain/validation-chain-projection.service";
 import { ValidationChainAlertService } from "../../src/arena/validation-chain/validation-chain-alert.service";
@@ -44,17 +47,64 @@ class FakeValidationChainRuntime {
   readonly createOpenCalls: Array<Record<string, unknown>> = [];
   readonly freezeCalls: Array<Record<string, unknown>> = [];
   readonly resolveCalls: Array<Record<string, unknown>> = [];
+  nextCreateOpenResult:
+    | ValidationChainCommandSubmissionViewModel[]
+    | null = null;
+  nextFreezeResult: ValidationChainCommandSubmissionViewModel | null = null;
+  nextResolveResult: ValidationChainCommandSubmissionViewModel | null = null;
 
-  async enqueueCreateOpenCommands(input: Record<string, unknown>): Promise<void> {
+  async enqueueCreateOpenCommands(
+    input: Record<string, unknown>,
+  ): Promise<ValidationChainCommandSubmissionViewModel[]> {
     this.createOpenCalls.push(input);
+    return (
+      this.nextCreateOpenResult ?? [
+        {
+          command: "create_market",
+          status: "enqueued",
+          queueJobId: "validation-chain.create_market.prop_1",
+          delayMs: 0,
+          errorMessage: null,
+        },
+        {
+          command: "open_market",
+          status: "enqueued",
+          queueJobId: "validation-chain.open_market.prop_1",
+          delayMs: 5000,
+          errorMessage: null,
+        },
+      ]
+    );
   }
 
-  async enqueueFreezeCommand(input: Record<string, unknown>): Promise<void> {
+  async enqueueFreezeCommand(
+    input: Record<string, unknown>,
+  ): Promise<ValidationChainCommandSubmissionViewModel> {
     this.freezeCalls.push(input);
+    return (
+      this.nextFreezeResult ?? {
+        command: "freeze_market",
+        status: "enqueued",
+        queueJobId: "validation-chain.freeze_market.prop_1",
+        delayMs: 0,
+        errorMessage: null,
+      }
+    );
   }
 
-  async enqueueResolveCommand(input: Record<string, unknown>): Promise<void> {
+  async enqueueResolveCommand(
+    input: Record<string, unknown>,
+  ): Promise<ValidationChainCommandSubmissionViewModel> {
     this.resolveCalls.push(input);
+    return (
+      this.nextResolveResult ?? {
+        command: "resolve_market",
+        status: "enqueued",
+        queueJobId: "validation-chain.resolve_market.prop_1",
+        delayMs: 5000,
+        errorMessage: null,
+      }
+    );
   }
 }
 
@@ -250,7 +300,7 @@ class FakeValidationChainIdService {
 
 class FakeValidationChainContractService {
   constructor(
-    private readonly state: {
+    public readonly state: {
       onChainState?: ValidationContractMarketState | null;
       paused?: boolean;
       hasRuntimeCode?: boolean;
@@ -451,10 +501,14 @@ class FakePrismaService {
     },
     public readonly validationChainEvent = {
       count: async () => 0,
-      findMany: async () => [] as Array<Record<string, unknown>>,
+      findMany: async (_input?: Record<string, unknown>) =>
+        [] as Array<Record<string, unknown>>,
     },
     public readonly bet = {
       findFirst: async () => null as Record<string, unknown> | null,
+      findMany: async () => [] as Array<Record<string, unknown>>,
+    },
+    public readonly proposition = {
       findMany: async () => [] as Array<Record<string, unknown>>,
     },
   ) {}
@@ -716,7 +770,7 @@ describe("Validation chain phase six runtime integration", () => {
       new FakeLogger() as never,
     );
 
-    await service.enqueueValidationChainCommand({
+    const firstSubmission = await service.enqueueValidationChainCommand({
       command: "resolve_market",
       propositionId: "prop_1",
       actorUserId: "system_1",
@@ -726,6 +780,7 @@ describe("Validation chain phase six runtime integration", () => {
 
     const firstJobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
     assert.equal(firstJobId, "validation-chain.resolve_market.prop_1");
+    assert.equal(firstSubmission.dedupeStatus, "enqueued");
 
     const retainedJob = schedulerQueue.jobs.get(firstJobId);
     assert.equal(retainedJob?.removed, false);
@@ -733,7 +788,7 @@ describe("Validation chain phase six runtime integration", () => {
       retainedJob.state = "completed";
     }
 
-    await service.enqueueValidationChainCommand({
+    const secondSubmission = await service.enqueueValidationChainCommand({
       command: "resolve_market",
       propositionId: "prop_1",
       actorUserId: "operator_1",
@@ -745,6 +800,7 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(schedulerQueue.addCalls.length, 2);
     assert.equal(retainedJob?.removed, true);
     assert.equal(String(schedulerQueue.addCalls[1]?.opts.jobId ?? ""), firstJobId);
+    assert.equal(secondSubmission.dedupeStatus, "enqueued");
   });
 
   it("keeps a waiting validation-chain command job as the active dedupe target", async () => {
@@ -763,7 +819,7 @@ describe("Validation chain phase six runtime integration", () => {
       new FakeLogger() as never,
     );
 
-    await service.enqueueValidationChainCommand({
+    const firstSubmission = await service.enqueueValidationChainCommand({
       command: "freeze_market",
       propositionId: "prop_1",
       actorUserId: "system_1",
@@ -773,8 +829,9 @@ describe("Validation chain phase six runtime integration", () => {
 
     const jobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
     const pendingJob = schedulerQueue.jobs.get(jobId);
+    assert.equal(firstSubmission.dedupeStatus, "enqueued");
 
-    await service.enqueueValidationChainCommand({
+    const secondSubmission = await service.enqueueValidationChainCommand({
       command: "freeze_market",
       propositionId: "prop_1",
       actorUserId: "operator_1",
@@ -786,6 +843,7 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(schedulerQueue.addCalls.length, 2);
     assert.equal(pendingJob?.removed, false);
     assert.equal(String(schedulerQueue.addCalls[1]?.opts.jobId ?? ""), jobId);
+    assert.equal(secondSubmission.dedupeStatus, "already_pending");
   });
 
   it("allows re-enqueue after a completed validation-chain sync job is retained", async () => {
@@ -1038,7 +1096,17 @@ describe("Validation chain phase six runtime integration", () => {
         validationSyncPollIntervalMs: 15_000,
       } as never,
       new FakeCursorRepository(staleCursor) as never,
-      new FakeRedisService() as never,
+      Object.assign(new FakeRedisService(), {
+        schedulerWorkerHeartbeat: {
+          processRole: "worker",
+          startedAt: "2026-04-24T00:58:00.000Z",
+          lastSeenAt: "2026-04-24T00:59:55.000Z",
+          lastJobProcessedAt: "2026-04-24T00:59:50.000Z",
+          lastJobName: "validation-chain.sync",
+          lastWorkerErrorAt: null,
+          lastWorkerErrorMessage: null,
+        },
+      }) as never,
       audit as never,
     );
 
@@ -1058,6 +1126,311 @@ describe("Validation chain phase six runtime integration", () => {
       ),
       true,
     );
+  });
+
+  it("filters recovered stream failures out of current validation-chain monitoring noise", async () => {
+    const healthyCursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 12,
+      lastProcessedTxHash: "0x12",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T01:05:00.000Z"),
+    };
+
+    const recoveredFailure = {
+      action: "validation_chain.sync.failed",
+      entityType: "validation_chain_stream",
+      entityId: healthyCursor.streamKey,
+      reason: "validation_chain.sync.error",
+      metadataJson: {
+        error: "old rpc failure",
+      },
+      createdAt: new Date("2026-04-24T01:00:00.000Z"),
+    };
+
+    let syncFailureCountQuery: Record<string, unknown> | null = null;
+    const matchesCreatedAtFloor = (
+      where:
+        | {
+            action?: string | { in?: string[] };
+            createdAt?: {
+              gte?: Date;
+              gt?: Date;
+            };
+            OR?: Array<Record<string, unknown>>;
+          }
+        | undefined,
+      eventCreatedAt: Date,
+    ): boolean => {
+      if (Array.isArray(where?.OR)) {
+        return where.OR.some((entry) =>
+          matchesCreatedAtFloor(
+            entry as {
+              action?: string | { in?: string[] };
+              createdAt?: {
+                gte?: Date;
+                gt?: Date;
+              };
+              OR?: Array<Record<string, unknown>>;
+            },
+            eventCreatedAt,
+          ),
+        );
+      }
+
+      const actionFilter = where?.action;
+      if (typeof actionFilter === "string") {
+        if (actionFilter !== recoveredFailure.action) {
+          return false;
+        }
+      } else if (Array.isArray(actionFilter?.in)) {
+        if (!actionFilter.in.includes(recoveredFailure.action)) {
+          return false;
+        }
+      }
+
+      const floor = where?.createdAt?.gte ?? where?.createdAt?.gt ?? null;
+      return floor ? eventCreatedAt >= floor : true;
+    };
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async (input) => {
+          if (
+            matchesCreatedAtFloor(
+              input.where as
+                | {
+                    action?: string | { in?: string[] };
+                    createdAt?: {
+                      gte?: Date;
+                      gt?: Date;
+                    };
+                    OR?: Array<Record<string, unknown>>;
+                  }
+                | undefined,
+              recoveredFailure.createdAt,
+            )
+          ) {
+            return [recoveredFailure] as Array<Record<string, unknown>>;
+          }
+          return [] as Array<Record<string, unknown>>;
+        },
+        findFirst: async () => null,
+        count: async (input) => {
+          const action = (input.where as { action?: string } | undefined)?.action;
+          if (action === "validation_chain.sync.failed") {
+            syncFailureCountQuery = input;
+          }
+          return 0;
+        },
+      },
+      {
+        findMany: async () => [],
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(healthyCursor) as never,
+      new FakeRedisService() as never,
+      audit as never,
+    );
+
+    const snapshot = await alerts.getHealthSnapshot("2026-04-24T01:06:00.000Z");
+    const createdAtFilter = (
+      (
+        syncFailureCountQuery?.where as
+          | { createdAt?: { gte?: Date; gt?: Date } }
+          | undefined
+      )?.createdAt?.gte ??
+      (
+        syncFailureCountQuery?.where as
+          | { createdAt?: { gte?: Date; gt?: Date } }
+          | undefined
+      )?.createdAt?.gt ??
+      null
+    );
+
+    assert.equal(createdAtFilter?.toISOString(), healthyCursor.updatedAt.toISOString());
+    assert.deepEqual(snapshot.recentAlerts, []);
+    assert.equal(snapshot.metrics.recentSyncFailureCount, 0);
+    assert.equal(snapshot.failures.syncFailuresCount, 0);
+    assert.deepEqual(snapshot.failures.recentFailures, []);
+  });
+
+  it("keeps command-level validation-chain failures visible after later sync recovery", async () => {
+    const healthyCursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 12,
+      lastProcessedTxHash: "0x12",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T01:05:00.000Z"),
+    };
+
+    const terminalFailure = {
+      action: "validation_chain.alert.command_terminal",
+      entityType: "validation_chain_command",
+      entityId: "prop_1",
+      reason: "validation_chain.runtime.resolve_market",
+      metadataJson: {
+        command: "resolve_market",
+        error: "manual intervention still required",
+      },
+      createdAt: new Date("2026-04-24T01:00:00.000Z"),
+    };
+
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [terminalFailure] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () => [],
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(healthyCursor) as never,
+      new FakeRedisService() as never,
+      audit as never,
+    );
+
+    const snapshot = await alerts.getHealthSnapshot("2026-04-24T01:06:00.000Z");
+
+    assert.equal(snapshot.failures.recentFailures.length, 1);
+    assert.equal(
+      snapshot.failures.recentFailures[0]?.action,
+      "validation_chain.alert.command_terminal",
+    );
+  });
+
+  it("requests recent event ledger activity by processed time before block height", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    let recentEventQuery: Record<string, unknown> | null = null;
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 2,
+        findMany: async (input) => {
+          recentEventQuery = input;
+          return [
+            {
+              eventName: "MarketCreated",
+              blockNumber: 2,
+              transactionHash: "0x02",
+              transactionIndex: 0,
+              logIndex: 0,
+              marketChainId: "chain_market_new",
+              propositionChainId: "chain_prop_new",
+              processedAt: new Date("2026-04-24T01:00:10.000Z"),
+            },
+            {
+              eventName: "MarketResolved",
+              blockNumber: 999,
+              transactionHash: "0x999",
+              transactionIndex: 0,
+              logIndex: 0,
+              marketChainId: "chain_market_old",
+              propositionChainId: "chain_prop_old",
+              processedAt: new Date("2026-04-24T00:00:10.000Z"),
+            },
+          ] as Array<Record<string, unknown>>;
+        },
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      Object.assign(new FakeRedisService(), {
+        schedulerWorkerHeartbeat: {
+          processRole: "worker",
+          startedAt: "2026-04-24T00:58:00.000Z",
+          lastSeenAt: "2026-04-24T00:59:55.000Z",
+          lastJobProcessedAt: "2026-04-24T00:59:50.000Z",
+          lastJobName: "validation-chain.sync",
+          lastWorkerErrorAt: null,
+          lastWorkerErrorMessage: null,
+        },
+      }) as never,
+      audit as never,
+    );
+
+    const snapshot = await alerts.getHealthSnapshot("2026-04-24T01:00:00.000Z");
+
+    assert.deepEqual(recentEventQuery?.orderBy, [
+      { processedAt: "desc" },
+      { blockNumber: "desc" },
+      { transactionIndex: "desc" },
+      { logIndex: "desc" },
+    ]);
+    assert.equal(snapshot.eventLedger.recentEvents[0]?.eventName, "MarketCreated");
+    assert.equal(snapshot.eventLedger.recentEvents[1]?.eventName, "MarketResolved");
   });
 
   it("exposes unsynced local bet backlog in validation-chain health snapshots", async () => {
@@ -1131,7 +1504,17 @@ describe("Validation chain phase six runtime integration", () => {
         validationSyncPollIntervalMs: 15_000,
       } as never,
       new FakeCursorRepository(staleCursor) as never,
-      new FakeRedisService() as never,
+      Object.assign(new FakeRedisService(), {
+        schedulerWorkerHeartbeat: {
+          processRole: "worker",
+          startedAt: "2026-04-24T00:58:00.000Z",
+          lastSeenAt: "2026-04-24T00:59:55.000Z",
+          lastJobProcessedAt: "2026-04-24T00:59:50.000Z",
+          lastJobName: "validation-chain.sync",
+          lastWorkerErrorAt: null,
+          lastWorkerErrorMessage: null,
+        },
+      }) as never,
       audit as never,
     );
 
@@ -1146,6 +1529,25 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(snapshot.projection.unsyncedBetBacklog[0]?.chainMarketId, "chain_market_1");
     assert.equal(snapshot.projection.unsyncedBetBacklog[0]?.oldestUnsyncedAgeMs, 40 * 60 * 1000);
     assert.equal(snapshot.projection.unsyncedBetBacklog[1]?.oldestUnsyncedAgeMs, 30 * 60 * 1000);
+    assert.deepEqual(snapshot.projection.unsyncedBetBacklog[0]?.operatorActions, [
+      "POST /arena/internal/validation-chain/sync",
+      "POST /arena/internal/validation-chain/backlog/reconcile",
+      "POST /arena/internal/validation-chain/markets/market_1/bets/bettor_1/reconcile",
+      "GET /arena/internal/monitoring/validation-chain",
+    ]);
+    assert.equal(snapshot.operatorSummary.status, "action_required");
+    assert.equal(snapshot.operatorSummary.requiresActionNow, true);
+    assert.equal(snapshot.operatorSummary.focusArea, "unsynced_bet_backlog");
+    assert.equal(
+      snapshot.operatorSummary.summary,
+      "Unsynced local validation bets are backlogged. Run sync and reconciliation before trusting bet projections.",
+    );
+    assert.deepEqual(snapshot.operatorSummary.operatorActions, [
+      "POST /arena/internal/validation-chain/sync",
+      "POST /arena/internal/validation-chain/backlog/reconcile",
+      "POST /arena/internal/validation-chain/markets/market_1/bets/bettor_1/reconcile",
+      "GET /arena/internal/monitoring/validation-chain",
+    ]);
   });
 
   it("raises an alert when unsynced local bet backlog remains stale", async () => {
@@ -1211,12 +1613,604 @@ describe("Validation chain phase six runtime integration", () => {
 
     await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
 
+    const backlogAlert = audit.records.find(
+      (record) =>
+        record.action === "validation_chain.alert.unsynced_bet_backlog",
+    );
+
+    assert.equal(
+      backlogAlert !== undefined,
+      true,
+    );
+    assert.deepEqual((backlogAlert?.metadata as { operatorActions?: string[] }).operatorActions, [
+      "POST /arena/internal/validation-chain/sync",
+      "POST /arena/internal/validation-chain/backlog/reconcile",
+      "POST /arena/internal/validation-chain/markets/market_1/bets/bettor_1/reconcile",
+      "GET /arena/internal/monitoring/validation-chain",
+    ]);
+  });
+
+  it("exposes stale payout markets with operator recovery actions in validation-chain health snapshots", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () =>
+          [
+            {
+              id: "market_resolved_1",
+              propositionId: "prop_1",
+              chainStatus: "resolved",
+              chainResolvedAt: new Date("2026-04-22T00:00:00.000Z"),
+              chainCancelledAt: null,
+              bets: [{ id: "bet_1" }, { id: "bet_2" }],
+            },
+          ] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      Object.assign(new FakeRedisService(), {
+        schedulerWorkerHeartbeat: {
+          processRole: "worker",
+          startedAt: "2026-04-24T00:58:00.000Z",
+          lastSeenAt: "2026-04-24T00:59:55.000Z",
+          lastJobProcessedAt: "2026-04-24T00:59:50.000Z",
+          lastJobName: "validation-chain.sync",
+          lastWorkerErrorAt: null,
+          lastWorkerErrorMessage: null,
+        },
+      }) as never,
+      audit as never,
+    );
+
+    const snapshot = await alerts.getHealthSnapshot("2026-04-24T01:00:00.000Z");
+
+    assert.equal(snapshot.metrics.stalePayoutMarketCount, 1);
+    assert.equal(snapshot.stalePayoutMarkets.length, 1);
+    assert.equal(snapshot.stalePayoutMarkets[0]?.marketId, "market_resolved_1");
+    assert.equal(snapshot.stalePayoutMarkets[0]?.unclaimedBetCount, 2);
+    assert.deepEqual(snapshot.stalePayoutMarkets[0]?.operatorActions, [
+      "POST /arena/internal/validation-chain/sync",
+      "POST /arena/internal/validation-chain/markets/market_resolved_1/replay-projection",
+      "GET /arena/internal/monitoring/validation-chain",
+    ]);
+    assert.equal(snapshot.operatorSummary.status, "action_required");
+    assert.equal(snapshot.operatorSummary.requiresActionNow, true);
+    assert.equal(snapshot.operatorSummary.focusArea, "stale_payouts");
+    assert.equal(
+      snapshot.operatorSummary.summary,
+      "Stale payout recovery is required for at least one terminal market before settlement completeness can be trusted.",
+    );
+    assert.deepEqual(snapshot.operatorSummary.operatorActions, [
+      "POST /arena/internal/validation-chain/sync",
+      "POST /arena/internal/validation-chain/markets/market_resolved_1/replay-projection",
+      "GET /arena/internal/monitoring/validation-chain",
+    ]);
+  });
+
+  it("raises an alert when stale payout markets remain unresolved", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () =>
+          [
+            {
+              id: "market_cancelled_1",
+              propositionId: "prop_2",
+              chainStatus: "cancelled",
+              chainResolvedAt: null,
+              chainCancelledAt: new Date("2026-04-22T00:00:00.000Z"),
+              bets: [{ id: "bet_3" }],
+            },
+          ] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      new FakeRedisService() as never,
+      audit as never,
+    );
+
+    await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
+
+    const stalePayoutAlert = audit.records.find(
+      (record) => record.action === "validation_chain.alert.stale_payouts",
+    );
+
+    assert.equal(stalePayoutAlert !== undefined, true);
+    assert.equal(stalePayoutAlert?.reason, "validation_chain.payout.stale");
+    assert.deepEqual(
+      (stalePayoutAlert?.metadata as { operatorActions?: string[] }).operatorActions,
+      [
+        "POST /arena/internal/validation-chain/sync",
+        "POST /arena/internal/validation-chain/markets/market_cancelled_1/replay-projection",
+        "GET /arena/internal/monitoring/validation-chain",
+      ],
+    );
+  });
+
+  it("ignores stale payout items that belong to a historical chain epoch no longer present on the current chain", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const audit = new FakeAuditService();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () =>
+          [
+            {
+              id: "market_resolved_legacy",
+              propositionId: "prop_legacy",
+              chainMarketId: "chain_market_legacy",
+              chainStatus: "resolved",
+              chainResolvedAt: new Date("2026-04-22T00:00:00.000Z"),
+              chainCancelledAt: null,
+              bets: [{ id: "bet_legacy" }],
+            },
+          ] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      new FakeRedisService() as never,
+      audit as never,
+      new FakeValidationChainContractService({
+        onChainState: null,
+      }) as never,
+    );
+
+    const snapshot = await alerts.getHealthSnapshot("2026-04-24T01:00:00.000Z");
+
+    assert.equal(snapshot.metrics.stalePayoutMarketCount, 0);
+    assert.deepEqual(snapshot.stalePayoutMarkets, []);
+
+    await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
+
     assert.equal(
       audit.records.some(
-        (record) =>
-          record.action === "validation_chain.alert.unsynced_bet_backlog",
+        (record) => record.action === "validation_chain.alert.stale_payouts",
       ),
-      true,
+      false,
+    );
+  });
+
+  it("raises lifecycle drift alerts with queue recovery guidance for recoverable drift", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const persistedAuditEvents: Array<Record<string, unknown>> = [];
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => persistedAuditEvents,
+        findFirst: async (input) =>
+          persistedAuditEvents.find(
+            (record) =>
+              record.entityType === (input.where as { entityType?: string }).entityType &&
+              record.entityId === (input.where as { entityId?: string }).entityId &&
+              record.action === (input.where as { action?: string }).action,
+          ) ?? null,
+        count: async () => 0,
+      },
+      {
+        findMany: async (input) => {
+          const where = input.where as {
+            propositionId?: { in?: string[] };
+          };
+          if (where.propositionId?.in) {
+            return [
+              {
+                id: "market_1",
+                propositionId: "prop_1",
+                status: "live",
+                chainMarketId: null,
+                chainStatus: null,
+              },
+            ] as Array<Record<string, unknown>>;
+          }
+
+          return [] as Array<Record<string, unknown>>;
+        },
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findMany: async () =>
+          [
+            {
+              id: "prop_1",
+              status: "live",
+              marketEnabled: true,
+              resultComputedAt: null,
+              resultKind: null,
+            },
+          ] as Array<Record<string, unknown>>,
+      },
+    );
+    const audit = {
+      async record(input: Record<string, unknown>) {
+        const stored = {
+          ...input,
+          metadataJson: input.metadata,
+          createdAt: new Date("2026-04-24T01:00:00.000Z"),
+        };
+        persistedAuditEvents.unshift(stored);
+        return stored;
+      },
+    };
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      new FakeRedisService() as never,
+      audit as never,
+    );
+
+    await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
+
+    const lifecycleAlert = persistedAuditEvents.find(
+      (record) => record.action === "validation_chain.alert.lifecycle_drift",
+    );
+
+    assert.equal(lifecycleAlert !== undefined, true);
+    assert.equal(
+      lifecycleAlert?.reason,
+      "validation_chain.lifecycle_drift.chain_market_not_created.queue_recovery",
+    );
+    assert.equal(
+      (lifecycleAlert?.metadataJson as { driftReason?: string }).driftReason,
+      "chain_market_not_created",
+    );
+    assert.equal(
+      (
+        lifecycleAlert?.metadataJson as {
+          operatorGuidance?: { kind?: string; recoveryReason?: string };
+        }
+      ).operatorGuidance?.kind,
+      "queue_recovery",
+    );
+    assert.equal(
+      (
+        lifecycleAlert?.metadataJson as {
+          operatorGuidance?: { recoveryReason?: string };
+        }
+      ).operatorGuidance?.recoveryReason,
+      "create_open_missing_market",
+    );
+  });
+
+  it("raises lifecycle drift alerts with manual intervention guidance when the market row is missing", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const persistedAuditEvents: Array<Record<string, unknown>> = [];
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => persistedAuditEvents,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findMany: async () =>
+          [
+            {
+              id: "prop_missing_market",
+              status: "live",
+              marketEnabled: true,
+              resultComputedAt: null,
+              resultKind: null,
+            },
+          ] as Array<Record<string, unknown>>,
+      },
+    );
+    const audit = {
+      async record(input: Record<string, unknown>) {
+        const stored = {
+          ...input,
+          metadataJson: input.metadata,
+          createdAt: new Date("2026-04-24T01:00:00.000Z"),
+        };
+        persistedAuditEvents.unshift(stored);
+        return stored;
+      },
+    };
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      new FakeRedisService() as never,
+      audit as never,
+    );
+
+    await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
+
+    const lifecycleAlert = persistedAuditEvents.find(
+      (record) => record.action === "validation_chain.alert.lifecycle_drift",
+    );
+
+    assert.equal(lifecycleAlert !== undefined, true);
+    assert.equal(
+      lifecycleAlert?.reason,
+      "validation_chain.lifecycle_drift.market_missing.manual_intervention",
+    );
+    assert.equal(
+      (
+        lifecycleAlert?.metadataJson as {
+          operatorGuidance?: { kind?: string; operatorActions?: string[] };
+        }
+      ).operatorGuidance?.kind,
+      "manual_intervention",
+    );
+    assert.deepEqual(
+      (
+        lifecycleAlert?.metadataJson as {
+          operatorGuidance?: { operatorActions?: string[] };
+        }
+      ).operatorGuidance?.operatorActions,
+      ["docs/contracts/arena-validation-chain-runbook.md"],
+    );
+  });
+
+  it("dedupes unchanged lifecycle drift alerts and records a new alert when recovery guidance changes", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const persistedAuditEvents: Array<Record<string, unknown>> = [];
+    const contract = new FakeValidationChainContractService({
+      onChainState: ValidationContractMarketState.PreLive,
+    });
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => persistedAuditEvents,
+        findFirst: async (input) =>
+          persistedAuditEvents.find(
+            (record) =>
+              record.entityType === (input.where as { entityType?: string }).entityType &&
+              record.entityId === (input.where as { entityId?: string }).entityId &&
+              record.action === (input.where as { action?: string }).action,
+          ) ?? null,
+        count: async () => 0,
+      },
+      {
+        findMany: async (input) => {
+          const where = input.where as {
+            propositionId?: { in?: string[] };
+          };
+          if (where.propositionId?.in) {
+            return [
+              {
+                id: "market_1",
+                propositionId: "prop_1",
+                status: "live",
+                chainMarketId: "chain_market_1",
+                chainStatus: "pre_live",
+              },
+            ] as Array<Record<string, unknown>>;
+          }
+
+          return [] as Array<Record<string, unknown>>;
+        },
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findMany: async () =>
+          [
+            {
+              id: "prop_1",
+              status: "live",
+              marketEnabled: true,
+              resultComputedAt: null,
+              resultKind: null,
+            },
+          ] as Array<Record<string, unknown>>,
+      },
+    );
+    const audit = {
+      async record(input: Record<string, unknown>) {
+        const stored = {
+          ...input,
+          metadataJson: input.metadata,
+          createdAt: new Date(
+            `2026-04-24T01:00:0${persistedAuditEvents.length}.000Z`,
+          ),
+        };
+        persistedAuditEvents.unshift(stored);
+        return stored;
+      },
+    };
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      new FakeRedisService() as never,
+      audit as never,
+      contract as never,
+    );
+
+    await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
+    await alerts.runHealthCheck("2026-04-24T01:01:00.000Z");
+
+    contract.state.onChainState = ValidationContractMarketState.Live;
+    await alerts.runHealthCheck("2026-04-24T01:02:00.000Z");
+
+    const driftAlerts = persistedAuditEvents.filter(
+      (record) => record.action === "validation_chain.alert.lifecycle_drift",
+    );
+
+    assert.equal(driftAlerts.length, 2);
+    assert.equal(
+      (
+        driftAlerts[1]?.metadataJson as {
+          operatorGuidance?: { kind?: string };
+        }
+      ).operatorGuidance?.kind,
+      "queue_recovery",
+    );
+    assert.equal(
+      (
+        driftAlerts[0]?.metadataJson as {
+          operatorGuidance?: { kind?: string };
+        }
+      ).operatorGuidance?.kind,
+      "projection_repair",
     );
   });
 
@@ -1283,6 +2277,13 @@ describe("Validation chain phase six runtime integration", () => {
       "validation-chain.sync",
     );
     assert.deepEqual(snapshot.schedulerWorker?.operatorActions, []);
+    assert.equal(snapshot.operatorSummary.status, "ready");
+    assert.equal(snapshot.operatorSummary.requiresActionNow, false);
+    assert.equal(snapshot.operatorSummary.focusArea, "healthy");
+    assert.equal(
+      snapshot.operatorSummary.summary,
+      "Validation-chain health is green. No operator recovery is required right now.",
+    );
   });
 
   it("raises sync worker unhealthy alert when scheduler worker heartbeat is down", async () => {
@@ -1340,16 +2341,35 @@ describe("Validation chain phase six runtime integration", () => {
       audit as never,
     );
 
+    const snapshot = await alerts.getHealthSnapshot("2026-04-24T01:00:00.000Z");
+
+    assert.equal(snapshot.operatorSummary.status, "action_required");
+    assert.equal(snapshot.operatorSummary.requiresActionNow, true);
+    assert.equal(snapshot.operatorSummary.focusArea, "scheduler_worker");
+    assert.equal(
+      snapshot.operatorSummary.summary,
+      "Scheduler worker heartbeat is down. Restore worker processing before trusting sync or queued recovery flows.",
+    );
+    assert.deepEqual(snapshot.operatorSummary.operatorActions, [
+      "docker compose --env-file $env:ARENA_ENV_FILE -f docker-compose.prod.yml ps scheduler-worker",
+      "docker logs --tail 200 <scheduler-worker-container>",
+      "GET /system/queues/overview",
+    ]);
+
     await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
 
-    assert.equal(
-      audit.records.some(
-        (record) =>
-          record.action === "validation_chain.alert.sync_worker_unhealthy" &&
-          record.reason === "validation_chain.sync.worker_heartbeat_down",
-      ),
-      true,
+    const workerAlert = audit.records.find(
+      (record) =>
+        record.action === "validation_chain.alert.sync_worker_unhealthy" &&
+        record.reason === "validation_chain.sync.worker_heartbeat_down",
     );
+
+    assert.equal(workerAlert !== undefined, true);
+    assert.deepEqual((workerAlert?.metadata as { operatorActions?: string[] }).operatorActions, [
+      "docker compose --env-file $env:ARENA_ENV_FILE -f docker-compose.prod.yml ps scheduler-worker",
+      "docker logs --tail 200 <scheduler-worker-container>",
+      "GET /system/queues/overview",
+    ]);
   });
 
   it("reconciles a local validation bet against on-chain position data with audit context", async () => {
@@ -1415,6 +2435,52 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(result.comparison.claimableAmount, "0");
     assert.equal(audit.records.length, 1);
     assert.equal(audit.records[0]?.action, "validation_chain.bet_reconciliation.performed");
+  });
+
+  it("rejects manual bet reconciliation without an explicit actor", async () => {
+    const contract = new FakeValidationChainContractReadService();
+    const service = new ValidationChainBetReconciliationService(
+      {
+        async findByMarketAndUser() {
+          return {
+            id: "bet_1",
+            marketId: "market_1",
+            propositionId: "prop_1",
+            userId: "0x00000000000000000000000000000000000000aa",
+            selectedOption: 1,
+            stakeAmount: "40",
+            status: "placed",
+            claimed: false,
+            chainSyncedAt: null,
+            placedAt: new Date("2026-04-24T00:20:00.000Z"),
+          };
+        },
+      } as never,
+      {
+        async findById() {
+          return {
+            id: "market_1",
+            propositionId: "prop_1",
+            chainMarketId:
+              "0x0000000000000000000000000000000000000000000000000000000000000001",
+            chainStatus: "live",
+          };
+        },
+      } as never,
+      contract as never,
+      new FakeAuditService() as never,
+    );
+
+    await assert.rejects(
+      () =>
+        service.reconcileBet({
+          marketId: "market_1",
+          userId: "0x00000000000000000000000000000000000000aa",
+          actorUserId: null,
+          reason: "validation_chain.reconcile.manual",
+        }),
+      /requires an explicit actor/i,
+    );
   });
 
   it("reconciles unsynced validation bet backlog in batches and continues past failed items", async () => {
@@ -1581,6 +2647,28 @@ describe("Validation chain phase six runtime integration", () => {
         "validation_chain.bet_reconciliation.performed",
         "validation_chain.bet_reconciliation.batch.performed",
       ],
+    );
+  });
+
+  it("rejects batch backlog reconciliation without an explicit actor", async () => {
+    const service = new ValidationChainBetReconciliationService(
+      {
+        async listUnsyncedProjectedBacklog() {
+          return [];
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      new FakeAuditService() as never,
+    );
+
+    await assert.rejects(
+      () =>
+        service.reconcileUnsyncedBets({
+          actorUserId: null,
+          reason: "validation_chain.reconcile.batch",
+        }),
+      /requires an explicit actor/i,
     );
   });
 
@@ -1883,6 +2971,32 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(replay.finalBetProjections[0]?.claimTxHash, "0x24");
     assert.equal(audit.records[audit.records.length - 1]?.action, "validation_chain.projection_replay.performed");
   });
+
+  it("rejects projection replay without an explicit actor", async () => {
+    const service = new ValidationChainProjectionReplayService(
+      {
+        async $transaction<T>(callback: () => Promise<T>) {
+          return callback();
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new FakeAuditService() as never,
+    );
+
+    await assert.rejects(
+      () =>
+        service.replayMarketProjection({
+          marketId: "market_1",
+          actorUserId: null,
+          reason: "validation_chain.replay.manual",
+        }),
+      /requires an explicit actor/i,
+    );
+  });
   it("queues create and open recovery for a live proposition whose chain market is missing", async () => {
     const { service, runtime, audit } = createCommandRecoveryService({
       proposition: {
@@ -1916,12 +3030,126 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(result.recoveryReason, "create_open_missing_market");
     assert.equal(result.onChainState, null);
     assert.equal(result.driftReason, "chain_market_not_created");
+    assert.equal(result.requestStatus, "queued");
+    assert.equal(result.commandSubmissions.length, 2);
+    assert.equal(result.commandSubmissions[0]?.status, "enqueued");
     assert.equal(runtime.createOpenCalls.length, 1);
     assert.equal(runtime.freezeCalls.length, 0);
     assert.equal(runtime.resolveCalls.length, 0);
     assert.equal(
       audit.records[audit.records.length - 1]?.action,
       "validation_chain.command_recovery.queued",
+    );
+  });
+
+  it("marks recovery as already pending when every command reuses an active single-flight job", async () => {
+    const { service, runtime, audit } = createCommandRecoveryService({
+      proposition: {
+        id: "prop_1",
+        status: "live",
+        marketEnabled: true,
+        resultKind: null,
+        winningOption: null,
+        voidReason: null,
+        resultComputedAt: null,
+      },
+      market: {
+        id: "market_1",
+        propositionId: "prop_1",
+        status: "live",
+        chainMarketId: "chain_market_1",
+        chainPropositionId: "chain_prop_1",
+        chainStatus: "pre_live",
+      },
+      onChainState: ValidationContractMarketState.PreLive,
+    });
+    runtime.nextFreezeResult = null;
+    runtime.nextResolveResult = null;
+    runtime.nextCreateOpenResult = [
+      {
+        command: "open_market",
+        status: "already_pending",
+        queueJobId: "validation-chain.open_market.prop_1",
+        delayMs: 5000,
+        errorMessage: null,
+      },
+    ];
+
+    const result = await service.recoverQueuedCommands({
+      propositionId: "prop_1",
+      actorUserId: "operator_1",
+      reason: "validation_chain.command_recovery.manual",
+      note: "open_job_already_waiting",
+    });
+
+    assert.equal(result.recoveryReason, "open_pre_live_market");
+    assert.equal(result.requestStatus, "already_pending");
+    assert.deepEqual(result.commandSubmissions, [
+      {
+        command: "open_market",
+        status: "already_pending",
+        queueJobId: "validation-chain.open_market.prop_1",
+        delayMs: 5000,
+        errorMessage: null,
+      },
+    ]);
+    assert.equal(
+      audit.records[audit.records.length - 1]?.action,
+      "validation_chain.command_recovery.already_pending",
+    );
+  });
+
+  it("marks recovery as partially failed when only some planned commands were submitted", async () => {
+    const { service, runtime, audit } = createCommandRecoveryService({
+      proposition: {
+        id: "prop_1",
+        status: "revealing",
+        marketEnabled: true,
+        resultKind: "resolved",
+        winningOption: 0,
+        voidReason: null,
+        resultComputedAt: new Date("2026-04-24T00:10:00.000Z"),
+      },
+      market: {
+        id: "market_1",
+        propositionId: "prop_1",
+        status: "frozen_for_reveal",
+        chainMarketId: "chain_market_1",
+        chainPropositionId: "chain_prop_1",
+        chainStatus: "live",
+      },
+      onChainState: ValidationContractMarketState.Live,
+    });
+    runtime.nextFreezeResult = {
+      command: "freeze_market",
+      status: "enqueued",
+      queueJobId: "validation-chain.freeze_market.prop_1",
+      delayMs: 0,
+      errorMessage: null,
+    };
+    runtime.nextResolveResult = {
+      command: "resolve_market",
+      status: "failed",
+      queueJobId: null,
+      delayMs: 5000,
+      errorMessage: "Redis unavailable",
+    };
+
+    const result = await service.recoverQueuedCommands({
+      propositionId: "prop_1",
+      actorUserId: "operator_1",
+      reason: "validation_chain.command_recovery.manual",
+      note: "resolve_enqueue_failed",
+    });
+
+    assert.equal(result.requestStatus, "partial_failure");
+    assert.deepEqual(
+      result.commandSubmissions.map((item) => item.status),
+      ["enqueued", "failed"],
+    );
+    assert.equal(
+      audit.records[audit.records.length - 1]?.action,
+      "validation_chain.command_recovery.partial_failure",
     );
   });
 
@@ -2136,6 +3364,11 @@ describe("Validation chain phase six runtime integration", () => {
       {} as never,
       {} as never,
       {} as never,
+      {
+        async listByEntity() {
+          return [];
+        },
+      } as never,
       new FakeValidationChainContractService() as never,
       undefined,
     );
@@ -2242,6 +3475,11 @@ describe("Validation chain phase six runtime integration", () => {
       {} as never,
       {} as never,
       {} as never,
+      {
+        async listByEntity() {
+          return [];
+        },
+      } as never,
       new FakeValidationChainContractService({
         hasRuntimeCode: false,
         signerIssues: {
@@ -2428,6 +3666,11 @@ describe("Validation chain phase six runtime integration", () => {
       {} as never,
       {} as never,
       {} as never,
+      {
+        async listByEntity() {
+          return [];
+        },
+      } as never,
       new FakeValidationChainContractService({
         runtimeBytecodeMatchesArtifact: false,
         signerIssues: {
@@ -2569,6 +3812,11 @@ describe("Validation chain phase six runtime integration", () => {
       {} as never,
       {} as never,
       {} as never,
+      {
+        async listByEntity() {
+          return [];
+        },
+      } as never,
       new FakeValidationChainContractService() as never,
       undefined,
     );
@@ -2635,10 +3883,18 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(readinessGate?.status, "blocked");
     assert.equal(readinessGate?.blockingDependencies.includes("scheduler_queue"), true);
     assert.equal(readinessGate?.blockingDependencies.includes("rpc"), false);
+    assert.equal(
+      readinessGate?.operatorActions.includes("GET /system/queues/overview"),
+      true,
+    );
     const validationGate = snapshot.releaseChecklist.find(
       (item) => item.id === "validation-runtime",
     );
     assert.equal(validationGate?.status, "blocked");
     assert.equal(validationGate?.blockingDependencies.includes("rpc"), true);
+    assert.equal(
+      validationGate?.operatorActions.includes("pnpm run validation:chain:check"),
+      true,
+    );
   });
 });

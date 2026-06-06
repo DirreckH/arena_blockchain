@@ -7,6 +7,7 @@ import { ArenaIdService } from "./arena-id.service";
 import { ArenaPublicController } from "./public.controller";
 import { ArenaPublicDiscoveryController } from "./public-discovery.controller";
 import { ArenaPublicRespondentLeaderboardController } from "./public-respondent-leaderboard.controller";
+import { ArenaInternalAuditController } from "./internal-audit.controller";
 import { ArenaInternalDispatchController } from "./internal-dispatch.controller";
 import { ArenaInternalMonitoringController } from "./internal-monitoring.controller";
 import { ArenaInternalPropositionsController } from "./internal-propositions.controller";
@@ -41,11 +42,13 @@ import { ConsensusClosureService } from "./services/consensus-closure.service";
 import { DispatchEngineService } from "./services/dispatch-engine.service";
 import { DiscussionService } from "./services/discussion.service";
 import { DispatchTaskService } from "./services/dispatch-task.service";
+import { DispatchTaskExpiryAutomationService } from "./services/dispatch-task-expiry-automation.service";
 import { EffectiveSampleCounterService } from "./services/effective-sample-counter.service";
 import { FreezeRevealOrchestratorService } from "./services/freeze-reveal-orchestrator.service";
 import { InternalAuditService } from "./services/internal-audit.service";
 import { InternalMonitoringService } from "./services/internal-monitoring.service";
 import { InternalPropositionOpsService } from "./services/internal-proposition-ops.service";
+import { InternalResponseReviewOpsService } from "./services/internal-response-review-ops.service";
 import { InternalRewardAuditService } from "./services/internal-reward-audit.service";
 import { MarketService } from "./services/market.service";
 import { PropositionEngineService } from "./services/proposition-engine.service";
@@ -70,6 +73,7 @@ import { RewardLedgerService } from "./services/reward-ledger.service";
 import { ResultViewService } from "./services/result-view.service";
 import { RewardViewService } from "./services/reward-view.service";
 import { ReputationService } from "./services/reputation.service";
+import { RuntimeContractAlertService } from "./services/runtime-contract-alert.service";
 import { TagService } from "./services/tag.service";
 import { ValidationRehearsalCheckpointService } from "./services/validation-rehearsal-checkpoint.service";
 import { ValidationSettlementService } from "./services/validation-settlement.service";
@@ -101,6 +105,7 @@ const services = [
   DispatchEngineService,
   DiscussionService,
   DispatchTaskService,
+  DispatchTaskExpiryAutomationService,
   QualityEngineService,
   ResponseService,
   ResponseReviewService,
@@ -109,6 +114,7 @@ const services = [
   InternalAuditService,
   InternalMonitoringService,
   InternalPropositionOpsService,
+  InternalResponseReviewOpsService,
   InternalRewardAuditService,
   ValidationRehearsalCheckpointService,
   MarketService,
@@ -136,6 +142,7 @@ const services = [
   ResultViewService,
   RewardViewService,
   ReputationService,
+  RuntimeContractAlertService,
   TagService,
   ValidationViewService,
   WatchlistService,
@@ -147,6 +154,7 @@ const services = [
     ArenaPublicController,
     ArenaPublicDiscoveryController,
     ArenaPublicRespondentLeaderboardController,
+    ArenaInternalAuditController,
     ArenaAdjudicationController,
     ArenaDiscussionController,
     ArenaRespondentAccountController,

@@ -39,6 +39,13 @@ export class ValidationChainProjectionReplayService {
     reason: string;
     note?: string;
   }): Promise<ValidationChainProjectionReplayViewModel> {
+    if (!input.actorUserId) {
+      throw new ArenaValidationError(
+        "validation_chain.replay.actor_required",
+        "Validation-chain projection replay requires an explicit actor",
+      );
+    }
+
     return withArenaTransaction(this.prisma, undefined, async (tx) => {
       const market = await this.markets.findById(input.marketId, tx);
       if (!market) {
@@ -113,7 +120,7 @@ export class ValidationChainProjectionReplayService {
           entityType: "validation_market",
           entityId: market.id,
           action: "validation_chain.projection_replay.performed",
-          actorUserId: input.actorUserId ?? null,
+          actorUserId: input.actorUserId,
           reason: input.reason,
           note: input.note,
           metadata: {

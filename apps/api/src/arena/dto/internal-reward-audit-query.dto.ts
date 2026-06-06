@@ -1,5 +1,9 @@
-import { IsEnum, IsOptional, IsString } from "class-validator";
+import { IsEnum, IsNumberString, IsOptional, IsString } from "class-validator";
 import type { RewardLedgerSourceType, RewardLedgerStatus } from "@prisma/client";
+import type {
+  InternalListSortDirection,
+  RewardAuditListSortBy,
+} from "../internal-ops.types";
 
 export class InternalRewardAuditQueryDto {
   @IsOptional()
@@ -32,4 +36,38 @@ export class InternalRewardAuditQueryDto {
     } satisfies Record<RewardLedgerSourceType, RewardLedgerSourceType>,
   )
   sourceType?: RewardLedgerSourceType;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsEnum(
+    {
+      createdAt: "createdAt",
+      finalizedAt: "finalizedAt",
+      propositionTitle: "propositionTitle",
+      userId: "userId",
+      amount: "amount",
+      ledgerVersion: "ledgerVersion",
+    } satisfies Record<RewardAuditListSortBy, RewardAuditListSortBy>,
+  )
+  sortBy?: RewardAuditListSortBy;
+
+  @IsOptional()
+  @IsEnum(
+    {
+      asc: "asc",
+      desc: "desc",
+    } satisfies Record<InternalListSortDirection, InternalListSortDirection>,
+  )
+  sortDirection?: InternalListSortDirection;
+
+  @IsOptional()
+  @IsNumberString()
+  limit?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  offset?: string;
 }

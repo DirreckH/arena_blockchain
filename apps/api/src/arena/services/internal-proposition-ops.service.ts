@@ -16,6 +16,7 @@ import {
   type InternalPropositionDetailViewModel,
   type InternalPropositionListFilters,
   type InternalPropositionListItemViewModel,
+  type InternalPropositionListPageViewModel,
   type PropositionDispatchSummaryViewModel,
   type PropositionValidationRehearsalCheckpointViewModel,
   type PropositionValidationRehearsalStepId,
@@ -61,6 +62,32 @@ const VALIDATION_REHEARSAL_CHAIN_MONITORING_ROUTE =
   "GET /arena/internal/monitoring/validation-chain";
 const VALIDATION_REHEARSAL_DRIFT_ROUTE =
   "GET /arena/internal/monitoring/validation-lifecycle-drift";
+const VALIDATION_LIFECYCLE_DRIFT_AUDIT_ACTION =
+  "validation_chain.alert.lifecycle_drift";
+const VALIDATION_CHAIN_BATCH_RECONCILIATION_ENTITY_ID =
+  "validation_chain_unsynced_bet_backlog";
+const VALIDATION_CHAIN_COMMAND_RECOVERY_AUDIT_ACTIONS = new Set([
+  "validation_chain.command_recovery.queued",
+  "validation_chain.command_recovery.already_pending",
+  "validation_chain.command_recovery.partial_failure",
+  "validation_chain.command_recovery.enqueue_failed",
+]);
+const VALIDATION_CHAIN_RECOVERY_FOLLOW_THROUGH_AUDIT_ACTIONS = new Set([
+  "validation_chain.projection_replay.performed",
+  "validation_chain.bet_reconciliation.performed",
+  "validation_chain.bet_reconciliation.batch.performed",
+]);
+const VALIDATION_CHAIN_COMMAND_PROBLEM_AUDIT_ACTIONS = new Set([
+  "validation_chain.alert.command_terminal",
+  "validation_chain.alert.command_retry_exhausted",
+]);
+const VALIDATION_CHAIN_EVENT_PROBLEM_AUDIT_ACTIONS = new Set([
+  "validation_chain.project.failed",
+  "validation_chain.alert.projector_entity_missing",
+]);
+const VALIDATION_CHAIN_TIMELINE_NOISE_ACTIONS = new Set([
+  "validation_chain.command.skipped",
+]);
 
 const toIso = (value: Date | null): string | null =>
   value ? value.toISOString() : null;
@@ -76,6 +103,69 @@ const sortAuditEventsDesc = <T extends { createdAt: string; id: string }>(
 
     return right.id.localeCompare(left.id);
   });
+
+const dedupeAuditEventsById = <T extends { id: string }>(events: T[]): T[] => {
+  const seen = new Set<string>();
+  return events.filter((event) => {
+    if (seen.has(event.id)) {
+      return false;
+    }
+
+    seen.add(event.id);
+    return true;
+  });
+};
+
+const DEFAULT_OPS_PAGE_LIMIT = 25;
+const MAX_OPS_PAGE_LIMIT = 100;
+
+const normalizeSearch = (value?: string): string | null => {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+};
+
+const clampLimit = (value?: number): number => {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_OPS_PAGE_LIMIT;
+  }
+  return Math.min(MAX_OPS_PAGE_LIMIT, Math.max(1, Math.trunc(value ?? DEFAULT_OPS_PAGE_LIMIT)));
+};
+
+const clampOffset = (value?: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(value ?? 0));
+};
+
+const compareStrings = (
+  left: string,
+  right: string,
+  direction: "asc" | "desc",
+): number => {
+  const normalized = left.localeCompare(right);
+  return direction === "asc" ? normalized : -normalized;
+};
+
+const compareNullableDates = (
+  left: string | null,
+  right: string | null,
+  direction: "asc" | "desc",
+): number => {
+  const leftTime = left ? Date.parse(left) : 0;
+  const rightTime = right ? Date.parse(right) : 0;
+  const diff = leftTime - rightTime;
+  return direction === "asc" ? diff : -diff;
+};
+
+const compareNumbers = (
+  left: number,
+  right: number,
+  direction: "asc" | "desc",
+): number => {
+  const diff = left - right;
+  return direction === "asc" ? diff : -diff;
+};
 
 const sumAmountStrings = (
   values: Array<string | null | undefined>,
@@ -124,92 +214,196 @@ export class InternalPropositionOpsService {
   async listPropositions(
     filters: InternalPropositionListFilters,
     db?: ArenaDbClient,
-  ): Promise<InternalPropositionListItemViewModel[]> {
-    return withArenaTransaction(this.prisma, db, async (tx) => {
-      const propositions = await this.propositions.list(
-        {
-          status: filters.status,
-          category: filters.category,
-          marketEnabled: filters.marketEnabled,
-          createdFrom: filters.createdFrom ? toDate(filters.createdFrom) : undefined,
-          createdTo: filters.createdTo ? toDate(filters.createdTo) : undefined,
-        },
-        tx,
-      );
-      const propositionAudits = await this.audits.listByEntityIds(
-        INTERNAL_AUDIT_ENTITY_TYPES.proposition,
-        propositions.map((proposition) => proposition.id),
-        tx,
-      );
-      const auditsByPropositionId = new Map<string, typeof propositionAudits>();
-      for (const event of propositionAudits) {
-        const existing = auditsByPropositionId.get(event.entityId) ?? [];
-        existing.push(event);
-        auditsByPropositionId.set(event.entityId, existing);
-      }
-
-      const items = await Promise.all(
-        propositions.map(async (proposition) => {
-          const [counter, pendingReviews] = await Promise.all([
-            this.counters.rebuildCounterForProposition(proposition.id, tx),
-            this.reviews.listPendingByPropositionId(proposition.id, tx),
-          ]);
-          const submission = buildPropositionSubmissionSnapshot(
-            proposition,
-            auditsByPropositionId.get(proposition.id) ?? [],
-          );
-
-          return {
-            propositionId: proposition.id,
-            title: proposition.title,
-            category: proposition.category,
-            status: proposition.status,
-            submissionStatus: submission.status,
-            submittedAt: submission.submittedAt,
-            marketEnabled: proposition.marketEnabled,
-            createdAt: proposition.createdAt.toISOString(),
-            publishedAt: toIso(proposition.publishedAt),
-            liveAt: toIso(proposition.liveAt),
-            frozenAt: toIso(proposition.frozenAt),
-            settledAt: toIso(proposition.settledAt),
-            minEffectiveSample: proposition.minEffectiveSample,
-            effectiveSampleCount: counter.effectiveSampleCount,
-            reviewedResponseCount: counter.reviewedResponses,
-            pendingReviewCount: pendingReviews.length,
-            sampleShortageCount: Math.max(
-              0,
-              proposition.minEffectiveSample - counter.effectiveSampleCount,
-            ),
-          };
-        }),
-      );
-
-      return items.filter(
-        (item) =>
-          filters.submissionStatus === undefined ||
-          item.submissionStatus === filters.submissionStatus,
-      );
-    });
+  ): Promise<InternalPropositionListPageViewModel> {
+    return withArenaTransaction(this.prisma, db, async (tx) =>
+      this.pagePropositionItems(
+        await this.buildPropositionListItems(filters, tx),
+        filters,
+        filters.sortBy ?? "createdAt",
+        filters.sortDirection ?? "desc",
+      ),
+    );
   }
 
   async listReviewQueue(
     filters: Omit<InternalPropositionListFilters, "status" | "submissionStatus">,
     db?: ArenaDbClient,
+  ): Promise<InternalPropositionListPageViewModel> {
+    return withArenaTransaction(this.prisma, db, async (tx) =>
+      this.pagePropositionItems(
+        await this.buildPropositionListItems(
+          {
+            ...filters,
+            status: "draft",
+            submissionStatus: "submitted",
+          },
+          tx,
+        ),
+        filters,
+        filters.sortBy ?? "submittedAt",
+        filters.sortDirection ?? "desc",
+      ),
+    );
+  }
+
+  private async buildPropositionListItems(
+    filters: InternalPropositionListFilters,
+    tx: ArenaDbClient,
   ): Promise<InternalPropositionListItemViewModel[]> {
-    const items = await this.listPropositions(
+    const propositions = await this.propositions.list(
       {
-        ...filters,
-        status: "draft",
-        submissionStatus: "submitted",
+        status: filters.status,
+        category: filters.category,
+        marketEnabled: filters.marketEnabled,
+        createdFrom: filters.createdFrom ? toDate(filters.createdFrom) : undefined,
+        createdTo: filters.createdTo ? toDate(filters.createdTo) : undefined,
       },
-      db,
+      tx,
+    );
+    const propositionAudits = await this.audits.listByEntityIds(
+      INTERNAL_AUDIT_ENTITY_TYPES.proposition,
+      propositions.map((proposition) => proposition.id),
+      tx,
+    );
+    const auditsByPropositionId = new Map<string, typeof propositionAudits>();
+    for (const event of propositionAudits) {
+      const existing = auditsByPropositionId.get(event.entityId) ?? [];
+      existing.push(event);
+      auditsByPropositionId.set(event.entityId, existing);
+    }
+
+    const items = await Promise.all(
+      propositions.map(async (proposition) => {
+        const [counter, pendingReviews] = await Promise.all([
+          this.counters.rebuildCounterForProposition(proposition.id, tx),
+          this.reviews.listPendingByPropositionId(proposition.id, tx),
+        ]);
+        const submission = buildPropositionSubmissionSnapshot(
+          proposition,
+          auditsByPropositionId.get(proposition.id) ?? [],
+        );
+
+        return {
+          propositionId: proposition.id,
+          title: proposition.title,
+          category: proposition.category,
+          status: proposition.status,
+          submissionStatus: submission.status,
+          submittedAt: submission.submittedAt,
+          marketEnabled: proposition.marketEnabled,
+          createdAt: proposition.createdAt.toISOString(),
+          publishedAt: toIso(proposition.publishedAt),
+          liveAt: toIso(proposition.liveAt),
+          frozenAt: toIso(proposition.frozenAt),
+          settledAt: toIso(proposition.settledAt),
+          minEffectiveSample: proposition.minEffectiveSample,
+          effectiveSampleCount: counter.effectiveSampleCount,
+          reviewedResponseCount: counter.reviewedResponses,
+          pendingReviewCount: pendingReviews.length,
+          sampleShortageCount: Math.max(
+            0,
+            proposition.minEffectiveSample - counter.effectiveSampleCount,
+          ),
+        };
+      }),
     );
 
-    return items.sort((left, right) => {
-      const leftSubmittedAt = left.submittedAt ? Date.parse(left.submittedAt) : 0;
-      const rightSubmittedAt = right.submittedAt ? Date.parse(right.submittedAt) : 0;
-      return rightSubmittedAt - leftSubmittedAt || right.createdAt.localeCompare(left.createdAt);
-    });
+    return items.filter(
+      (item) =>
+        filters.submissionStatus === undefined ||
+        item.submissionStatus === filters.submissionStatus,
+    );
+  }
+
+  private pagePropositionItems(
+    items: InternalPropositionListItemViewModel[],
+    filters: Pick<
+      InternalPropositionListFilters,
+      "search" | "sortBy" | "sortDirection" | "limit" | "offset"
+    >,
+    defaultSortBy: NonNullable<InternalPropositionListFilters["sortBy"]>,
+    defaultDirection: NonNullable<InternalPropositionListFilters["sortDirection"]>,
+  ): InternalPropositionListPageViewModel {
+    const search = normalizeSearch(filters.search);
+    const sortBy = filters.sortBy ?? defaultSortBy;
+    const direction = filters.sortDirection ?? defaultDirection;
+    const limit = clampLimit(filters.limit);
+    const offset = clampOffset(filters.offset);
+
+    const filteredItems = items
+      .filter((item) => {
+        if (!search) {
+          return true;
+        }
+
+        return [
+          item.propositionId,
+          item.title,
+          item.category,
+          item.status,
+          item.submissionStatus,
+        ].some((value) => value.toLowerCase().includes(search));
+      })
+      .sort((left, right) =>
+        this.comparePropositionItems(left, right, sortBy, direction),
+      );
+
+    return {
+      items: filteredItems.slice(offset, offset + limit),
+      totalCount: filteredItems.length,
+      limit,
+      offset,
+    };
+  }
+
+  private comparePropositionItems(
+    left: InternalPropositionListItemViewModel,
+    right: InternalPropositionListItemViewModel,
+    sortBy: NonNullable<InternalPropositionListFilters["sortBy"]>,
+    direction: NonNullable<InternalPropositionListFilters["sortDirection"]>,
+  ): number {
+    switch (sortBy) {
+      case "submittedAt":
+        return (
+          compareNullableDates(left.submittedAt, right.submittedAt, direction) ||
+          compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "title":
+        return (
+          compareStrings(left.title, right.title, direction) ||
+          compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "effectiveSampleCount":
+        return (
+          compareNumbers(
+            left.effectiveSampleCount,
+            right.effectiveSampleCount,
+            direction,
+          ) || compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "pendingReviewCount":
+        return (
+          compareNumbers(
+            left.pendingReviewCount,
+            right.pendingReviewCount,
+            direction,
+          ) || compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "sampleShortageCount":
+        return (
+          compareNumbers(
+            left.sampleShortageCount,
+            right.sampleShortageCount,
+            direction,
+          ) || compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "createdAt":
+      default:
+        return (
+          compareNullableDates(left.createdAt, right.createdAt, direction) ||
+          compareStrings(left.propositionId, right.propositionId, direction)
+        );
+    }
   }
 
   async approveProposition(
@@ -380,17 +574,23 @@ export class InternalPropositionOpsService {
     propositionId: string,
     db?: ArenaDbClient,
   ): Promise<InternalPropositionEvidenceBundleViewModel> {
-    const [propositionExport, runtimeContract] = await Promise.all([
-      this.exportPropositionAudit(propositionId, db),
-      this.monitoring.getRuntimeContract(),
-    ]);
+    return withArenaTransaction(this.prisma, db, async (tx) => {
+      const nowIso = new Date().toISOString();
+      const [propositionExport, runtimeContract, validationChainHealth] =
+        await Promise.all([
+          this.exportPropositionAudit(propositionId, tx),
+          this.monitoring.getRuntimeContract(),
+          this.monitoring.getValidationChainHealth(nowIso, tx),
+        ]);
 
-    return {
-      propositionId,
-      exportedAt: new Date().toISOString(),
-      propositionExport,
-      runtimeContract,
-    };
+      return {
+        propositionId,
+        exportedAt: nowIso,
+        propositionExport,
+        runtimeContract,
+        validationChainHealth,
+      };
+    });
   }
 
   private async buildDetailView(
@@ -434,9 +634,17 @@ export class InternalPropositionOpsService {
       ? (validationLifecycle.chainMarketId ??
         this.validationChainIds.buildChainMarketId(market.id))
       : null;
+    const validationLifecycleRecoveryPromise =
+      this.monitoring.getValidationLifecycleRecoveryState({
+        proposition,
+        validationLifecycle,
+      });
     const [
       validationChainMarketAuditEvents,
+      validationChainPropositionAuditEvents,
       validationChainCommandAuditEvents,
+      validationChainChainMarketAuditEvents,
+      validationChainBacklogAuditEvents,
       validationChainEventIds,
       bets,
       runtimeReadiness,
@@ -444,7 +652,22 @@ export class InternalPropositionOpsService {
       market
         ? this.audits.listByEntity("validation_market", market.id, db)
         : Promise.resolve([]),
+      this.audits.listByEntity("validation_proposition", proposition.id, db),
       this.audits.listByEntity("validation_chain_command", proposition.id, db),
+      market?.chainMarketId
+        ? this.audits.listByEntity(
+            "validation_chain_market",
+            market.chainMarketId,
+            db,
+          )
+        : Promise.resolve([]),
+      market
+        ? this.audits.listByEntity(
+            "validation_chain_stream",
+            VALIDATION_CHAIN_BATCH_RECONCILIATION_ENTITY_ID,
+            db,
+          )
+        : Promise.resolve([]),
       this.validationChainEvents.listIdsByChainReferences(
         {
           propositionChainId: chainPropositionId,
@@ -467,11 +690,43 @@ export class InternalPropositionOpsService {
       },
       db,
     );
+    const validationLifecycleRecovery =
+      await validationLifecycleRecoveryPromise;
     const rehearsalCheckpoints =
       await this.validationRehearsalCheckpoints.listCheckpointsForProposition(
         proposition.id,
         db,
       );
+    const driftAuditEvents = sortAuditEventsDesc([
+      ...validationChainMarketAuditEvents.filter(
+        (event) => event.action === VALIDATION_LIFECYCLE_DRIFT_AUDIT_ACTION,
+      ),
+      ...validationChainPropositionAuditEvents.filter(
+        (event) => event.action === VALIDATION_LIFECYCLE_DRIFT_AUDIT_ACTION,
+      ),
+    ]);
+    const recoveryAuditEvents = sortAuditEventsDesc(
+      dedupeAuditEventsById([
+        ...validationChainMarketAuditEvents.filter(
+          (event) =>
+            VALIDATION_CHAIN_COMMAND_RECOVERY_AUDIT_ACTIONS.has(event.action) ||
+            VALIDATION_CHAIN_RECOVERY_FOLLOW_THROUGH_AUDIT_ACTIONS.has(
+              event.action,
+            ),
+        ),
+        ...validationChainChainMarketAuditEvents.filter((event) =>
+          VALIDATION_CHAIN_RECOVERY_FOLLOW_THROUGH_AUDIT_ACTIONS.has(event.action),
+        ),
+        ...validationChainBacklogAuditEvents.filter((event) =>
+          this.isRelevantBacklogRecoveryAudit({
+            event,
+            propositionId: proposition.id,
+            marketId: market?.id ?? null,
+            betIds: bets.map((bet) => bet.id),
+          }),
+        ),
+      ]),
+    );
     const validationRehearsal = this.buildValidationRehearsalView({
       proposition,
       validationLifecycle,
@@ -482,6 +737,34 @@ export class InternalPropositionOpsService {
       marketAuditEvents: validationChainMarketAuditEvents,
       commandAuditEvents: validationChainCommandAuditEvents,
       eventAuditEvents: validationChainEventAuditEvents,
+      recoveryAuditEvents,
+    });
+    const validationLifecycleView = {
+      ...validationLifecycle,
+      onChainState: validationLifecycleRecovery.onChainState,
+      operatorGuidance: validationLifecycleRecovery.operatorGuidance,
+    };
+    const validationChainActivity = {
+      timeline: sortAuditEventsDesc(
+        dedupeAuditEventsById([
+          ...validationChainMarketAuditEvents,
+          ...validationChainChainMarketAuditEvents,
+          ...validationChainPropositionAuditEvents,
+          ...validationChainCommandAuditEvents,
+          ...validationChainEventAuditEvents,
+          ...driftAuditEvents,
+          ...recoveryAuditEvents,
+        ]).filter((event) => !this.isValidationChainTimelineNoise(event)),
+      ),
+      marketAuditEvents: sortAuditEventsDesc(validationChainMarketAuditEvents),
+      commandAuditEvents: sortAuditEventsDesc(validationChainCommandAuditEvents),
+      eventAuditEvents: sortAuditEventsDesc(validationChainEventAuditEvents),
+      driftAuditEvents,
+      recoveryAuditEvents,
+    };
+    const validationOperatorSummary = this.buildValidationOperatorSummary({
+      validationLifecycle: validationLifecycleView,
+      validationChainActivity,
     });
 
     return {
@@ -541,17 +824,9 @@ export class InternalPropositionOpsService {
             lastPublicResult: market.lastPublicResult,
           }
         : null,
-      validationLifecycle,
-      validationChainActivity: {
-        timeline: sortAuditEventsDesc([
-          ...validationChainMarketAuditEvents,
-          ...validationChainCommandAuditEvents,
-          ...validationChainEventAuditEvents,
-        ]),
-        marketAuditEvents: sortAuditEventsDesc(validationChainMarketAuditEvents),
-        commandAuditEvents: sortAuditEventsDesc(validationChainCommandAuditEvents),
-        eventAuditEvents: sortAuditEventsDesc(validationChainEventAuditEvents),
-      },
+      validationLifecycle: validationLifecycleView,
+      validationChainActivity,
+      validationOperatorSummary,
       validationRehearsal,
       validationRehearsalCheckpoints: rehearsalCheckpoints,
       sampleCounter: counterSnapshot,
@@ -575,6 +850,90 @@ export class InternalPropositionOpsService {
       auditEvents,
       rewardAuditEvents,
     };
+  }
+
+  private isValidationChainTimelineNoise(event: {
+    entityType: string;
+    action: string;
+  }): boolean {
+    return (
+      event.entityType === "validation_chain_command" &&
+      VALIDATION_CHAIN_TIMELINE_NOISE_ACTIONS.has(event.action)
+    );
+  }
+
+  private buildValidationOperatorSummary(input: {
+    validationLifecycle: InternalPropositionDetailViewModel["validationLifecycle"];
+    validationChainActivity: InternalPropositionDetailViewModel["validationChainActivity"];
+  }): InternalPropositionDetailViewModel["validationOperatorSummary"] {
+    const latestRelevantAudit =
+      this.getLatestValidationOperatorRelevantAudit(input.validationChainActivity);
+    const activeGuidance = input.validationLifecycle.operatorGuidance;
+
+    if (activeGuidance) {
+      return {
+        status: "action_required",
+        requiresActionNow: true,
+        summary: activeGuidance.summary,
+        plannedCommands: [...activeGuidance.plannedCommands],
+        operatorActions: [...activeGuidance.operatorActions],
+        latestRelevantAudit:
+          input.validationChainActivity.driftAuditEvents[0] ?? latestRelevantAudit,
+      };
+    }
+
+    return {
+      status: "ready",
+      requiresActionNow: false,
+      summary: this.buildValidationOperatorReadySummary(latestRelevantAudit),
+      plannedCommands: [],
+      operatorActions: [],
+      latestRelevantAudit,
+    };
+  }
+
+  private getLatestValidationOperatorRelevantAudit(
+    activity: InternalPropositionDetailViewModel["validationChainActivity"],
+  ): InternalPropositionDetailViewModel["validationOperatorSummary"]["latestRelevantAudit"] {
+    return (
+      sortAuditEventsDesc([
+        ...activity.recoveryAuditEvents,
+        ...activity.driftAuditEvents,
+        ...activity.commandAuditEvents.filter((event) =>
+          VALIDATION_CHAIN_COMMAND_PROBLEM_AUDIT_ACTIONS.has(event.action),
+        ),
+        ...activity.eventAuditEvents.filter((event) =>
+          VALIDATION_CHAIN_EVENT_PROBLEM_AUDIT_ACTIONS.has(event.action),
+        ),
+      ]).at(0) ?? null
+    );
+  }
+
+  private buildValidationOperatorReadySummary(
+    latestRelevantAudit: InternalPropositionDetailViewModel["validationOperatorSummary"]["latestRelevantAudit"],
+  ): string {
+    switch (latestRelevantAudit?.action) {
+      case "validation_chain.bet_reconciliation.performed":
+      case "validation_chain.bet_reconciliation.batch.performed":
+        return "No active validation lifecycle drift. Latest operator evidence shows reconciliation completed.";
+      case "validation_chain.projection_replay.performed":
+        return "No active validation lifecycle drift. Latest operator evidence shows projection replay completed.";
+      case "validation_chain.command_recovery.already_pending":
+        return "No active validation lifecycle drift. Earlier recovery queue reuse remains in audit history, but no operator action is required right now.";
+      case "validation_chain.command_recovery.partial_failure":
+      case "validation_chain.command_recovery.enqueue_failed":
+        return "No active validation lifecycle drift. Earlier recovery submission failures remain in audit history, but no operator action is required right now.";
+      case "validation_chain.alert.lifecycle_drift":
+        return "No active validation lifecycle drift. Earlier drift evidence remains available in audit history.";
+      case "validation_chain.alert.command_terminal":
+      case "validation_chain.alert.command_retry_exhausted":
+        return "No active validation lifecycle drift. Earlier command-terminal evidence remains available in audit history.";
+      case "validation_chain.project.failed":
+      case "validation_chain.alert.projector_entity_missing":
+        return "No active validation lifecycle drift. Earlier projector-failure evidence remains available in audit history.";
+      default:
+        return "No active validation lifecycle drift. No operator recovery is required right now.";
+    }
   }
 
   private buildDispatchSummary(tasks: DispatchTask[]): PropositionDispatchSummaryViewModel {
@@ -665,6 +1024,12 @@ export class InternalPropositionOpsService {
     marketAuditEvents: Array<{ action: string; metadata: unknown; createdAt: string; id: string }>;
     commandAuditEvents: Array<{ action: string; metadata: unknown; createdAt: string; id: string }>;
     eventAuditEvents: Array<{ action: string; metadata: unknown; createdAt: string; id: string }>;
+    recoveryAuditEvents: Array<{
+      action: string;
+      metadata: unknown;
+      createdAt: string;
+      id: string;
+    }>;
   }): PropositionValidationRehearsalViewModel {
     const checkpointByStepId =
       new Map<PropositionValidationRehearsalStepId, PropositionValidationRehearsalCheckpointViewModel>();
@@ -700,6 +1065,21 @@ export class InternalPropositionOpsService {
     const marketCreatedAudit = input.marketAuditEvents.find((event) =>
       event.action.startsWith("validation_chain.create_market."),
     );
+    const latestCommandRecoveryAudit = input.recoveryAuditEvents
+      .filter((event) =>
+        VALIDATION_CHAIN_COMMAND_RECOVERY_AUDIT_ACTIONS.has(event.action),
+      )
+      .at(0);
+    const latestBetRecoveryAudit = input.recoveryAuditEvents
+      .filter(
+        (event) =>
+          event.action === "validation_chain.bet_reconciliation.performed" ||
+          event.action === "validation_chain.bet_reconciliation.batch.performed",
+      )
+      .at(0);
+    const latestProjectionReplayAudit = input.recoveryAuditEvents.find(
+      (event) => event.action === "validation_chain.projection_replay.performed",
+    );
     const hasTerminalBetProjection =
       input.validationLifecycle.chainResolvedAt !== null &&
       input.bets.some(
@@ -732,6 +1112,11 @@ export class InternalPropositionOpsService {
           `latest command terminal audit: ${terminalCommand}`,
         );
       }
+      if (!chainOpened && latestCommandRecoveryAudit) {
+        publishBlockingReasons.push(
+          `latest recovery audit: ${latestCommandRecoveryAudit.action}`,
+        );
+      }
     }
 
     const betSyncBlockingReasons: string[] = [];
@@ -744,6 +1129,11 @@ export class InternalPropositionOpsService {
       }
       if (!syncedBet) {
         betSyncBlockingReasons.push("no local validation bet has been projected from chain events");
+      }
+      if (betSyncBlockingReasons.length > 0 && latestBetRecoveryAudit) {
+        betSyncBlockingReasons.push(
+          `latest recovery audit: ${latestBetRecoveryAudit.action}`,
+        );
       }
     }
 
@@ -760,6 +1150,11 @@ export class InternalPropositionOpsService {
       }
       if (input.validationLifecycle.chainResolvedAt === null) {
         freezeResolveBlockingReasons.push("chain market has not been resolved");
+      }
+      if (freezeResolveBlockingReasons.length > 0 && latestCommandRecoveryAudit) {
+        freezeResolveBlockingReasons.push(
+          `latest recovery audit: ${latestCommandRecoveryAudit.action}`,
+        );
       }
     }
 
@@ -779,6 +1174,14 @@ export class InternalPropositionOpsService {
       ) {
         projectionSettlementBlockingReasons.push(
           `latest projector failure audit: ${projectorFailure.action}`,
+        );
+      }
+      if (
+        projectionSettlementBlockingReasons.length > 0 &&
+        latestProjectionReplayAudit
+      ) {
+        projectionSettlementBlockingReasons.push(
+          `latest recovery audit: ${latestProjectionReplayAudit.action}`,
         );
       }
     }
@@ -1008,6 +1411,57 @@ export class InternalPropositionOpsService {
 
     const value = (metadata as Record<string, unknown>)[key];
     return typeof value === "string" ? value : null;
+  }
+
+  private getStringArrayMetadataValue(
+    metadata: unknown,
+    key: string,
+  ): string[] {
+    if (!metadata || typeof metadata !== "object") {
+      return [];
+    }
+
+    const value = (metadata as Record<string, unknown>)[key];
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  private isRelevantBacklogRecoveryAudit(input: {
+    event: { action: string; metadata: unknown };
+    propositionId: string;
+    marketId: string | null;
+    betIds: string[];
+  }): boolean {
+    if (input.event.action !== "validation_chain.bet_reconciliation.batch.performed") {
+      return false;
+    }
+
+    const propositionIds = this.getStringArrayMetadataValue(
+      input.event.metadata,
+      "propositionIds",
+    );
+    if (propositionIds.includes(input.propositionId)) {
+      return true;
+    }
+
+    if (input.marketId) {
+      const marketIds = this.getStringArrayMetadataValue(
+        input.event.metadata,
+        "marketIds",
+      );
+      if (marketIds.includes(input.marketId)) {
+        return true;
+      }
+    }
+
+    const eventBetIds = this.getStringArrayMetadataValue(
+      input.event.metadata,
+      "betIds",
+    );
+    return input.betIds.some((betId) => eventBetIds.includes(betId));
   }
 
   private async getRequiredProposition(

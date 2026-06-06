@@ -1,14 +1,19 @@
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import type { JobsOptions, Queue } from "bullmq";
 import { PinoLogger } from "nestjs-pino";
 
-import type { EnqueuedJobSnapshot, QueueOverviewSnapshot } from "@arena/shared";
+import type {
+  EnqueuedJobSnapshot,
+  QueueFailedJobRequeueResultSnapshot,
+  QueueOverviewSnapshot,
+} from "@arena/shared";
 import type { ValidationChainCommandJobPayload } from "../arena/validation-chain/validation-chain.types";
 
 import {
   AUTH_QUEUE,
   AUTH_PLACEHOLDER_JOB,
+  DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
   PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
   REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
   SCHEDULER_HEARTBEAT_JOB,
@@ -29,6 +34,10 @@ import {
 import { RedisService } from "./redis.service";
 import { evaluateSchedulerWorkerHealth } from "./scheduler-worker-heartbeat";
 
+type SchedulerEnqueueSnapshot = EnqueuedJobSnapshot & {
+  dedupeStatus: "enqueued" | "already_pending";
+};
+
 const VALIDATION_CHAIN_SYNC_JOB_ID = buildSchedulerJobId(
   "validation-chain",
   "sync",
@@ -36,6 +45,10 @@ const VALIDATION_CHAIN_SYNC_JOB_ID = buildSchedulerJobId(
 const PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID = buildSchedulerJobId(
   "automation",
   "proposition-lifecycle",
+);
+const DISPATCH_TASK_EXPIRY_AUTOMATION_JOB_ID = buildSchedulerJobId(
+  "automation",
+  "dispatch-task-expiry",
 );
 const REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID =
   buildSchedulerJobId("automation", "requester-comparison-set-delivery");
@@ -82,10 +95,9 @@ export class AppQueueService {
 
   async enqueueValidationChainSync(
     payload: Record<string, unknown> = {},
-  ): Promise<EnqueuedJobSnapshot> {
-    await this.releaseFinishedSchedulerJob(VALIDATION_CHAIN_SYNC_JOB_ID);
-
-    return this.enqueueJob(
+  ): Promise<SchedulerEnqueueSnapshot> {
+    const dedupeStatus = await this.prepareSchedulerJob(VALIDATION_CHAIN_SYNC_JOB_ID);
+    const snapshot = await this.enqueueJob(
       this.schedulerQueue,
       SCHEDULER_QUEUE,
       VALIDATION_CHAIN_SYNC_JOB,
@@ -98,21 +110,25 @@ export class AppQueueService {
         jobId: VALIDATION_CHAIN_SYNC_JOB_ID,
       },
     );
+
+    return {
+      ...snapshot,
+      dedupeStatus,
+    };
   }
 
   async enqueueValidationChainCommand(
     payload: ValidationChainCommandJobPayload,
     overrides: Partial<JobsOptions> = {},
-  ): Promise<EnqueuedJobSnapshot> {
+  ): Promise<SchedulerEnqueueSnapshot> {
     const jobId = buildSchedulerJobId(
       "validation-chain",
       payload.command,
       payload.propositionId,
     );
 
-    await this.releaseFinishedSchedulerJob(jobId);
-
-    return this.enqueueJob(
+    const dedupeStatus = await this.prepareSchedulerJob(jobId);
+    const snapshot = await this.enqueueJob(
       this.schedulerQueue,
       SCHEDULER_QUEUE,
       VALIDATION_CHAIN_COMMAND_JOB,
@@ -123,16 +139,21 @@ export class AppQueueService {
         ...overrides,
       },
     );
+
+    return {
+      ...snapshot,
+      dedupeStatus,
+    };
   }
 
   async enqueuePropositionLifecycleAutomation(
     payload: Record<string, unknown> = {},
-  ): Promise<EnqueuedJobSnapshot> {
-    await this.releaseFinishedSchedulerJob(
+  ): Promise<SchedulerEnqueueSnapshot> {
+    const dedupeStatus = await this.prepareSchedulerJob(
       PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID,
     );
 
-    return this.enqueueJob(
+    const snapshot = await this.enqueueJob(
       this.schedulerQueue,
       SCHEDULER_QUEUE,
       PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
@@ -145,16 +166,48 @@ export class AppQueueService {
         jobId: PROPOSITION_LIFECYCLE_AUTOMATION_JOB_ID,
       },
     );
+
+    return {
+      ...snapshot,
+      dedupeStatus,
+    };
+  }
+
+  async enqueueDispatchTaskExpiryAutomation(
+    payload: Record<string, unknown> = {},
+  ): Promise<SchedulerEnqueueSnapshot> {
+    const dedupeStatus = await this.prepareSchedulerJob(
+      DISPATCH_TASK_EXPIRY_AUTOMATION_JOB_ID,
+    );
+
+    const snapshot = await this.enqueueJob(
+      this.schedulerQueue,
+      SCHEDULER_QUEUE,
+      DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
+      {
+        requestedAt: new Date().toISOString(),
+        ...payload,
+      },
+      SAFE_RETRY_JOB_POLICY,
+      {
+        jobId: DISPATCH_TASK_EXPIRY_AUTOMATION_JOB_ID,
+      },
+    );
+
+    return {
+      ...snapshot,
+      dedupeStatus,
+    };
   }
 
   async enqueueRequesterComparisonSetDeliveryAutomation(
     payload: Record<string, unknown> = {},
-  ): Promise<EnqueuedJobSnapshot> {
-    await this.releaseFinishedSchedulerJob(
+  ): Promise<SchedulerEnqueueSnapshot> {
+    const dedupeStatus = await this.prepareSchedulerJob(
       REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID,
     );
 
-    return this.enqueueJob(
+    const snapshot = await this.enqueueJob(
       this.schedulerQueue,
       SCHEDULER_QUEUE,
       REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
@@ -167,6 +220,11 @@ export class AppQueueService {
         jobId: REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID,
       },
     );
+
+    return {
+      ...snapshot,
+      dedupeStatus,
+    };
   }
 
   async enqueueSystemFailureDemo(
@@ -212,6 +270,48 @@ export class AppQueueService {
       timestamp: new Date().toISOString(),
       redis,
       queues,
+    };
+  }
+
+  async requeueFailedJobs(
+    queueName: string,
+    limit = 25,
+  ): Promise<QueueFailedJobRequeueResultSnapshot> {
+    const queue = this.resolveQueueByName(queueName);
+    if (!queue) {
+      throw new NotFoundException(`Queue ${queueName} was not found`);
+    }
+
+    const policy = this.resolveQueuePolicy(queueName);
+    if (!policy.retryable) {
+      throw new ConflictException(`Queue ${queueName} does not support failed job requeue`);
+    }
+
+    const failedJobs = await queue.getFailed(0, Math.max(0, limit - 1));
+    let retriedCount = 0;
+    let skippedCount = 0;
+
+    for (const job of failedJobs) {
+      try {
+        await job.retry("failed");
+        retriedCount += 1;
+      } catch (error) {
+        skippedCount += 1;
+        this.logger.warn(
+          buildJobLogContext(queueName, job, {
+            error: error instanceof Error ? error.message : "Unknown failed job retry error",
+            retryable: policy.retryable,
+          }),
+          "Failed to requeue queue job",
+        );
+      }
+    }
+
+    return {
+      queue: queueName,
+      failedCount: failedJobs.length,
+      retriedCount,
+      skippedCount,
     };
   }
 
@@ -313,20 +413,34 @@ export class AppQueueService {
     }
   }
 
-  private async releaseFinishedSchedulerJob(
+  private async prepareSchedulerJob(
     jobId: string,
-  ): Promise<void> {
+  ): Promise<"enqueued" | "already_pending"> {
     const job = await this.schedulerQueue.getJob(jobId);
     if (!job) {
-      return;
+      return "enqueued";
     }
 
     const state = await job.getState();
     if (state !== "completed" && state !== "failed") {
-      return;
+      return "already_pending";
     }
 
     await job.remove();
+    return "enqueued";
+  }
+
+  private resolveQueueByName(queueName: string): Queue | null {
+    switch (queueName) {
+      case SYSTEM_QUEUE:
+        return this.systemQueue;
+      case AUTH_QUEUE:
+        return this.authQueue;
+      case SCHEDULER_QUEUE:
+        return this.schedulerQueue;
+      default:
+        return null;
+    }
   }
 
   private resolveQueuePolicy(queueName: string): QueueJobPolicy {

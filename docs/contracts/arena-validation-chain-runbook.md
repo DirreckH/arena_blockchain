@@ -1,5 +1,27 @@
 # Arena validation-chain runbook
 
+## Recommended operator entrypoint
+
+For the current proposition-scoped operating path, prefer this command before
+manually hopping across monitoring routes and runbooks:
+
+```powershell
+pnpm run validation:ops:brief -- --proposition-id <id> [--base-url <url>] [--auth-token <token>]
+```
+
+The command refreshes and writes one coherent operator bundle under
+`validation-rehearsal/<id>/`, including:
+
+- backend release readiness
+- validation-chain monitoring
+- proposition evidence bundle
+- public settled-result proof
+- public integrity proof
+- one unified `operator-briefing.json`
+
+It exits `0` only when release readiness, runtime hardening, proposition
+rehearsal, and public beta proof are all green for the target proposition.
+
 本 runbook 只覆盖 Phase 3B-1 的验证层接链运行演练与观测基线。
 
 当前范围固定为非滚动、单题、二选一、简单下注、一次性结算。不覆盖 rolling proposition、多题问卷、AMM、订单簿、赔率、手续费、前端钱包改造、复杂 replay/rollback 或完整 reorg rollback。

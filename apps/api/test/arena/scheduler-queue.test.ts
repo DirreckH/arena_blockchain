@@ -5,11 +5,18 @@ import { describe, it } from "node:test";
 
 import { SchedulerQueueProcessor } from "../../src/queue/processors/scheduler.processor";
 import {
+  buildBullRetryDelay,
+  toBullConnection,
+} from "../../src/queue/queue-client.module";
+import {
   PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
   REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
 } from "../../src/queue/queue.constants";
 import { AppQueueService } from "../../src/queue/queue.service";
 import { SchedulerService } from "../../src/queue/scheduler.service";
+
+const DISPATCH_TASK_EXPIRY_AUTOMATION_JOB =
+  "automation.dispatch-task-expiry";
 
 class FakeLogger {
   setContext(): void {}
@@ -173,9 +180,30 @@ class FakeRequesterComparisonSetDeliveryAutomationService {
   }
 }
 
+class FakeDispatchTaskExpiryAutomationService {
+  readonly calls: Array<Record<string, unknown>> = [];
+
+  async expireDueTasks(input: { now?: string } = {}) {
+    this.calls.push({ ...input });
+    return {
+      processedAt: new Date().toISOString(),
+      processedCount: 0,
+      taskIds: [],
+    };
+  }
+}
+
 class FakeValidationChainAlertService {
   async runHealthCheck(): Promise<void> {}
   async recordCommandRetryExhausted(): Promise<void> {}
+}
+
+class FakeRuntimeContractAlertService {
+  runHealthCheckCalls = 0;
+
+  async runHealthCheck(): Promise<void> {
+    this.runHealthCheckCalls += 1;
+  }
 }
 
 class FakeValidationChainSyncWorker {
@@ -221,7 +249,66 @@ function createQueueServiceHarness() {
   return { service, schedulerQueue, redis };
 }
 
+function createSchedulerProcessor(input: {
+  propositionLifecycle?: FakePropositionLifecycleAutomationService;
+  requesterDelivery?: FakeRequesterComparisonSetDeliveryAutomationService;
+  dispatchTaskExpiry?: FakeDispatchTaskExpiryAutomationService;
+  workerHeartbeat?: FakeSchedulerWorkerHeartbeatService;
+}) {
+  const propositionLifecycle =
+    input.propositionLifecycle ?? new FakePropositionLifecycleAutomationService();
+  const requesterDelivery =
+    input.requesterDelivery ??
+    new FakeRequesterComparisonSetDeliveryAutomationService();
+  const dispatchTaskExpiry =
+    input.dispatchTaskExpiry ?? new FakeDispatchTaskExpiryAutomationService();
+  const workerHeartbeat =
+    input.workerHeartbeat ?? new FakeSchedulerWorkerHeartbeatService();
+  const sharedArgs = [
+    new FakeLogger() as never,
+    new FakeValidationChainSyncWorker() as never,
+    new FakeValidationChainCommandRuntimeService() as never,
+    propositionLifecycle as never,
+    requesterDelivery as never,
+  ];
+  const processor =
+    SchedulerQueueProcessor.length >= 8
+      ? new (SchedulerQueueProcessor as any)(
+          ...sharedArgs,
+          dispatchTaskExpiry as never,
+          new FakeValidationChainAlertService() as never,
+          workerHeartbeat as never,
+        )
+      : new (SchedulerQueueProcessor as any)(
+          ...sharedArgs,
+          new FakeValidationChainAlertService() as never,
+          workerHeartbeat as never,
+        );
+
+  return {
+    processor,
+    propositionLifecycle,
+    requesterDelivery,
+    dispatchTaskExpiry,
+    workerHeartbeat,
+  };
+}
+
 describe("Scheduler queue automations", () => {
+  it("keeps BullMQ queue connections retryable during Redis startup recovery", () => {
+    const connection = toBullConnection("redis://user:secret@127.0.0.1:6380/3");
+
+    assert.equal(connection.host, "127.0.0.1");
+    assert.equal(connection.port, 6380);
+    assert.equal(connection.username, "user");
+    assert.equal(connection.password, "secret");
+    assert.equal(connection.db, 3);
+    assert.equal(connection.maxRetriesPerRequest, null);
+    assert.equal(connection.retryStrategy(1), 1_000);
+    assert.equal(connection.retryStrategy(20), 20_000);
+    assert.equal(buildBullRetryDelay(4), 1_000);
+  });
+
   it("allows re-enqueue after a completed proposition lifecycle automation job is retained", async () => {
     const { service, schedulerQueue } = createQueueServiceHarness();
 
@@ -261,6 +348,27 @@ describe("Scheduler queue automations", () => {
 
     assert.equal(schedulerQueue.addCalls.length, 2);
     assert.equal(pendingJob?.removed, false);
+    assert.equal(String(schedulerQueue.addCalls[1]?.opts.jobId ?? ""), jobId);
+  });
+
+  it("allows re-enqueue after a completed dispatch task expiry automation job is retained", async () => {
+    const { service, schedulerQueue } = createQueueServiceHarness();
+
+    await (service as any).enqueueDispatchTaskExpiryAutomation();
+
+    const jobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
+    assert.equal(jobId, "automation.dispatch-task-expiry");
+
+    const retainedJob = schedulerQueue.jobs.get(jobId);
+    assert.equal(retainedJob?.removed, false);
+    if (retainedJob) {
+      retainedJob.state = "completed";
+    }
+
+    await (service as any).enqueueDispatchTaskExpiryAutomation();
+
+    assert.equal(schedulerQueue.addCalls.length, 2);
+    assert.equal(retainedJob?.removed, true);
     assert.equal(String(schedulerQueue.addCalls[1]?.opts.jobId ?? ""), jobId);
   });
 
@@ -352,6 +460,7 @@ describe("Scheduler queue automations", () => {
       { validationSyncPollIntervalMs: 60_000 } as never,
       queueService as never,
       new FakeValidationChainAlertService() as never,
+      new FakeRuntimeContractAlertService() as never,
       new FakeLogger() as never,
     );
 
@@ -394,6 +503,7 @@ describe("Scheduler queue automations", () => {
       { validationSyncPollIntervalMs: 60_000 } as never,
       queueService as never,
       new FakeValidationChainAlertService() as never,
+      new FakeRuntimeContractAlertService() as never,
       new FakeLogger() as never,
     );
 
@@ -403,21 +513,78 @@ describe("Scheduler queue automations", () => {
     assert.equal(typeof queueCalls[0]?.payload?.requestedAt, "string");
   });
 
-  it("processes a queued proposition lifecycle automation job", async () => {
-    const propositionLifecycle =
-      new FakePropositionLifecycleAutomationService();
-    const requesterDelivery =
-      new FakeRequesterComparisonSetDeliveryAutomationService();
-    const workerHeartbeat = new FakeSchedulerWorkerHeartbeatService();
-    const processor = new SchedulerQueueProcessor(
-      new FakeLogger() as never,
-      new FakeValidationChainSyncWorker() as never,
-      new FakeValidationChainCommandRuntimeService() as never,
-      propositionLifecycle as never,
-      requesterDelivery as never,
+  it("enqueues dispatch task expiry automation from the scheduler cron entrypoint", async () => {
+    const queueCalls: Array<Record<string, unknown>> = [];
+    const queueService = {
+      async enqueuePropositionLifecycleAutomation() {
+        throw new Error("not expected");
+      },
+      async enqueueRequesterComparisonSetDeliveryAutomation() {
+        throw new Error("not expected");
+      },
+      async enqueueDispatchTaskExpiryAutomation() {
+        const snapshot = {
+          queue: "scheduler",
+          name: DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
+          jobId: "automation.dispatch-task-expiry",
+        };
+        queueCalls.push(snapshot);
+        return snapshot;
+      },
+      async enqueueSchedulerHeartbeat() {
+        throw new Error("not expected");
+      },
+      async enqueueValidationChainSync() {
+        throw new Error("not expected");
+      },
+    };
+    const service = new SchedulerService(
+      { validationSyncPollIntervalMs: 60_000 } as never,
+      queueService as never,
       new FakeValidationChainAlertService() as never,
-      workerHeartbeat as never,
+      new FakeRuntimeContractAlertService() as never,
+      new FakeLogger() as never,
     );
+
+    await (service as any).runDispatchTaskExpiryAutomation();
+
+    assert.equal(queueCalls.length, 1);
+  });
+
+  it("runs runtime contract audit checks from the scheduler cron entrypoint", async () => {
+    const runtimeContractAlerts = new FakeRuntimeContractAlertService();
+    const service = new SchedulerService(
+      { validationSyncPollIntervalMs: 60_000 } as never,
+      {
+        async enqueuePropositionLifecycleAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueRequesterComparisonSetDeliveryAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueSchedulerHeartbeat() {
+          throw new Error("not expected");
+        },
+        async enqueueValidationChainSync() {
+          throw new Error("not expected");
+        },
+      } as never,
+      new FakeValidationChainAlertService() as never,
+      runtimeContractAlerts as never,
+      new FakeLogger() as never,
+    );
+
+    await service.runRuntimeContractHealthCheck();
+
+    assert.equal(runtimeContractAlerts.runHealthCheckCalls, 1);
+  });
+
+  it("processes a queued proposition lifecycle automation job", async () => {
+    const {
+      processor,
+      propositionLifecycle,
+      workerHeartbeat,
+    } = createSchedulerProcessor({});
 
     const result = await processor.process({
       id: "automation_1",
@@ -438,20 +605,11 @@ describe("Scheduler queue automations", () => {
   });
 
   it("processes a queued requester comparison set delivery automation job", async () => {
-    const propositionLifecycle =
-      new FakePropositionLifecycleAutomationService();
-    const requesterDelivery =
-      new FakeRequesterComparisonSetDeliveryAutomationService();
-    const workerHeartbeat = new FakeSchedulerWorkerHeartbeatService();
-    const processor = new SchedulerQueueProcessor(
-      new FakeLogger() as never,
-      new FakeValidationChainSyncWorker() as never,
-      new FakeValidationChainCommandRuntimeService() as never,
-      propositionLifecycle as never,
-      requesterDelivery as never,
-      new FakeValidationChainAlertService() as never,
-      workerHeartbeat as never,
-    );
+    const {
+      processor,
+      requesterDelivery,
+      workerHeartbeat,
+    } = createSchedulerProcessor({});
 
     const result = await processor.process({
       id: "automation_2",
@@ -476,5 +634,31 @@ describe("Scheduler queue automations", () => {
       result?.jobName,
       REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
     );
+  });
+
+  it("processes a queued dispatch task expiry automation job", async () => {
+    const {
+      processor,
+      dispatchTaskExpiry,
+      workerHeartbeat,
+    } = createSchedulerProcessor({});
+
+    const result = await processor.process({
+      id: "automation_3",
+      name: DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
+      data: {
+        requestedAt: "2026-05-25T00:00:00.000Z",
+      },
+      opts: { attempts: 3 },
+      attemptsMade: 1,
+    } as never);
+
+    assert.equal(dispatchTaskExpiry.calls.length, 1);
+    assert.equal(typeof dispatchTaskExpiry.calls[0]?.now, "string");
+    assert.deepEqual(workerHeartbeat.processedJobNames, [
+      DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
+    ]);
+    assert.equal(result?.processedAt !== undefined, true);
+    assert.equal(result?.jobName, DISPATCH_TASK_EXPIRY_AUTOMATION_JOB);
   });
 });

@@ -36,6 +36,13 @@ export const buildAdjudicationTaskViewModel = (
     options: input.proposition.options,
     propositionStatus: input.proposition.status,
     taskStatus: input.task.status,
+    assignedAt: input.task.assignedAt,
+    startedAt: input.task.startedAt,
+    expiresAt: input.task.expiresAt,
+    submittedAt: input.task.submittedAt,
+    skipReason: input.task.skipReason,
+    expiryReason: input.task.expiryReason,
+    cooldownUntil: input.task.cooldownUntil,
     hasSubmitted:
       input.task.status === "submitted" || input.task.submittedAt !== null,
     timeRemainingSeconds: secondsRemaining(effectiveDeadline, input.now),

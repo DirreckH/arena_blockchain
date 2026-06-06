@@ -11,7 +11,11 @@ import {
 import { AppQueueService } from "./queue.service";
 import { RedisService } from "./redis.service";
 
-function toBullConnection(redisUrl: string) {
+export function buildBullRetryDelay(attempts: number): number {
+  return Math.max(Math.min(Math.exp(attempts), 20_000), 1_000);
+}
+
+export function toBullConnection(redisUrl: string) {
   const url = new URL(redisUrl);
 
   return {
@@ -24,7 +28,9 @@ function toBullConnection(redisUrl: string) {
     lazyConnect: true,
     connectTimeout: 1000,
     maxRetriesPerRequest: null,
-    retryStrategy: () => null,
+    // Keep BullMQ clients retryable so release-stack startup races can recover
+    // after Redis becomes reachable instead of poisoning the shared queue client.
+    retryStrategy: buildBullRetryDelay,
   };
 }
 

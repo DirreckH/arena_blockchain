@@ -3,6 +3,32 @@ import type { InternalAuditEvent, Prisma } from "@prisma/client";
 
 import { PrismaService } from "../../database/prisma.service";
 import type { ArenaDbClient } from "../prisma.types";
+import type { InternalAuditEventListFilters } from "../internal-ops.types";
+
+const buildWhere = (
+  filters: InternalAuditEventListFilters,
+): Prisma.InternalAuditEventWhereInput => {
+  const search = filters.search?.trim();
+
+  return {
+    ...(filters.entityType ? { entityType: filters.entityType } : {}),
+    ...(filters.entityId ? { entityId: filters.entityId } : {}),
+    ...(filters.actorUserId ? { actorUserId: filters.actorUserId } : {}),
+    ...(filters.action ? { action: filters.action } : {}),
+    ...(search
+      ? {
+          OR: [
+            { action: { contains: search, mode: "insensitive" } },
+            { entityType: { contains: search, mode: "insensitive" } },
+            { entityId: { contains: search, mode: "insensitive" } },
+            { actorUserId: { contains: search, mode: "insensitive" } },
+            { reason: { contains: search, mode: "insensitive" } },
+            { note: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
+  };
+};
 
 @Injectable()
 export class InternalAuditEventRepository {
@@ -44,6 +70,27 @@ export class InternalAuditEventRepository {
         entityId: { in: entityIds },
       },
       orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async list(
+    filters: InternalAuditEventListFilters,
+    db: ArenaDbClient = this.prisma,
+  ): Promise<InternalAuditEvent[]> {
+    return db.internalAuditEvent.findMany({
+      where: buildWhere(filters),
+      orderBy: { createdAt: filters.sortDirection ?? "desc" },
+      take: filters.limit,
+      skip: filters.offset,
+    });
+  }
+
+  async count(
+    filters: InternalAuditEventListFilters,
+    db: ArenaDbClient = this.prisma,
+  ): Promise<number> {
+    return db.internalAuditEvent.count({
+      where: buildWhere(filters),
     });
   }
 }

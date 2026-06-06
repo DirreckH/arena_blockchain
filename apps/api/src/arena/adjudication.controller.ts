@@ -1,9 +1,15 @@
 import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
-import type { SubmitAdjudicationResponseResult } from "@arena/shared";
+import type {
+  AdjudicationTaskViewModel,
+  SubmitAdjudicationResponseResult,
+} from "@arena/shared";
 
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
+import { SkipAdjudicationTaskDto } from "./dto/skip-adjudication-task.dto";
+import { StartAdjudicationTaskDto } from "./dto/start-adjudication-task.dto";
 import { SubmitTaskResponseDto } from "./dto/submit-task-response.dto";
 import { AdjudicationViewService } from "./services/adjudication-view.service";
+import { DispatchEngineService } from "./services/dispatch-engine.service";
 import { EffectiveSampleCounterService } from "./services/effective-sample-counter.service";
 import { ResponseService } from "./services/response.service";
 
@@ -11,6 +17,7 @@ import { ResponseService } from "./services/response.service";
 export class ArenaAdjudicationController {
   constructor(
     private readonly adjudicationViews: AdjudicationViewService,
+    private readonly dispatchEngine: DispatchEngineService,
     private readonly responses: ResponseService,
     private readonly counters: EffectiveSampleCounterService,
   ) {}
@@ -28,6 +35,39 @@ export class ArenaAdjudicationController {
     @Req() request: RequestWithUser,
   ) {
     return this.adjudicationViews.getTaskForUser(taskId, this.getUserId(request));
+  }
+
+  @Post("tasks/:taskId/start")
+  async startTask(
+    @Param("taskId") taskId: string,
+    @Body() body: StartAdjudicationTaskDto,
+    @Req() request: RequestWithUser,
+  ): Promise<AdjudicationTaskViewModel> {
+    const userId = this.getUserId(request);
+    await this.dispatchEngine.startTask({
+      taskId,
+      userId,
+      startedAt: body.startedAt,
+    });
+
+    return this.adjudicationViews.getTaskForUser(taskId, userId);
+  }
+
+  @Post("tasks/:taskId/skip")
+  async skipTask(
+    @Param("taskId") taskId: string,
+    @Body() body: SkipAdjudicationTaskDto,
+    @Req() request: RequestWithUser,
+  ): Promise<AdjudicationTaskViewModel> {
+    const userId = this.getUserId(request);
+    await this.dispatchEngine.skipTask({
+      taskId,
+      userId,
+      skippedAt: body.skippedAt,
+      skipReason: body.skipReason,
+    });
+
+    return this.adjudicationViews.getTaskForUser(taskId, userId);
   }
 
   @Post("tasks/:taskId/responses")

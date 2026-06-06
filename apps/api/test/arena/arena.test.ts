@@ -5678,6 +5678,7 @@ test("internal monitoring runtime contract aggregates deployment-facing backend 
             summary: "Populate required backend and validation-chain environment variables.",
             blockingDependencies: [],
             commands: ["pnpm run validation:env:check"],
+            operatorActions: [],
           },
           {
             id: "readiness",
@@ -5685,8 +5686,46 @@ test("internal monitoring runtime contract aggregates deployment-facing backend 
             summary: "Verify public and validation runtime readiness before accepting traffic.",
             blockingDependencies: ["scheduler_queue"],
             commands: ["GET /health/ready", "GET /arena/internal/monitoring/validation-chain/runtime-readiness"],
+            operatorActions: [
+              "GET /system/queues/overview",
+              "GET /arena/internal/monitoring/validation-chain",
+            ],
           },
         ],
+        recentAlerts: [
+          {
+            id: "internal_audit_1",
+            entityType: "runtime_contract",
+            entityId: "release",
+            action: "runtime_contract.alert.release_blocked",
+            actorUserId: null,
+            reason: "runtime_contract.release_blocked",
+            note: null,
+            metadata: {
+              blockingDependencies: ["scheduler_queue", "rpc"],
+            },
+            createdAt: "2026-05-24T12:00:00.000Z",
+          },
+        ],
+        operatorSummary: {
+          status: "action_required",
+          requiresActionNow: true,
+          focusArea: "readiness",
+          summary:
+            "Release is blocked at readiness: Verify public and validation runtime readiness before accepting traffic.",
+          operatorActions: [
+            "GET /system/queues/overview",
+            "GET /arena/internal/monitoring/validation-chain",
+          ],
+          blockers: ["scheduler_queue", "rpc"],
+          latestRelevantEvidence: {
+            action: "runtime_contract.alert.release_blocked",
+            entityType: "runtime_contract",
+            entityId: "release",
+            reason: "runtime_contract.release_blocked",
+            createdAt: "2026-05-24T12:00:00.000Z",
+          },
+        },
       };
     },
   } as any);
@@ -5707,6 +5746,19 @@ test("internal monitoring runtime contract aggregates deployment-facing backend 
   assert.equal(
     snapshot.releaseChecklist.find((item) => item.id === "readiness")?.status,
     "blocked",
+  );
+  assert.equal(
+    snapshot.releaseChecklist.find((item) => item.id === "readiness")?.operatorActions.includes(
+      "GET /system/queues/overview",
+    ),
+    true,
+  );
+  assert.equal(snapshot.recentAlerts[0]?.action, "runtime_contract.alert.release_blocked");
+  assert.equal(snapshot.operatorSummary.status, "action_required");
+  assert.equal(snapshot.operatorSummary.focusArea, "readiness");
+  assert.equal(
+    snapshot.operatorSummary.operatorActions.includes("GET /system/queues/overview"),
+    true,
   );
 });
 
@@ -5987,6 +6039,7 @@ test("internal validation chain controller exposes manual command controls with 
       note: "queue_recovery",
     } as any,
     { user: { sub: "operator_chain" } } as any,
+    { status() {} } as any,
   );
   assert.equal(recoverySnapshot.marketId, market.id);
   assert.deepEqual(recoverySnapshot.plannedCommands, [
@@ -6458,6 +6511,18 @@ test("internal proposition detail includes validation chain activity timeline", 
   await harness.internalAuditService.record({
     entityType: "validation_chain_command",
     entityId: proposition.id,
+    action: "validation_chain.command.skipped",
+    actorUserId: "system_scheduler",
+    reason: "validation_chain.runtime.publish_live",
+    metadata: {
+      command: "open_market",
+      error: "Validation market cannot open from the current on-chain state",
+    },
+    createdAt: new Date("2026-04-18T10:05:25.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_chain_command",
+    entityId: proposition.id,
     action: "validation_chain.alert.command_terminal",
     actorUserId: null,
     reason: "validation_chain.command.retry_exhausted",
@@ -6473,7 +6538,15 @@ test("internal proposition detail includes validation chain activity timeline", 
   );
 
   assert.equal(detail.validationChainActivity.marketAuditEvents.length, 1);
-  assert.equal(detail.validationChainActivity.commandAuditEvents.length, 2);
+  assert.equal(detail.validationChainActivity.commandAuditEvents.length, 3);
+  assert.deepEqual(
+    detail.validationChainActivity.commandAuditEvents.map((event) => event.action),
+    [
+      "validation_chain.alert.command_terminal",
+      "validation_chain.command.skipped",
+      "validation_chain.command.enqueued",
+    ],
+  );
   assert.deepEqual(
     detail.validationChainActivity.timeline.map((event) => event.action),
     [
@@ -6485,6 +6558,90 @@ test("internal proposition detail includes validation chain activity timeline", 
   assert.equal(
     detail.validationChainActivity.timeline[0]?.entityType,
     "validation_chain_command",
+  );
+});
+
+test("internal proposition detail exposes proposition-scoped lifecycle drift recovery evidence", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Validation lifecycle recovery detail",
+  });
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+
+  harness.store.markets = harness.store.markets.filter(
+    (item) => item.id !== market.id,
+  );
+  await harness.internalAuditService.record({
+    entityType: "validation_proposition",
+    entityId: proposition.id,
+    action: "validation_chain.alert.lifecycle_drift",
+    actorUserId: null,
+    reason: "validation_chain.lifecycle_drift.market_missing.manual_intervention",
+    metadata: {
+      propositionId: proposition.id,
+      marketId: null,
+      propositionStatus: "live",
+      marketStatus: null,
+      localChainStatus: null,
+      chainMarketId: null,
+      onChainState: null,
+      driftReason: "market_missing",
+      operatorGuidance: {
+        kind: "manual_intervention",
+        summary:
+          "The local validation market row is missing. Reconstruct or investigate local market state before replaying projection or queueing chain commands.",
+        recoveryReason: null,
+        plannedCommands: [],
+        operatorActions: ["docs/contracts/arena-validation-chain-runbook.md"],
+      },
+    },
+    createdAt: new Date("2026-04-18T10:06:10.000Z"),
+  });
+
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+
+  assert.equal(detail.market, null);
+  assert.equal(detail.validationLifecycle.driftReason, "market_missing");
+  assert.equal(detail.validationLifecycle.onChainState, null);
+  assert.equal(
+    detail.validationLifecycle.operatorGuidance?.kind,
+    "manual_intervention",
+  );
+  assert.equal(
+    detail.validationLifecycle.operatorGuidance?.operatorActions.includes(
+      "docs/contracts/arena-validation-chain-runbook.md",
+    ),
+    true,
+  );
+  assert.equal(detail.validationOperatorSummary.status, "action_required");
+  assert.equal(detail.validationOperatorSummary.requiresActionNow, true);
+  assert.equal(
+    detail.validationOperatorSummary.summary,
+    "The local validation market row is missing. Reconstruct or investigate local market state before replaying projection or queueing chain commands.",
+  );
+  assert.deepEqual(detail.validationOperatorSummary.plannedCommands, []);
+  assert.equal(
+    detail.validationOperatorSummary.operatorActions.includes(
+      "docs/contracts/arena-validation-chain-runbook.md",
+    ),
+    true,
+  );
+  assert.equal(
+    detail.validationOperatorSummary.latestRelevantAudit?.action,
+    "validation_chain.alert.lifecycle_drift",
+  );
+  assert.equal(detail.validationChainActivity.driftAuditEvents.length, 1);
+  assert.equal(
+    detail.validationChainActivity.driftAuditEvents[0]?.entityType,
+    "validation_proposition",
+  );
+  assert.deepEqual(
+    detail.validationChainActivity.timeline.map((event) => event.action),
+    ["validation_chain.alert.lifecycle_drift"],
   );
 });
 
@@ -6599,6 +6756,135 @@ test("internal proposition detail includes validation chain event failure activi
   assert.equal(
     detail.validationChainActivity.timeline[0]?.entityType,
     "validation_chain_event",
+  );
+});
+
+test("internal proposition detail exposes proposition-scoped recovery follow-through activity", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Validation chain recovery follow-through detail",
+  });
+  const market = await harness.marketRepository.findByPropositionId(proposition.id);
+  assert.ok(market);
+
+  await harness.marketRepository.update(market.id, {
+    chainMarketId: `chain_market_${market.id}`,
+    chainPropositionId: `chain_prop_${proposition.id}`,
+    chainStatus: "live",
+    chainSyncedAt: new Date("2026-04-18T10:05:15.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_market",
+    entityId: market.id,
+    action: "validation_chain.command_recovery.partial_failure",
+    actorUserId: "operator_chain",
+    reason: "manual_chain_command_recovery",
+    metadata: {
+      propositionId: proposition.id,
+      marketId: market.id,
+      requestStatus: "partial_failure",
+      commandSubmissions: [
+        {
+          command: "freeze_market",
+          status: "enqueued",
+          queueJobId: "validation-chain.freeze_market.prop_1",
+          delayMs: 0,
+          errorMessage: null,
+        },
+        {
+          command: "resolve_market",
+          status: "failed",
+          queueJobId: null,
+          delayMs: 5000,
+          errorMessage: "Redis unavailable",
+        },
+      ],
+    },
+    createdAt: new Date("2026-04-18T10:05:20.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_market",
+    entityId: market.id,
+    action: "validation_chain.projection_replay.performed",
+    actorUserId: "operator_chain",
+    reason: "manual_chain_projection_replay",
+    metadata: {
+      propositionId: proposition.id,
+      marketId: market.id,
+      replayedEventCount: 2,
+    },
+    createdAt: new Date("2026-04-18T10:05:30.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_chain_market",
+    entityId: `chain_market_${market.id}`,
+    action: "validation_chain.bet_reconciliation.performed",
+    actorUserId: "operator_chain",
+    reason: "manual_chain_bet_reconcile",
+    metadata: {
+      propositionId: proposition.id,
+      marketId: market.id,
+      betId: "bet_1",
+      positionExists: true,
+      optionMatches: true,
+      amountMatches: true,
+      claimedMatches: true,
+    },
+    createdAt: new Date("2026-04-18T10:05:40.000Z"),
+  });
+  await harness.internalAuditService.record({
+    entityType: "validation_chain_stream",
+    entityId: "validation_chain_unsynced_bet_backlog",
+    action: "validation_chain.bet_reconciliation.batch.performed",
+    actorUserId: "operator_chain",
+    reason: "manual_chain_backlog_reconcile",
+    metadata: {
+      requestedLimit: 5,
+      processedCount: 1,
+      matchedCount: 1,
+      mismatchedCount: 0,
+      failedCount: 0,
+      propositionIds: [proposition.id],
+      marketIds: [market.id],
+      betIds: ["bet_1"],
+    },
+    createdAt: new Date("2026-04-18T10:05:50.000Z"),
+  });
+
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+
+  assert.deepEqual(
+    detail.validationChainActivity.recoveryAuditEvents.map((event) => event.action),
+    [
+      "validation_chain.bet_reconciliation.batch.performed",
+      "validation_chain.bet_reconciliation.performed",
+      "validation_chain.projection_replay.performed",
+      "validation_chain.command_recovery.partial_failure",
+    ],
+  );
+  assert.deepEqual(
+    detail.validationChainActivity.timeline.slice(0, 4).map((event) => event.action),
+    [
+      "validation_chain.bet_reconciliation.batch.performed",
+      "validation_chain.bet_reconciliation.performed",
+      "validation_chain.projection_replay.performed",
+      "validation_chain.command_recovery.partial_failure",
+    ],
+  );
+  assert.equal(detail.validationOperatorSummary.status, "ready");
+  assert.equal(detail.validationOperatorSummary.requiresActionNow, false);
+  assert.equal(
+    detail.validationOperatorSummary.summary,
+    "No active validation lifecycle drift. Latest operator evidence shows reconciliation completed.",
+  );
+  assert.deepEqual(detail.validationOperatorSummary.plannedCommands, []);
+  assert.deepEqual(detail.validationOperatorSummary.operatorActions, []);
+  assert.equal(
+    detail.validationOperatorSummary.latestRelevantAudit?.action,
+    "validation_chain.bet_reconciliation.batch.performed",
   );
 });
 
@@ -6939,6 +7225,119 @@ test("validation rehearsal checkpoints persist operator evidence and surface on 
   );
 });
 
+test("batch validation bet reconciliation persists proposition-scoped rehearsal checkpoints for affected propositions", async () => {
+  const harness = createArenaHarness();
+  const matchedProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Matched backlog reconciliation proposition",
+  });
+  const blockedProposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Blocked backlog reconciliation proposition",
+  });
+
+  const controller = new ArenaInternalValidationChainController(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {
+      async reconcileBet() {
+        throw new Error("not used");
+      },
+      async reconcileUnsyncedBets() {
+        return {
+          processedAt: "2026-04-18T10:12:00.000Z",
+          requestedLimit: 5,
+          processedCount: 3,
+          matchedCount: 1,
+          mismatchedCount: 1,
+          failedCount: 1,
+          items: [
+            {
+              betId: "bet_1",
+              marketId: "market_matched",
+              propositionId: matchedProposition.id,
+              userId: "user_matched",
+              status: "matched",
+              reconciliation: null,
+              errorCode: null,
+              errorMessage: null,
+            },
+            {
+              betId: "bet_2",
+              marketId: "market_blocked",
+              propositionId: blockedProposition.id,
+              userId: "user_blocked_1",
+              status: "mismatched",
+              reconciliation: null,
+              errorCode: null,
+              errorMessage: null,
+            },
+            {
+              betId: "bet_3",
+              marketId: "market_blocked",
+              propositionId: blockedProposition.id,
+              userId: "user_blocked_2",
+              status: "failed",
+              reconciliation: null,
+              errorCode: "validation_chain.reconcile.unexpected_error",
+              errorMessage: "rpc timeout",
+            },
+          ],
+        };
+      },
+    } as any,
+    {} as any,
+    {} as any,
+    harness.validationRehearsalCheckpointService,
+  );
+
+  const snapshot = await controller.reconcileUnsyncedValidationBets(
+    {
+      reason: "manual_chain_backlog_reconcile",
+      note: "batch_triage",
+      limit: 5,
+    } as any,
+    { user: { sub: "operator_chain" } } as any,
+  );
+
+  const matchedDetail =
+    await harness.internalPropositionOpsService.getPropositionDetail(
+      matchedProposition.id,
+    );
+  const blockedDetail =
+    await harness.internalPropositionOpsService.getPropositionDetail(
+      blockedProposition.id,
+    );
+
+  assert.equal(snapshot.processedCount, 3);
+  assert.equal(
+    matchedDetail.validationRehearsal.steps.find(
+      (step) => step.id === "local_bet_and_sync",
+    )?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.batch_bet_reconciliation_matched",
+  );
+  assert.equal(
+    matchedDetail.validationRehearsal.steps.find(
+      (step) => step.id === "local_bet_and_sync",
+    )?.manualCheckpoint?.status,
+    "complete",
+  );
+  assert.equal(
+    blockedDetail.validationRehearsal.steps.find(
+      (step) => step.id === "local_bet_and_sync",
+    )?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.batch_bet_reconciliation_incomplete",
+  );
+  assert.equal(
+    blockedDetail.validationRehearsal.steps.find(
+      (step) => step.id === "local_bet_and_sync",
+    )?.manualCheckpoint?.status,
+    "blocked",
+  );
+});
+
 test("validation rehearsal checkpoints can be listed directly for operator execution audit", async () => {
   const harness = createArenaHarness();
   const proposition = await createLiveProposition(harness, {
@@ -7117,7 +7516,8 @@ test("reward audit detail and retriggered correction preserve ledger history", a
   assert.equal(corrected.chain.length, 2);
   assert.equal(corrected.chain[0]?.status, "reversed");
   assert.equal(corrected.chain[1]?.status, "voided");
-  assert.equal(list.length, 2);
+  assert.equal(list.totalCount, 2);
+  assert.equal(list.items.length, 2);
   assert.equal(corrected.auditEvents.length, 1);
   assert.equal(harness.store.rewardLedgers.length, 2);
 });
@@ -7177,6 +7577,18 @@ test("internal proposition export returns complete audit summary sections", asyn
     exported.validationLifecycle.driftReason,
     "chain_market_not_frozen",
   );
+  assert.equal(exported.validationLifecycle.onChainState, "pre_live");
+  assert.equal(
+    exported.validationLifecycle.operatorGuidance?.kind,
+    "manual_intervention",
+  );
+  assert.equal(exported.validationLifecycle.operatorGuidance?.recoveryReason, null);
+  assert.equal(
+    exported.validationLifecycle.operatorGuidance?.operatorActions.includes(
+      `/arena/internal/validation-chain/propositions/${proposition.id}/cancel-market`,
+    ),
+    true,
+  );
   assert.equal(exported.validationRehearsal.summary.currentStepId, "publish_and_open");
   assert.equal(
     typeof exported.validationRehearsal.environmentReadiness.status,
@@ -7188,7 +7600,52 @@ test("internal proposition export returns complete audit summary sections", asyn
 });
 
 test("internal proposition evidence bundle combines proposition export with runtime contract snapshot", async () => {
-  const harness = createArenaHarness();
+  const harness = createArenaHarness({
+    validationChainAlerts: {
+      async getHealthSnapshot() {
+        return {
+          streamKey: "validation_market_main",
+          chainId: 1337,
+          contractAddress: "0x0000000000000000000000000000000000000002",
+          syncStatus: "idle",
+          lastProcessedBlock: 123,
+          lastProcessedTxHash: "0xproof",
+          lastProcessedLogIndex: 0,
+          lastFinalizedBlock: 123,
+          cursorUpdatedAt: arenaTime(231, 30),
+          pollIntervalMs: 15000,
+          cursorStaleThresholdMs: 60000,
+          isCursorStalled: false,
+          schedulerWorker: null,
+          recentAlerts: [],
+          metrics: {
+            recentRetryExhaustedCount: 0,
+            recentTerminalCommandCount: 0,
+            recentSyncFailureCount: 0,
+            recentProjectorEntityMissingCount: 0,
+            stalePayoutMarketCount: 0,
+            unsyncedBetBacklogCount: 0,
+          },
+          eventLedger: {
+            totalEventCount: 0,
+            duplicateRows: [],
+            recentEvents: [],
+          },
+          projection: {
+            latestMarket: null,
+            latestBet: null,
+            unsyncedBetBacklog: [],
+          },
+          failures: {
+            projectorFailuresCount: 0,
+            syncFailuresCount: 0,
+            recentFailures: [],
+          },
+          stalePayoutMarkets: [],
+        } as any;
+      },
+    } as any,
+  });
   const controller = new ArenaInternalPropositionsController(
     harness.internalPropositionOpsService,
   );
@@ -7205,6 +7662,34 @@ test("internal proposition evidence bundle combines proposition export with runt
     chainStatus: "pre_live",
     chainSyncedAt: new Date(arenaTime(231, 10)),
   });
+  await harness.internalAuditService.record({
+    entityType: "validation_market",
+    entityId: market.id,
+    action: "validation_chain.alert.lifecycle_drift",
+    actorUserId: null,
+    reason: "validation_chain.lifecycle_drift.chain_market_not_opened.queue_recovery",
+    metadata: {
+      propositionId: proposition.id,
+      marketId: market.id,
+      propositionStatus: "live",
+      marketStatus: "live",
+      localChainStatus: "pre_live",
+      chainMarketId: `chain_market_${market.id}`,
+      onChainState: "pre_live",
+      driftReason: "chain_market_not_opened",
+      operatorGuidance: {
+        kind: "queue_recovery",
+        summary:
+          "Queue open_market to move the pre-live chain market into the live state.",
+        recoveryReason: "open_pre_live_market",
+        plannedCommands: ["open_market"],
+        operatorActions: [
+          `/arena/internal/validation-chain/propositions/${proposition.id}/recover-command`,
+        ],
+      },
+    },
+    createdAt: new Date("2026-04-18T13:57:00.000Z"),
+  });
 
   const bundle = await controller.exportPropositionEvidenceBundle(proposition.id);
 
@@ -7212,11 +7697,49 @@ test("internal proposition evidence bundle combines proposition export with runt
   assert.equal(typeof bundle.exportedAt, "string");
   assert.equal(bundle.propositionExport.proposition.id, proposition.id);
   assert.equal(bundle.propositionExport.market?.chainMarketId, `chain_market_${market.id}`);
+  assert.equal(bundle.propositionExport.validationLifecycle.onChainState, "pre_live");
+  assert.equal(
+    bundle.propositionExport.validationLifecycle.operatorGuidance?.recoveryReason,
+    "open_pre_live_market",
+  );
+  assert.equal(
+    bundle.propositionExport.validationOperatorSummary.status,
+    "action_required",
+  );
+  assert.equal(
+    bundle.propositionExport.validationOperatorSummary.requiresActionNow,
+    true,
+  );
+  assert.deepEqual(
+    bundle.propositionExport.validationOperatorSummary.plannedCommands,
+    ["open_market"],
+  );
+  assert.equal(
+    bundle.propositionExport.validationOperatorSummary.operatorActions.includes(
+      `/arena/internal/validation-chain/propositions/${proposition.id}/recover-command`,
+    ),
+    true,
+  );
+  assert.equal(
+    bundle.propositionExport.validationOperatorSummary.latestRelevantAudit?.action,
+    "validation_chain.alert.lifecycle_drift",
+  );
+  assert.equal(
+    bundle.propositionExport.validationChainActivity.driftAuditEvents.length,
+    1,
+  );
+  assert.equal(
+    bundle.propositionExport.validationChainActivity.driftAuditEvents[0]?.action,
+    "validation_chain.alert.lifecycle_drift",
+  );
   assert.equal(typeof bundle.runtimeContract.status, "string");
   assert.equal(
     Array.isArray(bundle.runtimeContract.commands.validationLocalPrepare),
     true,
   );
+  assert.equal(bundle.validationChainHealth?.syncStatus, "idle");
+  assert.equal(bundle.validationChainHealth?.lastProcessedBlock, 123);
+  assert.equal(bundle.validationChainHealth?.metrics.recentSyncFailureCount, 0);
   assert.equal(
     bundle.runtimeContract.commands.validationLocalPrepare.includes(
       "pnpm run validation:prepare:local",

@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { PinoLogger } from "nestjs-pino";
 
 import { ValidationChainAlertService } from "../arena/validation-chain/validation-chain-alert.service";
+import { RuntimeContractAlertService } from "../arena/services/runtime-contract-alert.service";
 import { AppConfigService } from "../config/app-config.service";
 import { AppQueueService } from "./queue.service";
 
@@ -14,6 +15,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly config: AppConfigService,
     private readonly queueService: AppQueueService,
     private readonly validationChainAlerts: ValidationChainAlertService,
+    private readonly runtimeContractAlerts: RuntimeContractAlertService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(SchedulerService.name);
@@ -66,6 +68,23 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   }
 
   @Cron(CronExpression.EVERY_MINUTE)
+  async runRuntimeContractHealthCheck(): Promise<void> {
+    try {
+      await this.runtimeContractAlerts.runHealthCheck();
+    } catch (error) {
+      this.logger.error(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown runtime-contract health-check error",
+        },
+        "Failed to run runtime-contract health check",
+      );
+    }
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
   async runPropositionLifecycleAutomation(): Promise<void> {
     try {
       const job = await this.queueService.enqueuePropositionLifecycleAutomation();
@@ -79,6 +98,26 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
               : "Unknown proposition lifecycle automation error",
         },
         "Failed to run proposition lifecycle automation",
+      );
+    }
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async runDispatchTaskExpiryAutomation(): Promise<void> {
+    try {
+      const job = await this.queueService.enqueueDispatchTaskExpiryAutomation({
+        requestedAt: new Date().toISOString(),
+      });
+      this.logger.debug({ job }, "Enqueued dispatch task expiry automation job");
+    } catch (error) {
+      this.logger.error(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown dispatch task expiry automation error",
+        },
+        "Failed to run dispatch task expiry automation",
       );
     }
   }

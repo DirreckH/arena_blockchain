@@ -34,15 +34,18 @@ import { BetService } from "../../src/arena/services/bet.service";
 import { AccountViewService } from "../../src/arena/services/account-view.service";
 import { AccountExportService } from "../../src/arena/services/account-export.service";
 import { AccountPreferencesService } from "../../src/arena/services/account-preferences.service";
+import { AdjudicationViewService } from "../../src/arena/services/adjudication-view.service";
 import { ConsensusClosureService } from "../../src/arena/services/consensus-closure.service";
 import { DispatchEngineService } from "../../src/arena/services/dispatch-engine.service";
 import { DispatchTaskService } from "../../src/arena/services/dispatch-task.service";
+import { DispatchTaskExpiryAutomationService } from "../../src/arena/services/dispatch-task-expiry-automation.service";
 import { DiscussionService } from "../../src/arena/services/discussion.service";
 import { EffectiveSampleCounterService } from "../../src/arena/services/effective-sample-counter.service";
 import { FreezeRevealOrchestratorService } from "../../src/arena/services/freeze-reveal-orchestrator.service";
 import { InternalAuditService } from "../../src/arena/services/internal-audit.service";
 import { InternalMonitoringService } from "../../src/arena/services/internal-monitoring.service";
 import { InternalPropositionOpsService } from "../../src/arena/services/internal-proposition-ops.service";
+import { InternalResponseReviewOpsService } from "../../src/arena/services/internal-response-review-ops.service";
 import { InternalRewardAuditService } from "../../src/arena/services/internal-reward-audit.service";
 import { MarketService } from "../../src/arena/services/market.service";
 import { PropositionEngineService } from "../../src/arena/services/proposition-engine.service";
@@ -574,6 +577,28 @@ class FakeResponseRepository {
       this.store.responses
         .filter((item) => item.userId === userId && item.isLatest)
         .sort((left, right) => right.submittedAt.getTime() - left.submittedAt.getTime()),
+    );
+  }
+
+  async listLatest(
+    filters: {
+      propositionId?: string;
+      userId?: string;
+      limit?: number;
+    } = {},
+  ): Promise<Response[]> {
+    const items = this.store.responses
+      .filter(
+        (item) =>
+          item.isLatest &&
+          (filters.propositionId === undefined ||
+            item.propositionId === filters.propositionId) &&
+          (filters.userId === undefined || item.userId === filters.userId),
+      )
+      .sort((left, right) => right.submittedAt.getTime() - left.submittedAt.getTime());
+
+    return clone(
+      typeof filters.limit === "number" ? items.slice(0, filters.limit) : items,
     );
   }
 }
@@ -1227,6 +1252,77 @@ class FakeInternalAuditEventRepository {
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
     );
   }
+
+  async list(filters: {
+    entityType?: string;
+    entityId?: string;
+    actorUserId?: string;
+    action?: string;
+    search?: string;
+    sortDirection?: "asc" | "desc";
+    limit?: number;
+    offset?: number;
+  }): Promise<InternalAuditEvent[]> {
+    const search = filters.search?.trim().toLowerCase() ?? null;
+    const direction = filters.sortDirection ?? "desc";
+    const offset = Math.max(0, Math.trunc(filters.offset ?? 0));
+    const limit = filters.limit;
+
+    const items = this.store.internalAuditEvents
+      .filter((item) => {
+        if (filters.entityType && item.entityType !== filters.entityType) {
+          return false;
+        }
+        if (filters.entityId && item.entityId !== filters.entityId) {
+          return false;
+        }
+        if (filters.actorUserId && item.actorUserId !== filters.actorUserId) {
+          return false;
+        }
+        if (filters.action && item.action !== filters.action) {
+          return false;
+        }
+        if (!search) {
+          return true;
+        }
+
+        return [
+          item.action,
+          item.entityType,
+          item.entityId,
+          item.actorUserId ?? "",
+          item.reason,
+          item.note ?? "",
+        ].some((value) => value.toLowerCase().includes(search));
+      })
+      .sort((left, right) => {
+        const diff = left.createdAt.getTime() - right.createdAt.getTime();
+        return direction === "asc" ? diff : -diff;
+      });
+
+    return clone(
+      typeof limit === "number"
+        ? items.slice(offset, offset + limit)
+        : items.slice(offset),
+    );
+  }
+
+  async count(filters: {
+    entityType?: string;
+    entityId?: string;
+    actorUserId?: string;
+    action?: string;
+    search?: string;
+  }): Promise<number> {
+    const items = await this.list({
+      entityType: filters.entityType,
+      entityId: filters.entityId,
+      actorUserId: filters.actorUserId,
+      action: filters.action,
+      search: filters.search,
+    });
+    return items.length;
+  }
 }
 
 class FakeValidationChainEventRepository {
@@ -1422,8 +1518,10 @@ export interface ArenaHarness {
   propositionEngineService: PropositionEngineService;
   propositionDraftService: PropositionDraftService;
   propositionLifecycleAutomationService: PropositionLifecycleAutomationService;
+  adjudicationViewService: AdjudicationViewService;
   dispatchEngineService: DispatchEngineService;
   dispatchTaskService: DispatchTaskService;
+  dispatchTaskExpiryAutomationService: DispatchTaskExpiryAutomationService;
   qualityEngineService: QualityEngineService;
   responseService: ResponseService;
   responseReviewService: ResponseReviewService;
@@ -1442,6 +1540,7 @@ export interface ArenaHarness {
   internalAuditService: InternalAuditService;
   internalMonitoringService: InternalMonitoringService;
   internalPropositionOpsService: InternalPropositionOpsService;
+  internalResponseReviewOpsService: InternalResponseReviewOpsService;
   internalRewardAuditService: InternalRewardAuditService;
   requesterComparisonSetService: RequesterComparisonSetService;
   requesterComparisonSetDeliveryPolicyService: RequesterComparisonSetDeliveryPolicyService;
@@ -1650,6 +1749,11 @@ export const createArenaHarness = (
     userTagRepository,
     dispatchTaskService,
   );
+  const dispatchTaskExpiryAutomationService =
+    new DispatchTaskExpiryAutomationService(
+      dispatchTaskRepository,
+      dispatchEngineService,
+    );
   const responseService = new ResponseService(
     prisma,
     ids,
@@ -1854,6 +1958,7 @@ export const createArenaHarness = (
     responseReviewRepository,
     userReputationRepository,
     counterService,
+    internalAuditService,
     {
       getArtifactPath() {
         return require.resolve("../../src/arena/services/internal-proposition-ops.service");
@@ -1941,6 +2046,13 @@ export const createArenaHarness = (
     validationRehearsalCheckpointService,
     validationChainIdService,
   );
+  const internalResponseReviewOpsService = new InternalResponseReviewOpsService(
+    prisma,
+    propositionRepository,
+    dispatchTaskRepository,
+    responseRepository,
+    reviewService,
+  );
   const internalRewardAuditService = new InternalRewardAuditService(
     prisma,
     propositionRepository,
@@ -1995,6 +2107,14 @@ export const createArenaHarness = (
     marketRepository,
     betRepository,
   );
+  const adjudicationViewService = new AdjudicationViewService(
+    propositionRepository,
+    dispatchTaskRepository,
+    counterRepository,
+    responseRepository,
+    responseReviewRepository,
+    rewardLedgerRepository,
+  );
   const accountViewService = new AccountViewService(
     rewardViewService,
     reputationService,
@@ -2016,8 +2136,10 @@ export const createArenaHarness = (
     propositionEngineService,
     propositionDraftService,
     propositionLifecycleAutomationService,
+    adjudicationViewService,
     dispatchEngineService,
     dispatchTaskService,
+    dispatchTaskExpiryAutomationService,
     qualityEngineService,
     responseService,
     responseReviewService: reviewService,
@@ -2036,6 +2158,7 @@ export const createArenaHarness = (
     internalAuditService,
     internalMonitoringService,
     internalPropositionOpsService,
+    internalResponseReviewOpsService,
     internalRewardAuditService,
     requesterComparisonSetService,
     requesterComparisonSetDeliveryPolicyService,

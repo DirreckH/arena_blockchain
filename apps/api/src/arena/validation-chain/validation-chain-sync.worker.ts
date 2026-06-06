@@ -46,7 +46,7 @@ export class ValidationChainSyncWorker {
 
   async syncOnce(): Promise<ValidationChainSyncSnapshot> {
     const snapshot = this.contract.getSnapshot();
-    const cursor = await this.cursors.upsertCursor({
+    let cursor = await this.cursors.upsertCursor({
       streamKey: VALIDATION_CHAIN_STREAM_KEY,
       chainId: snapshot.configuredChainId,
       contractAddress: snapshot.contractAddress,
@@ -56,6 +56,38 @@ export class ValidationChainSyncWorker {
     try {
       const latestBlock = await this.contract.getLatestBlockNumber();
       const safeToBlock = Math.max(latestBlock - snapshot.confirmations, 0);
+
+      if (
+        cursor.lastProcessedBlock !== null &&
+        cursor.lastProcessedBlock > latestBlock
+      ) {
+        await this.audit.record({
+          entityType: "validation_chain_stream",
+          entityId: cursor.streamKey,
+          action: "validation_chain.sync.cursor_reset",
+          reason: "validation_chain.sync.chain_rewind_detected",
+          metadata: {
+            latestBlock,
+            safeToBlock,
+            previousLastProcessedBlock: cursor.lastProcessedBlock,
+            previousLastProcessedTxHash: cursor.lastProcessedTxHash,
+            previousLastProcessedLogIndex: cursor.lastProcessedLogIndex,
+            previousLastFinalizedBlock: cursor.lastFinalizedBlock,
+          },
+        });
+
+        cursor = await this.cursors.upsertCursor({
+          streamKey: cursor.streamKey,
+          chainId: snapshot.configuredChainId,
+          contractAddress: snapshot.contractAddress,
+          lastProcessedBlock: null,
+          lastProcessedTxHash: null,
+          lastProcessedLogIndex: null,
+          lastFinalizedBlock: null,
+          syncStatus: "syncing",
+        });
+      }
+
       await this.cursors.updateFinalizedBlock(
         cursor.streamKey,
         safeToBlock,

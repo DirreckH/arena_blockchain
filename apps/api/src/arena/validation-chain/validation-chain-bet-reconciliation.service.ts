@@ -38,6 +38,13 @@ export class ValidationChainBetReconciliationService {
     reason: string;
     note?: string;
   }): Promise<ValidationChainBetReconciliationViewModel> {
+    if (!input.actorUserId) {
+      throw new ArenaValidationError(
+        "validation_chain.reconcile.actor_required",
+        "Validation-chain bet reconciliation requires an explicit actor",
+      );
+    }
+
     const market = await this.markets.findById(input.marketId);
     if (!market) {
       throw new ArenaNotFoundError(
@@ -109,7 +116,7 @@ export class ValidationChainBetReconciliationService {
       entityType: "validation_chain_market",
       entityId: market.chainMarketId,
       action: "validation_chain.bet_reconciliation.performed",
-      actorUserId: input.actorUserId ?? null,
+      actorUserId: input.actorUserId,
       reason: input.reason,
       note: input.note,
       metadata: {
@@ -134,6 +141,13 @@ export class ValidationChainBetReconciliationService {
     note?: string;
     limit?: number;
   }): Promise<ValidationChainBetReconciliationBatchViewModel> {
+    if (!input.actorUserId) {
+      throw new ArenaValidationError(
+        "validation_chain.reconcile.actor_required",
+        "Validation-chain batch reconciliation requires an explicit actor",
+      );
+    }
+
     const requestedLimit = clampBatchLimit(input.limit);
     const backlog = await this.bets.listUnsyncedProjectedBacklog(requestedLimit);
     const items: ValidationChainBetReconciliationBatchItemViewModel[] =
@@ -194,7 +208,7 @@ export class ValidationChainBetReconciliationService {
       entityType: "validation_chain_stream",
       entityId: "validation_chain_unsynced_bet_backlog",
       action: "validation_chain.bet_reconciliation.batch.performed",
-      actorUserId: input.actorUserId ?? null,
+      actorUserId: input.actorUserId,
       reason: input.reason,
       note: input.note,
       metadata: {
@@ -203,6 +217,10 @@ export class ValidationChainBetReconciliationService {
         matchedCount,
         mismatchedCount,
         failedCount,
+        propositionIds: Array.from(
+          new Set(items.map((item) => item.propositionId)),
+        ),
+        marketIds: Array.from(new Set(items.map((item) => item.marketId))),
         betIds: items.map((item) => item.betId),
       },
     });

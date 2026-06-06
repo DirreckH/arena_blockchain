@@ -6,6 +6,7 @@ import {
   ArenaNotFoundError,
   ArenaValidationError,
 } from "../arena.errors";
+import type { ValidationChainCommandSubmissionViewModel } from "../internal-ops.types";
 import { MarketRepository } from "../repositories/market.repository";
 import { AppQueueService } from "../../queue/queue.service";
 import {
@@ -47,8 +48,8 @@ export class ValidationChainCommandRuntimeService {
     actorUserId?: string | null;
     reason: string;
     note?: string;
-  }): Promise<void> {
-    await this.enqueueCommand({
+  }): Promise<ValidationChainCommandSubmissionViewModel[]> {
+    const createSubmission = await this.enqueueCommand({
       command: "create_market",
       propositionId: input.propositionId,
       actorUserId: input.actorUserId,
@@ -56,7 +57,7 @@ export class ValidationChainCommandRuntimeService {
       note: input.note,
       delayMs: 0,
     });
-    await this.enqueueCommand({
+    const openSubmission = await this.enqueueCommand({
       command: "open_market",
       propositionId: input.propositionId,
       actorUserId: input.actorUserId,
@@ -64,6 +65,8 @@ export class ValidationChainCommandRuntimeService {
       note: input.note,
       delayMs: OPEN_MARKET_DELAY_MS,
     });
+
+    return [createSubmission, openSubmission];
   }
 
   async enqueueFreezeCommand(input: {
@@ -71,8 +74,8 @@ export class ValidationChainCommandRuntimeService {
     actorUserId?: string | null;
     reason: string;
     note?: string;
-  }): Promise<void> {
-    await this.enqueueCommand({
+  }): Promise<ValidationChainCommandSubmissionViewModel> {
+    return this.enqueueCommand({
       command: "freeze_market",
       propositionId: input.propositionId,
       actorUserId: input.actorUserId,
@@ -87,8 +90,8 @@ export class ValidationChainCommandRuntimeService {
     actorUserId?: string | null;
     reason: string;
     note?: string;
-  }): Promise<void> {
-    await this.enqueueCommand({
+  }): Promise<ValidationChainCommandSubmissionViewModel> {
+    return this.enqueueCommand({
       command: "resolve_market",
       propositionId: input.propositionId,
       actorUserId: input.actorUserId,
@@ -142,7 +145,7 @@ export class ValidationChainCommandRuntimeService {
   private async enqueueCommand(input: Omit<
     ValidationChainCommandJobPayload,
     "requestedAt"
-  > & { delayMs: number }): Promise<void> {
+  > & { delayMs: number }): Promise<ValidationChainCommandSubmissionViewModel> {
     try {
       const job = await this.queue.enqueueValidationChainCommand(
         {
@@ -158,6 +161,26 @@ export class ValidationChainCommandRuntimeService {
         },
       );
 
+      if (job.dedupeStatus === "already_pending") {
+        await this.alerts.recordCommandAlreadyPending({
+          propositionId: input.propositionId,
+          command: input.command,
+          actorUserId: input.actorUserId,
+          reason: input.reason,
+          note: input.note,
+          queueJobId: job.jobId,
+          delayMs: input.delayMs,
+        });
+
+        return {
+          command: input.command,
+          status: "already_pending",
+          queueJobId: job.jobId,
+          delayMs: input.delayMs,
+          errorMessage: null,
+        };
+      }
+
       await this.alerts.recordCommandEnqueued({
         propositionId: input.propositionId,
         command: input.command,
@@ -167,6 +190,14 @@ export class ValidationChainCommandRuntimeService {
         queueJobId: job.jobId,
         delayMs: input.delayMs,
       });
+
+      return {
+        command: input.command,
+        status: "enqueued",
+        queueJobId: job.jobId,
+        delayMs: input.delayMs,
+        errorMessage: null,
+      };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       await this.alerts.recordCommandTerminal({
@@ -185,6 +216,14 @@ export class ValidationChainCommandRuntimeService {
         },
         "Failed to enqueue validation-chain command",
       );
+
+      return {
+        command: input.command,
+        status: "failed",
+        queueJobId: null,
+        delayMs: input.delayMs,
+        errorMessage,
+      };
     }
   }
 

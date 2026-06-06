@@ -20,6 +20,11 @@ export class ArenaInternalRewardsController {
       responseId: query.responseId,
       status: query.status,
       sourceType: query.sourceType,
+      search: query.search,
+      sortBy: query.sortBy,
+      sortDirection: query.sortDirection,
+      limit: query.limit ? Number(query.limit) : undefined,
+      offset: query.offset ? Number(query.offset) : undefined,
     });
   }
 

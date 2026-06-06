@@ -27,6 +27,11 @@ export class ArenaInternalPropositionsController {
           : query.marketEnabled === "true",
       createdFrom: query.createdFrom,
       createdTo: query.createdTo,
+      search: query.search,
+      sortBy: query.sortBy,
+      sortDirection: query.sortDirection,
+      limit: query.limit ? Number(query.limit) : undefined,
+      offset: query.offset ? Number(query.offset) : undefined,
     });
   }
 
@@ -40,6 +45,11 @@ export class ArenaInternalPropositionsController {
           : query.marketEnabled === "true",
       createdFrom: query.createdFrom,
       createdTo: query.createdTo,
+      search: query.search,
+      sortBy: query.sortBy,
+      sortDirection: query.sortDirection,
+      limit: query.limit ? Number(query.limit) : undefined,
+      offset: query.offset ? Number(query.offset) : undefined,
     });
   }
 
@@ -98,6 +108,7 @@ export class ArenaInternalPropositionsController {
   }
 
   @Post(":propositionId/emergency-freeze")
+  @Roles(SystemRole.Admin, SystemRole.System)
   emergencyFreeze(
     @Param("propositionId") propositionId: string,
     @Body() body: InternalEmergencyFreezePropositionDto,

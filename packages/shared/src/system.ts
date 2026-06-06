@@ -73,3 +73,10 @@ export interface QueueOverviewSnapshot {
   };
   queues: QueueStatusSnapshot[];
 }
+
+export interface QueueFailedJobRequeueResultSnapshot {
+  queue: string;
+  failedCount: number;
+  retriedCount: number;
+  skippedCount: number;
+}

@@ -146,6 +146,13 @@ test("adjudication task view model keeps only adjudication fields", () => {
 
   assert.equal(view.taskId, task.id);
   assert.equal(view.hasSubmitted, true);
+  assert.equal(view.assignedAt, task.assignedAt);
+  assert.equal(view.startedAt, task.startedAt);
+  assert.equal(view.submittedAt, task.submittedAt);
+  assert.equal(view.expiresAt, task.expiresAt);
+  assert.equal(view.skipReason, null);
+  assert.equal(view.expiryReason, null);
+  assert.equal(view.cooldownUntil, null);
   assert.equal(view.latestResponseStatus, "valid");
   assert.equal(view.publicProgress.progress.currentEffectiveSample, 2);
   assert.equal("marketStatus" in view, false);
@@ -173,4 +180,58 @@ test("respondent task view model exposes only task intake fields", () => {
   assert.equal("marketStatus" in view, false);
   assert.equal("latestResponseStatus" in view, false);
   assert.equal("rewardStatus" in view, false);
+});
+
+test("adjudication task view model keeps lifecycle metadata across started, skipped, and expired tasks", () => {
+  const proposition = buildLiveProposition();
+  const baseInput = {
+    proposition,
+    latestReview: null,
+    rewardLedger: null,
+    publicProgress: buildPublicProgressViewModel({
+      proposition,
+      reviewedCount: 0,
+      effectiveSampleCount: 0,
+      now: "2026-04-16T00:30:00.000Z",
+    }),
+    now: "2026-04-16T00:30:00.000Z",
+  } as const;
+
+  const started = buildAdjudicationTaskViewModel({
+    ...baseInput,
+    task: buildTask({
+      status: "started",
+      submittedAt: null,
+      startedAt: "2026-04-16T00:05:00.000Z",
+    }),
+  });
+  assert.equal(started.taskStatus, "started");
+  assert.equal(started.startedAt, "2026-04-16T00:05:00.000Z");
+  assert.equal(started.submittedAt, null);
+
+  const skipped = buildAdjudicationTaskViewModel({
+    ...baseInput,
+    task: buildTask({
+      status: "skipped",
+      submittedAt: null,
+      skipReason: "user_declined",
+      cooldownUntil: "2026-04-16T12:10:00.000Z",
+    }),
+  });
+  assert.equal(skipped.taskStatus, "skipped");
+  assert.equal(skipped.skipReason, "user_declined");
+  assert.equal(skipped.cooldownUntil, "2026-04-16T12:10:00.000Z");
+
+  const expired = buildAdjudicationTaskViewModel({
+    ...baseInput,
+    task: buildTask({
+      status: "expired",
+      submittedAt: null,
+      expiryReason: "ttl_elapsed",
+      cooldownUntil: "2026-04-16T12:20:00.000Z",
+    }),
+  });
+  assert.equal(expired.taskStatus, "expired");
+  assert.equal(expired.expiryReason, "ttl_elapsed");
+  assert.equal(expired.cooldownUntil, "2026-04-16T12:20:00.000Z");
 });

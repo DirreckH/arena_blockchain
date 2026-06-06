@@ -413,13 +413,21 @@ class FakeValidationChainCursorRepository {
         chainId: input.chainId,
         contractAddress: input.contractAddress,
         lastProcessedBlock:
-          input.lastProcessedBlock ?? this.state.cursor.lastProcessedBlock,
+          input.lastProcessedBlock !== undefined
+            ? input.lastProcessedBlock
+            : this.state.cursor.lastProcessedBlock,
         lastProcessedTxHash:
-          input.lastProcessedTxHash ?? this.state.cursor.lastProcessedTxHash,
+          input.lastProcessedTxHash !== undefined
+            ? input.lastProcessedTxHash
+            : this.state.cursor.lastProcessedTxHash,
         lastProcessedLogIndex:
-          input.lastProcessedLogIndex ?? this.state.cursor.lastProcessedLogIndex,
+          input.lastProcessedLogIndex !== undefined
+            ? input.lastProcessedLogIndex
+            : this.state.cursor.lastProcessedLogIndex,
         lastFinalizedBlock:
-          input.lastFinalizedBlock ?? this.state.cursor.lastFinalizedBlock,
+          input.lastFinalizedBlock !== undefined
+            ? input.lastFinalizedBlock
+            : this.state.cursor.lastFinalizedBlock,
         syncStatus: input.syncStatus ?? this.state.cursor.syncStatus,
         updatedAt: now(70),
       });
@@ -830,7 +838,12 @@ class FakeValidationChainContractService {
   }
 }
 
-function createHarness(input: { includeCounterpartyBet?: boolean } = {}): ValidationChainHarness {
+function createHarness(
+  input: {
+    includeCounterpartyBet?: boolean;
+    initialCursor?: ValidationChainCursor | null;
+  } = {},
+): ValidationChainHarness {
   const propositions: Proposition[] = [];
   const markets: Market[] = [];
   const bets: Bet[] = [];
@@ -847,7 +860,9 @@ function createHarness(input: { includeCounterpartyBet?: boolean } = {}): Valida
   const audits: Array<Record<string, unknown>> = [];
   const events: ValidationChainEvent[] = [];
   const systemKeyValues: SystemKeyValue[] = [];
-  const cursorState = { cursor: null as ValidationChainCursor | null };
+  const cursorState = {
+    cursor: input.initialCursor ? clone(input.initialCursor) : null,
+  };
 
   const prisma = new FakePrismaService() as unknown as PrismaService;
   const propositionRepository =
@@ -1078,6 +1093,15 @@ function createQueuedRehearsal(
     commandRuntime,
     new FakePropositionLifecycleAutomationService() as PropositionLifecycleAutomationService,
     new FakeRequesterComparisonSetDeliveryAutomationService() as RequesterComparisonSetDeliveryAutomationService,
+    {
+      async expireDueTasks() {
+        return {
+          processedAt: new Date().toISOString(),
+          processedCount: 0,
+          taskIds: [],
+        };
+      },
+    } as never,
     alerts as never,
     {
       async recordJobProcessed() {},
@@ -1414,6 +1438,57 @@ describe("Validation chain phase five runtime", () => {
       (cursorAfterFirstSync?.lastProcessedBlock ?? 0) + 2,
     );
     assert.equal(cursorAfterRestartedSync?.syncStatus, "idle");
+  });
+
+  it("rewinds a stale cursor when the local chain has been reset behind the checkpoint", async () => {
+    const harness = createHarness({
+      initialCursor: {
+        streamKey: VALIDATION_CHAIN_STREAM_KEY,
+        chainId: 1337,
+        contractAddress: "0x0000000000000000000000000000000000000002",
+        lastProcessedBlock: 198,
+        lastProcessedTxHash: `0x${"11".repeat(32)}`,
+        lastProcessedLogIndex: 0,
+        lastFinalizedBlock: 198,
+        syncStatus: "idle",
+        createdAt: now(60),
+        updatedAt: now(60),
+      },
+    });
+    harness.markets[0].status = "live";
+
+    await harness.operator.createMarket({ propositionId: "prop_1" });
+    await harness.operator.openMarket({ propositionId: "prop_1" });
+    harness.contract.mineEmptyBlock();
+
+    const sync = await harness.worker.syncOnce();
+    const cursorAfterSync = harness.currentCursor();
+
+    assert.equal(sync.processedEvents, 2);
+    assert.equal(sync.latestBlock, 3);
+    assert.equal(sync.safeToBlock, 2);
+    assert.equal(sync.fromBlock, 0);
+    assert.equal(sync.toBlock, 2);
+    assert.equal(harness.markets[0].chainStatus, "live");
+    assert.equal(harness.markets[0].chainOpenedAt !== null, true);
+    assert.equal(harness.events.length, 2);
+    assert.deepEqual(
+      harness.events.map((event) => event.eventName),
+      ["MarketCreated", "MarketOpened"],
+    );
+    assert.equal(cursorAfterSync?.lastProcessedBlock, 2);
+    assert.equal(cursorAfterSync?.lastFinalizedBlock, 2);
+    assert.equal(cursorAfterSync?.syncStatus, "idle");
+    assert.equal(
+      harness.audits.some(
+        (entry) =>
+          entry.action === "validation_chain.sync.cursor_reset" &&
+          entry.reason === "validation_chain.sync.chain_rewind_detected" &&
+          (entry.metadata as { previousLastProcessedBlock?: number } | undefined)
+            ?.previousLastProcessedBlock === 198,
+      ),
+      true,
+    );
   });
 
   it("runs three staging-like happy paths through queued commands and restart-like sync", async () => {

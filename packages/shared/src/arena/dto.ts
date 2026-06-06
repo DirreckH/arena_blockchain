@@ -406,6 +406,13 @@ export interface AdjudicationTaskViewModel {
   options: [string, string];
   propositionStatus: PropositionStatus;
   taskStatus: string;
+  assignedAt: string;
+  startedAt: string | null;
+  expiresAt: string;
+  submittedAt: string | null;
+  skipReason: string | null;
+  expiryReason: string | null;
+  cooldownUntil: string | null;
   hasSubmitted: boolean;
   timeRemainingSeconds: number;
   latestResponseStatus: ResponseReviewStatus | null;

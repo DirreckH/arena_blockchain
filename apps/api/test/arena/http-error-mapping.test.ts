@@ -44,6 +44,7 @@ import { PrismaService } from "../../src/database/prisma.service";
 import { HealthController } from "../../src/health/health.controller";
 import { HealthService } from "../../src/health/health.service";
 import { AppQueueService } from "../../src/queue/queue.service";
+import { SystemController } from "../../src/system/system.controller";
 import { RedisService } from "../../src/queue/redis.service";
 import { AdjudicationViewService } from "../../src/arena/services/adjudication-view.service";
 import { AccountViewService } from "../../src/arena/services/account-view.service";
@@ -54,6 +55,7 @@ import { DispatchEngineService } from "../../src/arena/services/dispatch-engine.
 import { EffectiveSampleCounterService } from "../../src/arena/services/effective-sample-counter.service";
 import { InternalMonitoringService } from "../../src/arena/services/internal-monitoring.service";
 import { InternalPropositionOpsService } from "../../src/arena/services/internal-proposition-ops.service";
+import { InternalResponseReviewOpsService } from "../../src/arena/services/internal-response-review-ops.service";
 import { PropositionDraftService } from "../../src/arena/services/proposition-draft.service";
 import { PublicDiscoveryService } from "../../src/arena/services/public-discovery.service";
 import { QualityEngineService } from "../../src/arena/services/quality-engine.service";
@@ -129,7 +131,11 @@ type HttpArenaContext = {
 
 @Injectable()
 class TestAuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  private readonly reflector: Reflector;
+
+  constructor(reflector: Reflector) {
+    this.reflector = reflector;
+  }
 
   canActivate(context: ExecutionContext): boolean {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -583,7 +589,8 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
   };
   const validationChainBetReconciliation = {
     async reconcileBet(input?: { marketId?: string; userId?: string }) {
-      const marketId = input?.marketId ?? "market_1";
+      const [defaultMarket] = await harness.marketRepository.list();
+      const marketId = input?.marketId ?? defaultMarket?.id ?? "market_1";
       const market = await harness.marketRepository.findById(marketId);
       const propositionId = market?.propositionId ?? "prop_1";
       const userId =
@@ -625,6 +632,10 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
       };
     },
     async reconcileUnsyncedBets() {
+      const [defaultMarket] = await harness.marketRepository.list();
+      const marketId = defaultMarket?.id ?? "market_1";
+      const propositionId = defaultMarket?.propositionId ?? "prop_1";
+
       return {
         processedAt: "2026-04-24T00:30:00.000Z",
         requestedLimit: 10,
@@ -635,14 +646,14 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
         items: [
           {
             betId: "bet_1",
-            marketId: "market_1",
-            propositionId: "prop_1",
+            marketId,
+            propositionId,
             userId: "0x00000000000000000000000000000000000000aa",
             status: "matched",
             reconciliation: {
               betId: "bet_1",
-              marketId: "market_1",
-              propositionId: "prop_1",
+              marketId,
+              propositionId,
               userId: "0x00000000000000000000000000000000000000aa",
               localBet: {
                 selectedOption: 1,
@@ -672,14 +683,14 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
           },
           {
             betId: "bet_2",
-            marketId: "market_1",
-            propositionId: "prop_1",
+            marketId,
+            propositionId,
             userId: "0x00000000000000000000000000000000000000bb",
             status: "mismatched",
             reconciliation: {
               betId: "bet_2",
-              marketId: "market_1",
-              propositionId: "prop_1",
+              marketId,
+              propositionId,
               userId: "0x00000000000000000000000000000000000000bb",
               localBet: {
                 selectedOption: 1,
@@ -781,6 +792,7 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
         chainMarketId: "chain_market_1",
         chainPropositionId: "chain_prop_1",
         queuedAt: "2026-04-24T00:36:00.000Z",
+        requestStatus: "queued",
         propositionStatus: "revealing",
         marketStatus: "frozen_for_reveal",
         localChainStatus: "live",
@@ -788,6 +800,22 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
         driftReason: "chain_market_not_frozen",
         recoveryReason: "freeze_resolve_live_market",
         plannedCommands: ["freeze_market", "resolve_market"],
+        commandSubmissions: [
+          {
+            command: "freeze_market",
+            status: "enqueued",
+            queueJobId: "validation-chain.freeze_market.prop_1",
+            delayMs: 0,
+            errorMessage: null,
+          },
+          {
+            command: "resolve_market",
+            status: "enqueued",
+            queueJobId: "validation-chain.resolve_market.prop_1",
+            delayMs: 5000,
+            errorMessage: null,
+          },
+        ],
       };
     },
   };
@@ -809,6 +837,7 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
   @Module({
     controllers: [
       HealthController,
+      SystemController,
       ArenaInternalDispatchController,
       ArenaInternalPropositionsController,
       ArenaInternalResponsesController,
@@ -833,6 +862,10 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
       HealthService,
       { provide: DispatchEngineService, useValue: harness.dispatchEngineService },
       { provide: InternalPropositionOpsService, useValue: harness.internalPropositionOpsService },
+      {
+        provide: InternalResponseReviewOpsService,
+        useValue: harness.internalResponseReviewOpsService,
+      },
       { provide: InternalMonitoringService, useValue: internalMonitoring },
       { provide: QualityEngineService, useValue: harness.qualityEngineService },
       {
@@ -2145,10 +2178,11 @@ test("creator can submit a draft for review and internal proposition views expos
       },
     );
     assert.equal(internalQueueResponse.status, HttpStatus.OK);
-    assert.equal(internalQueueResponse.body.length, 1);
-    assert.equal(internalQueueResponse.body[0].propositionId, propositionId);
-    assert.equal(internalQueueResponse.body[0].submissionStatus, "submitted");
-    assert.equal(typeof internalQueueResponse.body[0].submittedAt, "string");
+    assert.equal(internalQueueResponse.body.totalCount, 1);
+    assert.equal(internalQueueResponse.body.items.length, 1);
+    assert.equal(internalQueueResponse.body.items[0].propositionId, propositionId);
+    assert.equal(internalQueueResponse.body.items[0].submissionStatus, "submitted");
+    assert.equal(typeof internalQueueResponse.body.items[0].submittedAt, "string");
 
     const internalDetailResponse = await requestJson(
       baseUrl,
@@ -2402,9 +2436,9 @@ test("withdrawing a non-pending submission returns 409 and internal review queue
       },
     );
     assert.equal(queueResponse.status, HttpStatus.OK);
-    assert.equal(queueResponse.body.length >= 2, true);
-    assert.equal(queueResponse.body[0].submissionStatus, "submitted");
-    assert.equal(queueResponse.body[1].submissionStatus, "submitted");
+    assert.equal(queueResponse.body.totalCount >= 2, true);
+    assert.equal(queueResponse.body.items[0].submissionStatus, "submitted");
+    assert.equal(queueResponse.body.items[1].submissionStatus, "submitted");
 
     const draftOnlyCreate = await requestJson(baseUrl, "/arena/propositions/drafts", {
       method: "POST",
@@ -2434,7 +2468,7 @@ test("withdrawing a non-pending submission returns 409 and internal review queue
     );
     assert.equal(queueAfterDraftResponse.status, HttpStatus.OK);
     assert.equal(
-      queueAfterDraftResponse.body.some(
+      queueAfterDraftResponse.body.items.some(
         (item: { propositionId: string }) => item.propositionId === unsubmittedId,
       ),
       false,
@@ -10375,8 +10409,8 @@ test("validation chain command DTO validation failures still return 400 Bad Requ
       {
         method: "POST",
         user: {
-          userId: "operator_validation_chain",
-          roles: [SystemRole.Operator],
+          userId: "admin_validation_chain",
+          roles: [SystemRole.Admin],
         },
         body: {
           reason: "manual_cancel",
@@ -10428,6 +10462,140 @@ test("validation chain internal routes enforce stronger role requirements for pa
 
     assert.equal(adminResponse.status, HttpStatus.CREATED);
     assert.equal(adminResponse.body.contractAddress, "0xvalidationcontract");
+  });
+});
+
+test("validation chain high-risk proposition routes require admin or system roles", async () => {
+  await withHttpArenaApp(async ({ baseUrl }) => {
+    const highRiskRoutes = [
+      {
+        path: "/arena/internal/validation-chain/propositions/prop_1/freeze-market",
+        body: { reason: "operator_freeze_attempt" },
+      },
+      {
+        path: "/arena/internal/validation-chain/propositions/prop_1/resolve-market",
+        body: { reason: "operator_resolve_attempt" },
+      },
+      {
+        path: "/arena/internal/validation-chain/propositions/prop_1/cancel-market",
+        body: {
+          reason: "operator_cancel_attempt",
+          reasonCode: "ops_cancel",
+        },
+      },
+    ] as const;
+
+    for (const route of highRiskRoutes) {
+      const operatorResponse = await requestJson(baseUrl, route.path, {
+        method: "POST",
+        user: {
+          userId: "operator_validation_chain",
+          roles: [SystemRole.Operator],
+        },
+        body: route.body,
+      });
+
+      assert.equal(operatorResponse.status, HttpStatus.FORBIDDEN);
+      assert.equal(operatorResponse.body.error.code, "FORBIDDEN");
+
+      const adminResponse = await requestJson(baseUrl, route.path, {
+        method: "POST",
+        user: {
+          userId: "admin_validation_chain",
+          roles: [SystemRole.Admin],
+        },
+        body: route.body,
+      });
+
+      assert.notEqual(adminResponse.status, HttpStatus.FORBIDDEN);
+    }
+  });
+});
+
+test("internal proposition emergency-freeze route requires admin or system roles", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const proposition = await harness.propositionEngineService.createProposition({
+      ...propositionDraftInput,
+    });
+
+    const operatorResponse = await requestJson(
+      baseUrl,
+      `/arena/internal/propositions/${proposition.id}/emergency-freeze`,
+      {
+        method: "POST",
+        user: {
+          userId: "operator_freeze_attempt",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          frozenAt: "2026-04-18T10:08:00.000Z",
+          reason: "smoke_test_freeze",
+        },
+      },
+    );
+
+    assert.equal(operatorResponse.status, HttpStatus.FORBIDDEN);
+    assert.equal(operatorResponse.body.error.code, "FORBIDDEN");
+
+    const adminResponse = await requestJson(
+      baseUrl,
+      `/arena/internal/propositions/${proposition.id}/emergency-freeze`,
+      {
+        method: "POST",
+        user: {
+          userId: "admin_freeze_attempt",
+          roles: [SystemRole.Admin],
+        },
+        body: {
+          frozenAt: "2026-04-18T10:08:00.000Z",
+          reason: "smoke_test_freeze",
+        },
+      },
+    );
+
+    assert.notEqual(adminResponse.status, HttpStatus.FORBIDDEN);
+  });
+});
+
+test("system queue failed-job requeue route requires admin or system roles", async () => {
+  await withHttpArenaApp(async ({ app, baseUrl }) => {
+    app.get(AppQueueService).requeueFailedJobs = async (queueName: string) => ({
+      queue: queueName,
+      failedCount: 2,
+      retriedCount: 2,
+      skippedCount: 0,
+    });
+
+    const operatorResponse = await requestJson(
+      baseUrl,
+      "/system/queues/scheduler/requeue-failed",
+      {
+        method: "POST",
+        user: {
+          userId: "operator_queue_retry",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(operatorResponse.status, HttpStatus.FORBIDDEN);
+    assert.equal(operatorResponse.body.error.code, "FORBIDDEN");
+
+    const adminResponse = await requestJson(
+      baseUrl,
+      "/system/queues/scheduler/requeue-failed",
+      {
+        method: "POST",
+        user: {
+          userId: "admin_queue_retry",
+          roles: [SystemRole.Admin],
+        },
+      },
+    );
+
+    assert.equal(adminResponse.status, HttpStatus.CREATED);
+    assert.equal(adminResponse.body.queue, "scheduler");
+    assert.equal(adminResponse.body.retriedCount, 2);
   });
 });
 
@@ -10584,7 +10752,12 @@ test("validation chain bet reconciliation route automatically persists blocked r
 });
 
 test("validation chain internal backlog reconciliation route allows operator batch inspection calls", async () => {
-  await withHttpArenaApp(async ({ baseUrl }) => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    await createLiveProposition(harness, {
+      marketEnabled: true,
+      title: "HTTP backlog reconciliation proposition",
+    });
+
     const response = await requestJson(
       baseUrl,
       "/arena/internal/validation-chain/backlog/reconcile",
@@ -11012,6 +11185,122 @@ test("validation chain runtime readiness route still returns degraded snapshots 
   });
 });
 
+test("validation chain health route exposes current operator summary alongside raw monitoring fields", async () => {
+  await withHttpArenaApp(async ({ app, baseUrl }) => {
+    app
+      .get(InternalMonitoringService)
+      .getValidationChainHealth = async () => ({
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      syncStatus: "idle",
+      lastProcessedBlock: 118,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 118,
+      cursorUpdatedAt: "2026-04-24T00:35:00.000Z",
+      pollIntervalMs: 15000,
+      cursorStaleThresholdMs: 60000,
+      isCursorStalled: false,
+      schedulerWorker: null,
+      recentAlerts: [
+        {
+          action: "validation_chain.alert.stale_payouts",
+          entityType: "validation_chain_stream",
+          entityId: "validation_market_main",
+          reason: "validation_chain.payout.stale",
+          metadata: {
+            marketId: "market_resolved_1",
+          },
+          createdAt: "2026-04-24T00:59:00.000Z",
+        },
+      ],
+      metrics: {
+        recentRetryExhaustedCount: 0,
+        recentTerminalCommandCount: 0,
+        recentSyncFailureCount: 0,
+        recentProjectorEntityMissingCount: 0,
+        stalePayoutMarketCount: 1,
+        unsyncedBetBacklogCount: 0,
+      },
+      eventLedger: {
+        totalEventCount: 0,
+        duplicateRows: [],
+        recentEvents: [],
+      },
+      projection: {
+        latestMarket: null,
+        latestBet: null,
+        unsyncedBetBacklog: [],
+      },
+      failures: {
+        projectorFailuresCount: 0,
+        syncFailuresCount: 0,
+        recentFailures: [],
+      },
+      stalePayoutMarkets: [
+        {
+          marketId: "market_resolved_1",
+          propositionId: "prop_1",
+          chainStatus: "resolved",
+          terminalAt: "2026-04-22T00:00:00.000Z",
+          unclaimedBetCount: 2,
+          operatorActions: [
+            "POST /arena/internal/validation-chain/sync",
+            "POST /arena/internal/validation-chain/markets/market_resolved_1/replay-projection",
+            "GET /arena/internal/monitoring/validation-chain",
+          ],
+        },
+      ],
+      operatorSummary: {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "stale_payouts",
+        summary:
+          "Stale payout recovery is required for at least one terminal market before settlement completeness can be trusted.",
+        operatorActions: [
+          "POST /arena/internal/validation-chain/sync",
+          "POST /arena/internal/validation-chain/markets/market_resolved_1/replay-projection",
+          "GET /arena/internal/monitoring/validation-chain",
+        ],
+        blockers: ["stale_payouts"],
+        latestRelevantEvidence: {
+          action: "validation_chain.alert.stale_payouts",
+          entityType: "validation_chain_stream",
+          entityId: "validation_market_main",
+          reason: "validation_chain.payout.stale",
+          createdAt: "2026-04-24T00:59:00.000Z",
+        },
+      },
+    });
+
+    const response = await requestJson(
+      baseUrl,
+      "/arena/internal/monitoring/validation-chain",
+      {
+        method: "GET",
+        user: {
+          userId: "operator_validation_chain",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(response.status, HttpStatus.OK);
+    assert.equal(response.body.operatorSummary.status, "action_required");
+    assert.equal(response.body.operatorSummary.requiresActionNow, true);
+    assert.equal(response.body.operatorSummary.focusArea, "stale_payouts");
+    assert.equal(
+      response.body.operatorSummary.operatorActions[1],
+      "POST /arena/internal/validation-chain/markets/market_resolved_1/replay-projection",
+    );
+    assert.equal(
+      response.body.operatorSummary.latestRelevantEvidence.action,
+      "validation_chain.alert.stale_payouts",
+    );
+  });
+});
+
 test("internal proposition evidence bundle route returns proposition export plus runtime contract snapshot", async () => {
   await withHttpArenaApp(async ({ baseUrl, harness }) => {
     const proposition = await harness.propositionEngineService.createProposition({
@@ -11030,6 +11319,42 @@ test("internal proposition evidence bundle route returns proposition export plus
       liveAt: "2026-04-18T10:05:00.000Z",
       updatedByUserId: "operator_owner",
     });
+    const market = await harness.marketRepository.findByPropositionId(live.id);
+    assert.ok(market);
+    await harness.marketRepository.update(market.id, {
+      chainMarketId: `chain_market_${market.id}`,
+      chainPropositionId: `chain_prop_${live.id}`,
+      chainStatus: "pre_live",
+      chainSyncedAt: new Date("2026-04-18T10:05:30.000Z"),
+    });
+    await harness.internalAuditService.record({
+      entityType: "validation_market",
+      entityId: market.id,
+      action: "validation_chain.alert.lifecycle_drift",
+      actorUserId: null,
+      reason: "validation_chain.lifecycle_drift.chain_market_not_opened.queue_recovery",
+      metadata: {
+        propositionId: live.id,
+        marketId: market.id,
+        propositionStatus: "live",
+        marketStatus: "live",
+        localChainStatus: "pre_live",
+        chainMarketId: `chain_market_${market.id}`,
+        onChainState: "pre_live",
+        driftReason: "chain_market_not_opened",
+        operatorGuidance: {
+          kind: "queue_recovery",
+          summary:
+            "Queue open_market to move the pre-live chain market into the live state.",
+          recoveryReason: "open_pre_live_market",
+          plannedCommands: ["open_market"],
+          operatorActions: [
+            `/arena/internal/validation-chain/propositions/${live.id}/recover-command`,
+          ],
+        },
+      },
+      createdAt: new Date("2026-04-18T10:05:40.000Z"),
+    });
 
     const response = await requestJson(
       baseUrl,
@@ -11046,12 +11371,82 @@ test("internal proposition evidence bundle route returns proposition export plus
     assert.equal(response.body.propositionId, live.id);
     assert.equal(typeof response.body.exportedAt, "string");
     assert.equal(response.body.propositionExport.proposition.id, live.id);
+    assert.equal(
+      response.body.propositionExport.validationLifecycle.onChainState,
+      "pre_live",
+    );
+    assert.equal(
+      response.body.propositionExport.validationLifecycle.operatorGuidance.recoveryReason,
+      "open_pre_live_market",
+    );
+    assert.equal(
+      response.body.propositionExport.validationChainActivity.driftAuditEvents[0].action,
+      "validation_chain.alert.lifecycle_drift",
+    );
     assert.equal(typeof response.body.runtimeContract.status, "string");
     assert.equal(
       response.body.runtimeContract.commands.validationLocalPrepare.includes(
         "pnpm run validation:prepare:local",
       ),
       true,
+    );
+  });
+});
+
+test("internal proposition detail route exposes proposition-scoped lifecycle recovery evidence", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const live = await createLiveProposition(harness, {
+      marketEnabled: true,
+      title: "HTTP lifecycle recovery detail",
+    });
+    const market = await harness.marketRepository.findByPropositionId(live.id);
+    assert.ok(market);
+    harness.store.markets = harness.store.markets.filter((item) => item.id !== market.id);
+    await harness.internalAuditService.record({
+      entityType: "validation_proposition",
+      entityId: live.id,
+      action: "validation_chain.alert.lifecycle_drift",
+      actorUserId: null,
+      reason: "validation_chain.lifecycle_drift.market_missing.manual_intervention",
+      metadata: {
+        propositionId: live.id,
+        marketId: null,
+        propositionStatus: "live",
+        marketStatus: null,
+        localChainStatus: null,
+        chainMarketId: null,
+        onChainState: null,
+        driftReason: "market_missing",
+        operatorGuidance: {
+          kind: "manual_intervention",
+          summary:
+            "The local validation market row is missing. Reconstruct or investigate local market state before replaying projection or queueing chain commands.",
+          recoveryReason: null,
+          plannedCommands: [],
+          operatorActions: ["docs/contracts/arena-validation-chain-runbook.md"],
+        },
+      },
+      createdAt: new Date("2026-04-18T10:06:20.000Z"),
+    });
+
+    const response = await requestJson(baseUrl, `/arena/internal/propositions/${live.id}`, {
+      user: {
+        userId: "operator_validation_chain",
+        roles: [SystemRole.Operator],
+      },
+    });
+
+    assert.equal(response.status, HttpStatus.OK);
+    assert.equal(response.body.market, null);
+    assert.equal(response.body.validationLifecycle.driftReason, "market_missing");
+    assert.equal(response.body.validationLifecycle.onChainState, null);
+    assert.equal(
+      response.body.validationLifecycle.operatorGuidance.kind,
+      "manual_intervention",
+    );
+    assert.equal(
+      response.body.validationChainActivity.driftAuditEvents[0].entityType,
+      "validation_proposition",
     );
   });
 });
@@ -11247,6 +11642,7 @@ test("runtime contract route exposes a unified backend deployment contract to op
           summary: "Populate required backend and validation-chain environment variables.",
           blockingDependencies: [],
           commands: ["pnpm run validation:env:check"],
+          operatorActions: [],
         },
         {
           id: "readiness",
@@ -11254,8 +11650,46 @@ test("runtime contract route exposes a unified backend deployment contract to op
           summary: "Verify public and validation runtime readiness before accepting traffic.",
           blockingDependencies: ["scheduler_queue"],
           commands: ["GET /health/ready", "GET /arena/internal/monitoring/validation-chain/runtime-readiness"],
+          operatorActions: [
+            "GET /system/queues/overview",
+            "GET /arena/internal/monitoring/validation-chain",
+          ],
         },
       ],
+      recentAlerts: [
+        {
+          id: "internal_audit_1",
+          entityType: "runtime_contract",
+          entityId: "release",
+          action: "runtime_contract.alert.release_blocked",
+          actorUserId: null,
+          reason: "runtime_contract.release_blocked",
+          note: null,
+          metadata: {
+            blockingDependencies: ["scheduler_queue", "rpc"],
+          },
+          createdAt: "2026-05-24T00:35:00.000Z",
+        },
+      ],
+      operatorSummary: {
+        status: "action_required",
+        requiresActionNow: true,
+        focusArea: "readiness",
+        summary:
+          "Release is blocked at readiness: Verify public and validation runtime readiness before accepting traffic.",
+        operatorActions: [
+          "GET /system/queues/overview",
+          "GET /arena/internal/monitoring/validation-chain",
+        ],
+        blockers: ["scheduler_queue", "rpc"],
+        latestRelevantEvidence: {
+          action: "runtime_contract.alert.release_blocked",
+          entityType: "runtime_contract",
+          entityId: "release",
+          reason: "runtime_contract.release_blocked",
+          createdAt: "2026-05-24T00:35:00.000Z",
+        },
+      },
     });
 
     const response = await requestJson(
@@ -11301,6 +11735,18 @@ test("runtime contract route exposes a unified backend deployment contract to op
         ?.status,
       "blocked",
     );
+    assert.equal(
+      response.body.releaseChecklist.find((item: { id: string }) => item.id === "readiness")
+        ?.operatorActions.includes("GET /system/queues/overview"),
+      true,
+    );
+    assert.equal(response.body.recentAlerts[0]?.action, "runtime_contract.alert.release_blocked");
+    assert.equal(response.body.operatorSummary.status, "action_required");
+    assert.equal(response.body.operatorSummary.focusArea, "readiness");
+    assert.equal(
+      response.body.operatorSummary.latestRelevantEvidence.action,
+      "runtime_contract.alert.release_blocked",
+    );
   });
 });
 
@@ -11342,6 +11788,7 @@ test("validation chain internal command recovery route can return settled resolv
       chainMarketId: "chain_market_1",
       chainPropositionId: "chain_prop_1",
       queuedAt: "2026-04-24T00:36:00.000Z",
+      requestStatus: "queued",
       propositionStatus: "settled",
       marketStatus: "settled",
       localChainStatus: "frozen",
@@ -11349,6 +11796,15 @@ test("validation chain internal command recovery route can return settled resolv
       driftReason: "chain_market_not_resolved",
       recoveryReason: "resolve_settled_market",
       plannedCommands: ["resolve_market"],
+      commandSubmissions: [
+        {
+          command: "resolve_market",
+          status: "enqueued",
+          queueJobId: "validation-chain.resolve_market.prop_1",
+          delayMs: 5000,
+          errorMessage: null,
+        },
+      ],
     });
 
     const response = await requestJson(
@@ -11372,6 +11828,115 @@ test("validation chain internal command recovery route can return settled resolv
     assert.equal(response.body.recoveryReason, "resolve_settled_market");
     assert.deepEqual(response.body.plannedCommands, ["resolve_market"]);
   });
+
+test("validation chain internal command recovery route returns 200 when recovery reuses pending jobs", async () => {
+  await withHttpArenaApp(async ({ app, baseUrl }) => {
+    app
+      .get(ValidationChainCommandRecoveryService)
+      .recoverQueuedCommands = async () => ({
+      propositionId: "prop_1",
+      marketId: "market_1",
+      chainMarketId: "chain_market_1",
+      chainPropositionId: "chain_prop_1",
+      queuedAt: "2026-04-24T00:36:00.000Z",
+      requestStatus: "already_pending",
+      propositionStatus: "live",
+      marketStatus: "live",
+      localChainStatus: "pre_live",
+      onChainState: "pre_live",
+      driftReason: "chain_market_not_opened",
+      recoveryReason: "open_pre_live_market",
+      plannedCommands: ["open_market"],
+      commandSubmissions: [
+        {
+          command: "open_market",
+          status: "already_pending",
+          queueJobId: "validation-chain.open_market.prop_1",
+          delayMs: 5000,
+          errorMessage: null,
+        },
+      ],
+    });
+
+    const response = await requestJson(
+      baseUrl,
+      "/arena/internal/validation-chain/propositions/prop_1/recover-command",
+      {
+        method: "POST",
+        user: {
+          userId: "operator_validation_chain",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          reason: "manual_command_recovery",
+          note: "reuse_pending_job",
+        },
+      },
+    );
+
+    assert.equal(response.status, HttpStatus.OK);
+    assert.equal(response.body.requestStatus, "already_pending");
+    assert.equal(response.body.commandSubmissions[0]?.status, "already_pending");
+  });
+});
+
+test("validation chain internal command recovery route returns 503 with structured submission results when queueing fails", async () => {
+  await withHttpArenaApp(async ({ app, baseUrl }) => {
+    app
+      .get(ValidationChainCommandRecoveryService)
+      .recoverQueuedCommands = async () => ({
+      propositionId: "prop_1",
+      marketId: "market_1",
+      chainMarketId: "chain_market_1",
+      chainPropositionId: "chain_prop_1",
+      queuedAt: "2026-04-24T00:36:00.000Z",
+      requestStatus: "failed",
+      propositionStatus: "revealing",
+      marketStatus: "frozen_for_reveal",
+      localChainStatus: "live",
+      onChainState: "live",
+      driftReason: "chain_market_not_frozen",
+      recoveryReason: "freeze_resolve_live_market",
+      plannedCommands: ["freeze_market", "resolve_market"],
+      commandSubmissions: [
+        {
+          command: "freeze_market",
+          status: "failed",
+          queueJobId: null,
+          delayMs: 0,
+          errorMessage: "Redis unavailable",
+        },
+        {
+          command: "resolve_market",
+          status: "failed",
+          queueJobId: null,
+          delayMs: 5000,
+          errorMessage: "Redis unavailable",
+        },
+      ],
+    });
+
+    const response = await requestJson(
+      baseUrl,
+      "/arena/internal/validation-chain/propositions/prop_1/recover-command",
+      {
+        method: "POST",
+        user: {
+          userId: "operator_validation_chain",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          reason: "manual_command_recovery",
+          note: "queue_down",
+        },
+      },
+    );
+
+    assert.equal(response.status, HttpStatus.SERVICE_UNAVAILABLE);
+    assert.equal(response.body.requestStatus, "failed");
+    assert.equal(response.body.commandSubmissions[0]?.errorMessage, "Redis unavailable");
+  });
+});
 });
 
 test("validation chain internal command recovery route returns 409 for invalid recovery state", async () => {
@@ -11433,8 +11998,8 @@ test("internal state-machine conflicts also return 409 for other illegal ops act
       {
         method: "POST",
         user: {
-          userId: "operator_1",
-          roles: [SystemRole.Operator],
+          userId: "admin_1",
+          roles: [SystemRole.Admin],
         },
         body: {
           frozenAt: "2026-04-18T10:08:00.000Z",

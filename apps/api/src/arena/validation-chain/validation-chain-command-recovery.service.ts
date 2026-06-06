@@ -13,8 +13,9 @@ import {
 } from "../arena.errors";
 import type {
   ValidationChainCommandRecoveryReason,
+  ValidationChainCommandRecoveryRequestStatus,
+  ValidationChainCommandSubmissionViewModel,
   ValidationChainCommandRecoveryViewModel,
-  ValidationChainContractStateViewModel,
 } from "../internal-ops.types";
 import { PropositionRepository } from "../repositories/proposition.repository";
 import { MarketRepository } from "../repositories/market.repository";
@@ -30,6 +31,7 @@ import {
   ValidationContractMarketState,
   type ValidationChainAutomaticCommand,
 } from "./validation-chain.types";
+import { toValidationChainContractStateView } from "./validation-lifecycle-guidance";
 
 interface ValidationChainCommandRecoveryInput {
   propositionId: string;
@@ -84,51 +86,62 @@ export class ValidationChainCommandRecoveryService {
     const chainPropositionId =
       market.chainPropositionId ?? this.ids.buildChainPropositionId(proposition.id);
     const onChainMarket = await this.contract.getMarketOrNull(chainMarketId);
-    const onChainState = this.toContractStateView(onChainMarket?.state ?? null);
+    const onChainState = toValidationChainContractStateView(
+      onChainMarket?.state ?? null,
+    );
     const driftReason = this.resolveDriftReason(proposition, market);
     const plan = this.buildRecoveryPlan({
       proposition,
       market,
       onChainState: onChainMarket?.state ?? null,
     });
+    const commandSubmissions: ValidationChainCommandSubmissionViewModel[] = [];
 
     if (
       plan.plannedCommands.includes("create_market") ||
       plan.plannedCommands.includes("open_market")
     ) {
-      await this.runtime.enqueueCreateOpenCommands({
-        propositionId: proposition.id,
-        actorUserId: input.actorUserId,
-        reason: input.reason,
-        note: input.note,
-      });
+      commandSubmissions.push(
+        ...(await this.runtime.enqueueCreateOpenCommands({
+          propositionId: proposition.id,
+          actorUserId: input.actorUserId,
+          reason: input.reason,
+          note: input.note,
+        })),
+      );
     }
 
     if (plan.plannedCommands.includes("freeze_market")) {
-      await this.runtime.enqueueFreezeCommand({
-        propositionId: proposition.id,
-        actorUserId: input.actorUserId,
-        reason: input.reason,
-        note: input.note,
-      });
+      commandSubmissions.push(
+        await this.runtime.enqueueFreezeCommand({
+          propositionId: proposition.id,
+          actorUserId: input.actorUserId,
+          reason: input.reason,
+          note: input.note,
+        }),
+      );
     }
 
     if (plan.plannedCommands.includes("resolve_market")) {
-      await this.runtime.enqueueResolveCommand({
-        propositionId: proposition.id,
-        actorUserId: input.actorUserId,
-        reason: input.reason,
-        note: input.note,
-      });
+      commandSubmissions.push(
+        await this.runtime.enqueueResolveCommand({
+          propositionId: proposition.id,
+          actorUserId: input.actorUserId,
+          reason: input.reason,
+          note: input.note,
+        }),
+      );
     }
 
     const queuedAt = new Date().toISOString();
+    const requestStatus = this.resolveRequestStatus(commandSubmissions);
     const result: ValidationChainCommandRecoveryViewModel = {
       propositionId: proposition.id,
       marketId: market.id,
       chainMarketId,
       chainPropositionId,
       queuedAt,
+      requestStatus,
       propositionStatus: proposition.status,
       marketStatus: market.status,
       localChainStatus: market.chainStatus,
@@ -136,12 +149,13 @@ export class ValidationChainCommandRecoveryService {
       driftReason,
       recoveryReason: plan.recoveryReason,
       plannedCommands: plan.plannedCommands,
+      commandSubmissions,
     };
 
     await this.audit.record({
       entityType: "validation_market",
       entityId: market.id,
-      action: "validation_chain.command_recovery.queued",
+      action: this.resolveRecoveryAuditAction(requestStatus),
       actorUserId: input.actorUserId,
       reason: input.reason,
       note: input.note,
@@ -158,6 +172,14 @@ export class ValidationChainCommandRecoveryService {
         driftReason: result.driftReason,
         recoveryReason: result.recoveryReason,
         plannedCommands: [...result.plannedCommands],
+        requestStatus: result.requestStatus,
+        commandSubmissions: result.commandSubmissions.map((submission) => ({
+          command: submission.command,
+          status: submission.status,
+          queueJobId: submission.queueJobId,
+          delayMs: submission.delayMs,
+          errorMessage: submission.errorMessage,
+        })),
       },
     });
 
@@ -300,24 +322,36 @@ export class ValidationChainCommandRecoveryService {
     return buildValidationLifecycleSnapshot(proposition, market as Market).driftReason;
   }
 
-  private toContractStateView(
-    state: ValidationContractMarketState | null,
-  ): ValidationChainContractStateViewModel | null {
-    switch (state) {
-      case null:
-        return null;
-      case ValidationContractMarketState.Unset:
-        return "unset";
-      case ValidationContractMarketState.PreLive:
-        return "pre_live";
-      case ValidationContractMarketState.Live:
-        return "live";
-      case ValidationContractMarketState.Frozen:
-        return "frozen";
-      case ValidationContractMarketState.Resolved:
-        return "resolved";
-      case ValidationContractMarketState.Cancelled:
-        return "cancelled";
+  private resolveRequestStatus(
+    submissions: ValidationChainCommandSubmissionViewModel[],
+  ): ValidationChainCommandRecoveryRequestStatus {
+    if (submissions.every((submission) => submission.status === "already_pending")) {
+      return "already_pending";
+    }
+
+    if (submissions.every((submission) => submission.status === "failed")) {
+      return "failed";
+    }
+
+    if (submissions.some((submission) => submission.status === "failed")) {
+      return "partial_failure";
+    }
+
+    return "queued";
+  }
+
+  private resolveRecoveryAuditAction(
+    status: ValidationChainCommandRecoveryRequestStatus,
+  ): string {
+    switch (status) {
+      case "already_pending":
+        return "validation_chain.command_recovery.already_pending";
+      case "partial_failure":
+        return "validation_chain.command_recovery.partial_failure";
+      case "failed":
+        return "validation_chain.command_recovery.enqueue_failed";
+      case "queued":
+        return "validation_chain.command_recovery.queued";
     }
   }
 }

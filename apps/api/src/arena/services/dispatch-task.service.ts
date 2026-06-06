@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { DispatchTask } from "@prisma/client";
+import { ARENA_ADJUDICATION_DEFAULTS } from "@arena/shared";
 
 import { PrismaService } from "../../database/prisma.service";
 import {
@@ -26,6 +27,9 @@ import { assertDispatchTaskTransition } from "../state-machines/dispatch-task-st
 import { toDate } from "../arena.utils";
 import { ReputationService } from "./reputation.service";
 import { TagService } from "./tag.service";
+
+const addSeconds = (value: Date, seconds: number): Date =>
+  new Date(value.getTime() + seconds * 1000);
 
 @Injectable()
 export class DispatchTaskService {
@@ -202,6 +206,10 @@ export class DispatchTaskService {
         "skipped",
         {
           skipReason: input.skipReason,
+          cooldownUntil: addSeconds(
+            toDate(input.skippedAt),
+            ARENA_ADJUDICATION_DEFAULTS.cooldownSeconds,
+          ),
         },
         tx,
       );
@@ -235,6 +243,10 @@ export class DispatchTaskService {
         "expired",
         {
           expiryReason: input.expiryReason,
+          cooldownUntil: addSeconds(
+            expiredAt,
+            ARENA_ADJUDICATION_DEFAULTS.cooldownSeconds,
+          ),
         },
         tx,
       );

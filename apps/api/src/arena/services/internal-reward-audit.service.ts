@@ -3,6 +3,7 @@ import { ArenaNotFoundError, ArenaValidationError } from "../arena.errors";
 import type {
   InternalRewardAuditDetailViewModel,
   InternalRewardAuditListItemViewModel,
+  InternalRewardAuditListPageViewModel,
   RewardAuditListFilters,
 } from "../internal-ops.types";
 import { INTERNAL_AUDIT_ENTITY_TYPES } from "../internal-ops.types";
@@ -20,6 +21,57 @@ import { RewardLedgerService } from "./reward-ledger.service";
 const toIso = (value: Date | null): string | null =>
   value ? value.toISOString() : null;
 
+const DEFAULT_OPS_PAGE_LIMIT = 25;
+const MAX_OPS_PAGE_LIMIT = 100;
+
+const normalizeSearch = (value?: string): string | null => {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+};
+
+const clampLimit = (value?: number): number => {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_OPS_PAGE_LIMIT;
+  }
+  return Math.min(MAX_OPS_PAGE_LIMIT, Math.max(1, Math.trunc(value ?? DEFAULT_OPS_PAGE_LIMIT)));
+};
+
+const clampOffset = (value?: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.trunc(value ?? 0));
+};
+
+const compareStrings = (
+  left: string,
+  right: string,
+  direction: "asc" | "desc",
+): number => {
+  const normalized = left.localeCompare(right);
+  return direction === "asc" ? normalized : -normalized;
+};
+
+const compareNullableDates = (
+  left: string | null,
+  right: string | null,
+  direction: "asc" | "desc",
+): number => {
+  const leftTime = left ? Date.parse(left) : 0;
+  const rightTime = right ? Date.parse(right) : 0;
+  const diff = leftTime - rightTime;
+  return direction === "asc" ? diff : -diff;
+};
+
+const compareNumbers = (
+  left: number,
+  right: number,
+  direction: "asc" | "desc",
+): number => {
+  const diff = left - right;
+  return direction === "asc" ? diff : -diff;
+};
+
 @Injectable()
 export class InternalRewardAuditService {
   constructor(
@@ -35,14 +87,36 @@ export class InternalRewardAuditService {
   async listRewards(
     filters: RewardAuditListFilters,
     db?: ArenaDbClient,
-  ): Promise<InternalRewardAuditListItemViewModel[]> {
+  ): Promise<InternalRewardAuditListPageViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
-      const ledgers = await this.ledgers.list(filters, tx);
+      const ledgers = await this.ledgers.list(
+        {
+          propositionId: filters.propositionId,
+          userId: filters.userId,
+          responseId: filters.responseId,
+          status: filters.status,
+          sourceType: filters.sourceType,
+        },
+        tx,
+      );
+      const propositions = await this.propositions.listByIds(
+        [...new Set(ledgers.map((ledger) => ledger.propositionId))],
+        tx,
+      );
+      const propositionTitleById = new Map(
+        propositions.map((proposition) => [proposition.id, proposition.title]),
+      );
 
-      return Promise.all(
-        ledgers.map(async (ledger) => {
-          const proposition = await this.propositions.findById(ledger.propositionId, tx);
-          if (!proposition) {
+      const search = normalizeSearch(filters.search);
+      const direction = filters.sortDirection ?? "desc";
+      const limit = clampLimit(filters.limit);
+      const offset = clampOffset(filters.offset);
+
+      const items = ledgers
+        .map((ledger) => {
+          const propositionTitle =
+            propositionTitleById.get(ledger.propositionId);
+          if (!propositionTitle) {
             throw new ArenaNotFoundError(
               "proposition.not_found",
               `Proposition ${ledger.propositionId} was not found`,
@@ -52,7 +126,7 @@ export class InternalRewardAuditService {
           return {
             ledgerId: ledger.id,
             propositionId: ledger.propositionId,
-            propositionTitle: proposition.title,
+            propositionTitle,
             responseId: ledger.responseId,
             userId: ledger.userId,
             sourceType: ledger.sourceType,
@@ -68,8 +142,37 @@ export class InternalRewardAuditService {
             voidedAt: toIso(ledger.voidedAt),
             reversedAt: toIso(ledger.reversedAt),
           };
-        }),
-      );
+        })
+        .filter((item) => {
+          if (!search) {
+            return true;
+          }
+
+          return [
+            item.ledgerId,
+            item.propositionId,
+            item.propositionTitle,
+            item.responseId,
+            item.userId,
+            item.status,
+            item.reviewStatus ?? "",
+          ].some((value) => value.toLowerCase().includes(search));
+        })
+        .sort((left, right) =>
+          this.compareRewardItems(
+            left,
+            right,
+            filters.sortBy ?? "createdAt",
+            direction,
+          ),
+        );
+
+      return {
+        items: items.slice(offset, offset + limit),
+        totalCount: items.length,
+        limit,
+        offset,
+      };
     });
   }
 
@@ -234,5 +337,49 @@ export class InternalRewardAuditService {
     }
 
     return ledger;
+  }
+
+  private compareRewardItems(
+    left: InternalRewardAuditListItemViewModel,
+    right: InternalRewardAuditListItemViewModel,
+    sortBy: NonNullable<RewardAuditListFilters["sortBy"]>,
+    direction: NonNullable<RewardAuditListFilters["sortDirection"]>,
+  ): number {
+    switch (sortBy) {
+      case "finalizedAt":
+        return (
+          compareNullableDates(left.finalizedAt, right.finalizedAt, direction) ||
+          compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "propositionTitle":
+        return (
+          compareStrings(left.propositionTitle, right.propositionTitle, direction) ||
+          compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "userId":
+        return (
+          compareStrings(left.userId, right.userId, direction) ||
+          compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "amount":
+        return (
+          compareNumbers(
+            Number(left.finalAmount ?? left.pendingAmount),
+            Number(right.finalAmount ?? right.pendingAmount),
+            direction,
+          ) || compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "ledgerVersion":
+        return (
+          compareNumbers(left.ledgerVersion, right.ledgerVersion, direction) ||
+          compareNullableDates(left.createdAt, right.createdAt, "desc")
+        );
+      case "createdAt":
+      default:
+        return (
+          compareNullableDates(left.createdAt, right.createdAt, direction) ||
+          compareNumbers(left.ledgerVersion, right.ledgerVersion, "desc")
+        );
+    }
   }
 }

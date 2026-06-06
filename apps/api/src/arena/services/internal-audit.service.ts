@@ -6,9 +6,34 @@ import type { ArenaDbClient } from "../prisma.types";
 import { withArenaTransaction } from "../arena-transaction.utils";
 import { ArenaIdService } from "../arena-id.service";
 import { InternalAuditEventRepository } from "../repositories/internal-audit-event.repository";
-import type { InternalAuditEventViewModel } from "../internal-ops.types";
+import type {
+  InternalAuditEventListFilters,
+  InternalAuditEventListPageViewModel,
+  InternalAuditEventViewModel,
+} from "../internal-ops.types";
 
 const toIso = (value: Date): string => value.toISOString();
+const DEFAULT_OPS_PAGE_LIMIT = 25;
+const MAX_OPS_PAGE_LIMIT = 100;
+
+const clampLimit = (value?: number): number => {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_OPS_PAGE_LIMIT;
+  }
+
+  return Math.min(
+    MAX_OPS_PAGE_LIMIT,
+    Math.max(1, Math.trunc(value ?? DEFAULT_OPS_PAGE_LIMIT)),
+  );
+};
+
+const clampOffset = (value?: number): number => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.trunc(value ?? 0));
+};
 
 @Injectable()
 export class InternalAuditService {
@@ -73,6 +98,34 @@ export class InternalAuditService {
         this.toViewModel(event),
       ),
     );
+  }
+
+  async listEvents(
+    filters: InternalAuditEventListFilters,
+    db?: ArenaDbClient,
+  ): Promise<InternalAuditEventListPageViewModel> {
+    return withArenaTransaction(this.prisma, db, async (tx) => {
+      const limit = clampLimit(filters.limit);
+      const offset = clampOffset(filters.offset);
+      const normalizedFilters = {
+        ...filters,
+        search: filters.search?.trim() || undefined,
+        limit,
+        offset,
+      } satisfies InternalAuditEventListFilters;
+
+      const [items, totalCount] = await Promise.all([
+        this.audits.list(normalizedFilters, tx),
+        this.audits.count(normalizedFilters, tx),
+      ]);
+
+      return {
+        items: items.map((event) => this.toViewModel(event)),
+        totalCount,
+        limit,
+        offset,
+      };
+    });
   }
 
   private toViewModel(event: {

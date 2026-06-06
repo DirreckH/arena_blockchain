@@ -1,5 +1,16 @@
-import { IsBooleanString, IsEnum, IsISO8601, IsOptional } from "class-validator";
+import {
+  IsBooleanString,
+  IsEnum,
+  IsISO8601,
+  IsNumberString,
+  IsOptional,
+  IsString,
+} from "class-validator";
 import type { PropositionCategory } from "@prisma/client";
+import type {
+  InternalListSortDirection,
+  InternalPropositionListSortBy,
+} from "../internal-ops.types";
 
 export class InternalReviewQueueQueryDto {
   @IsOptional()
@@ -26,4 +37,38 @@ export class InternalReviewQueueQueryDto {
   @IsOptional()
   @IsISO8601()
   createdTo?: string;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsEnum(
+    {
+      createdAt: "createdAt",
+      submittedAt: "submittedAt",
+      title: "title",
+      effectiveSampleCount: "effectiveSampleCount",
+      pendingReviewCount: "pendingReviewCount",
+      sampleShortageCount: "sampleShortageCount",
+    } satisfies Record<InternalPropositionListSortBy, InternalPropositionListSortBy>,
+  )
+  sortBy?: InternalPropositionListSortBy;
+
+  @IsOptional()
+  @IsEnum(
+    {
+      asc: "asc",
+      desc: "desc",
+    } satisfies Record<InternalListSortDirection, InternalListSortDirection>,
+  )
+  sortDirection?: InternalListSortDirection;
+
+  @IsOptional()
+  @IsNumberString()
+  limit?: string;
+
+  @IsOptional()
+  @IsNumberString()
+  offset?: string;
 }

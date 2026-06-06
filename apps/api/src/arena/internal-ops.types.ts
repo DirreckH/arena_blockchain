@@ -50,6 +50,20 @@ export interface InternalAuditEventViewModel {
   createdAt: string;
 }
 
+export interface InternalAuditEventListFilters {
+  entityType?: string;
+  entityId?: string;
+  actorUserId?: string;
+  action?: string;
+  search?: string;
+  sortDirection?: InternalListSortDirection;
+  limit?: number;
+  offset?: number;
+}
+
+export type InternalAuditEventListPageViewModel =
+  InternalListPageViewModel<InternalAuditEventViewModel>;
+
 export interface PropositionControlActionInput {
   propositionId: string;
   actorUserId: string;
@@ -79,7 +93,29 @@ export interface InternalPropositionListFilters {
   marketEnabled?: boolean;
   createdFrom?: string;
   createdTo?: string;
+  search?: string;
+  sortBy?: InternalPropositionListSortBy;
+  sortDirection?: InternalListSortDirection;
+  limit?: number;
+  offset?: number;
 }
+
+export type InternalListSortDirection = "asc" | "desc";
+
+export interface InternalListPageViewModel<TItem> {
+  items: TItem[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+}
+
+export type InternalPropositionListSortBy =
+  | "createdAt"
+  | "submittedAt"
+  | "title"
+  | "effectiveSampleCount"
+  | "pendingReviewCount"
+  | "sampleShortageCount";
 
 export interface InternalPropositionListItemViewModel {
   propositionId: string;
@@ -100,6 +136,9 @@ export interface InternalPropositionListItemViewModel {
   pendingReviewCount: number;
   sampleShortageCount: number;
 }
+
+export type InternalPropositionListPageViewModel =
+  InternalListPageViewModel<InternalPropositionListItemViewModel>;
 
 export interface PropositionDispatchSummaryViewModel {
   totalTasks: number;
@@ -168,14 +207,28 @@ export interface PropositionRevealSettlementViewModel {
   lastPublicResult: unknown;
 }
 
-export type PropositionValidationLifecycleViewModel =
-  ValidationLifecycleSnapshotViewModel;
+export interface PropositionValidationLifecycleViewModel
+  extends ValidationLifecycleSnapshotViewModel {
+  onChainState: ValidationChainContractStateViewModel | null;
+  operatorGuidance: ValidationLifecycleDriftOperatorGuidanceViewModel | null;
+}
 
 export interface PropositionValidationChainActivityViewModel {
   timeline: InternalAuditEventViewModel[];
   marketAuditEvents: InternalAuditEventViewModel[];
   commandAuditEvents: InternalAuditEventViewModel[];
   eventAuditEvents: InternalAuditEventViewModel[];
+  driftAuditEvents: InternalAuditEventViewModel[];
+  recoveryAuditEvents: InternalAuditEventViewModel[];
+}
+
+export interface PropositionValidationOperatorSummaryViewModel {
+  status: "ready" | "action_required";
+  requiresActionNow: boolean;
+  summary: string;
+  plannedCommands: ValidationChainAutomaticCommand[];
+  operatorActions: string[];
+  latestRelevantAudit: InternalAuditEventViewModel | null;
 }
 
 export type PropositionValidationRehearsalStepStatus =
@@ -305,6 +358,7 @@ export interface InternalPropositionDetailViewModel {
   } | null;
   validationLifecycle: PropositionValidationLifecycleViewModel;
   validationChainActivity: PropositionValidationChainActivityViewModel;
+  validationOperatorSummary: PropositionValidationOperatorSummaryViewModel;
   validationRehearsal: PropositionValidationRehearsalViewModel;
   validationRehearsalCheckpoints: PropositionValidationRehearsalCheckpointViewModel[];
   sampleCounter: EffectiveSampleCounterSnapshot;
@@ -322,6 +376,7 @@ export interface InternalPropositionEvidenceBundleViewModel {
   exportedAt: string;
   propositionExport: InternalPropositionDetailViewModel & { exportedAt: string };
   runtimeContract: BackendRuntimeContractViewModel;
+  validationChainHealth: ValidationChainMonitoringViewModel | null;
 }
 
 export interface SampleShortageMonitoringItemViewModel {
@@ -386,6 +441,24 @@ export interface ValidationChainHealthAlertViewModel {
   createdAt: string;
 }
 
+export interface OperatorSummaryEvidenceViewModel {
+  action: string;
+  entityType: string;
+  entityId: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface OperatorCurrentSummaryViewModel {
+  status: "ready" | "action_required";
+  requiresActionNow: boolean;
+  focusArea: string;
+  summary: string;
+  operatorActions: string[];
+  blockers: string[];
+  latestRelevantEvidence: OperatorSummaryEvidenceViewModel | null;
+}
+
 export interface ValidationChainSchedulerWorkerViewModel {
   status: "up" | "down";
   checkedAt: string;
@@ -405,6 +478,7 @@ export interface ValidationChainStalePayoutMarketViewModel {
   chainStatus: ValidationChainMarketStatus;
   terminalAt: string;
   unclaimedBetCount: number;
+  operatorActions: string[];
 }
 
 export interface ValidationChainRecentEventViewModel {
@@ -460,6 +534,7 @@ export interface ValidationChainUnsyncedBetBacklogItemViewModel {
   chainMarketId: string | null;
   chainStatus: ValidationChainMarketStatus | null;
   oldestUnsyncedAgeMs: number;
+  operatorActions: string[];
 }
 
 export interface ValidationChainBetReconciliationViewModel {
@@ -581,6 +656,17 @@ export type ValidationChainCommandRecoveryReason =
   | "resolve_settled_market"
   | "resolve_frozen_market";
 
+export type ValidationChainCommandSubmissionStatus =
+  | "enqueued"
+  | "already_pending"
+  | "failed";
+
+export type ValidationChainCommandRecoveryRequestStatus =
+  | "queued"
+  | "already_pending"
+  | "partial_failure"
+  | "failed";
+
 export interface ValidationLifecycleDriftOperatorGuidanceViewModel {
   kind: ValidationLifecycleDriftOperatorGuidanceKind;
   summary: string;
@@ -589,12 +675,21 @@ export interface ValidationLifecycleDriftOperatorGuidanceViewModel {
   operatorActions: string[];
 }
 
+export interface ValidationChainCommandSubmissionViewModel {
+  command: ValidationChainAutomaticCommand;
+  status: ValidationChainCommandSubmissionStatus;
+  queueJobId: string | null;
+  delayMs: number;
+  errorMessage: string | null;
+}
+
 export interface ValidationChainCommandRecoveryViewModel {
   propositionId: string;
   marketId: string;
   chainMarketId: string;
   chainPropositionId: string;
   queuedAt: string;
+  requestStatus: ValidationChainCommandRecoveryRequestStatus;
   propositionStatus: PropositionStatus;
   marketStatus: MarketStatus;
   localChainStatus: ValidationChainMarketStatus | null;
@@ -602,6 +697,7 @@ export interface ValidationChainCommandRecoveryViewModel {
   driftReason: ValidationLifecycleDriftReason | null;
   recoveryReason: ValidationChainCommandRecoveryReason;
   plannedCommands: ValidationChainAutomaticCommand[];
+  commandSubmissions: ValidationChainCommandSubmissionViewModel[];
 }
 
 export interface ValidationChainFailureViewModel {
@@ -673,6 +769,7 @@ export interface BackendRuntimeContractChecklistItemViewModel {
   summary: string;
   blockingDependencies: string[];
   commands: string[];
+  operatorActions: string[];
 }
 
 export interface BackendRuntimeContractReleaseReadinessViewModel {
@@ -722,6 +819,8 @@ export interface BackendRuntimeContractViewModel {
   commands: BackendRuntimeContractCommandSetViewModel;
   releaseReadiness: BackendRuntimeContractReleaseReadinessViewModel;
   releaseChecklist: BackendRuntimeContractChecklistItemViewModel[];
+  recentAlerts: InternalAuditEventViewModel[];
+  operatorSummary: OperatorCurrentSummaryViewModel;
 }
 
 export interface ValidationChainMonitoringViewModel {
@@ -763,6 +862,106 @@ export interface ValidationChainMonitoringViewModel {
     recentFailures: ValidationChainFailureViewModel[];
   };
   stalePayoutMarkets: ValidationChainStalePayoutMarketViewModel[];
+  operatorSummary: OperatorCurrentSummaryViewModel;
+}
+
+export type ResponseReviewWorkflowStateViewModel =
+  | "unclaimed"
+  | "claimed"
+  | "released"
+  | "expired"
+  | "finalized";
+
+export interface InternalResponseReviewQueueFilters {
+  workflowState?: ResponseReviewWorkflowStateViewModel;
+  propositionId?: string;
+  claimStaleOnly?: boolean;
+  claimedByUserId?: string;
+  reviewStatus?: ResponseReviewStatus;
+  search?: string;
+  sortBy?: InternalResponseReviewQueueSortBy;
+  sortDirection?: InternalListSortDirection;
+  limit?: number;
+  offset?: number;
+}
+
+export type InternalResponseReviewQueueSortBy =
+  | "submittedAt"
+  | "claimedAt"
+  | "propositionTitle"
+  | "userId"
+  | "workflowState";
+
+export interface InternalResponseReviewQueueItemViewModel {
+  responseId: string;
+  propositionId: string;
+  propositionTitle: string;
+  userId: string;
+  submittedAt: string;
+  reviewStatus: ResponseReviewStatus;
+  workflowState: ResponseReviewWorkflowStateViewModel;
+  claimedByUserId: string | null;
+  claimedAt: string | null;
+  isClaimStale: boolean;
+  claimStaleAfterSeconds: number;
+}
+
+export type InternalResponseReviewQueuePageViewModel =
+  InternalListPageViewModel<InternalResponseReviewQueueItemViewModel>;
+
+export interface InternalResponseReviewDetailViewModel {
+  response: {
+    id: string;
+    propositionId: string;
+    taskId: string;
+    userId: string;
+    responseVersion: number;
+    isLatest: boolean;
+    selectedOption: number;
+    confirmationOption: number;
+    responsePayload: unknown;
+    understandingAck: boolean;
+    clientStartedAt: string;
+    clientSubmittedAt: string;
+    submittedAt: string;
+  };
+  proposition: {
+    id: string;
+    title: string;
+    category: PropositionCategory;
+    status: PropositionStatus;
+  };
+  task: {
+    id: string;
+    status: string;
+    assignedAt: string;
+    startedAt: string | null;
+    submittedAt: string | null;
+    expiresAt: string;
+  };
+  workflow: {
+    responseId: string;
+    reviewStatus: ResponseReviewStatus;
+    workflowState: ResponseReviewWorkflowStateViewModel;
+    claimedByUserId: string | null;
+    claimedAt: string | null;
+    releasedByUserId: string | null;
+    releasedAt: string | null;
+    expiredAt: string | null;
+    reviewedByUserId: string | null;
+    reviewedAt: string | null;
+    finalizedReviewStatus: ResponseReviewStatus | null;
+    claimStaleAfterSeconds: number;
+    isClaimStale: boolean;
+  };
+  currentReview: {
+    status: ResponseReviewStatus;
+    qualityScore: number;
+    flags: string[];
+    reasonCodes: string[];
+    reviewedByUserId: string | null;
+    reviewedAt: string | null;
+  } | null;
 }
 
 export interface RewardAuditListFilters {
@@ -771,7 +970,20 @@ export interface RewardAuditListFilters {
   responseId?: string;
   status?: RewardLedgerStatus;
   sourceType?: RewardLedgerSourceType;
+  search?: string;
+  sortBy?: RewardAuditListSortBy;
+  sortDirection?: InternalListSortDirection;
+  limit?: number;
+  offset?: number;
 }
+
+export type RewardAuditListSortBy =
+  | "createdAt"
+  | "finalizedAt"
+  | "propositionTitle"
+  | "userId"
+  | "amount"
+  | "ledgerVersion";
 
 export interface InternalRewardAuditListItemViewModel {
   ledgerId: string;
@@ -792,6 +1004,9 @@ export interface InternalRewardAuditListItemViewModel {
   voidedAt: string | null;
   reversedAt: string | null;
 }
+
+export type InternalRewardAuditListPageViewModel =
+  InternalListPageViewModel<InternalRewardAuditListItemViewModel>;
 
 export interface InternalRewardAuditDetailViewModel {
   ledgerId: string;

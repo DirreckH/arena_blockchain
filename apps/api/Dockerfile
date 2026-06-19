@@ -9,6 +9,14 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssl && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate && pnpm --version
 
+FROM base AS contracts-build
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY hardhat.config.js hardhat.config.cjs ./
+COPY contracts contracts
+RUN pnpm fetch --filter trae-project --prod=false
+RUN pnpm install --offline --frozen-lockfile --filter trae-project --ignore-scripts --package-import-method=hardlink
+RUN pnpm exec hardhat compile
+
 FROM base AS build
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/package.json
@@ -44,7 +52,7 @@ COPY --from=prod-deps /app/node_modules/.modules.yaml /app/node_modules/.modules
 COPY --from=prod-deps /app/node_modules/.pnpm-workspace-state-v1.json /app/node_modules/.pnpm-workspace-state-v1.json
 COPY --from=prod-deps /app/node_modules/.pnpm /app/node_modules/.pnpm
 COPY --from=prod-deps /app/apps/api/node_modules /app/apps/api/node_modules
-COPY artifacts /app/artifacts
+COPY --from=contracts-build /app/artifacts /app/artifacts
 COPY --from=build /app/packages/shared/package.json /app/packages/shared/package.json
 COPY --from=build /app/packages/shared/dist /app/packages/shared/dist
 COPY --from=build /app/apps/api/package.json /app/apps/api/package.json

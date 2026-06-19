@@ -15,7 +15,6 @@ apps/*/dist
 apps/*/.codex-temp
 packages/*/node_modules
 docs
-contracts
 test
 validation-local
 validation-rehearsal

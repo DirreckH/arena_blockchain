@@ -1,0 +1,1 @@
+@apps/api/test/arena/validation-contract-artifact.fixture.ts

@@ -2308,4 +2308,71 @@ export const demoOpsBackend = {
     }))
     return clone(buildValidationCommandResult())
   },
+
+  // -------------------------------------------------------------------------
+  // Demo fallbacks for the recently added operator endpoints (C1, C2, D2).
+  // -------------------------------------------------------------------------
+
+  ensureOpsRewardPayout(
+    ledgerId: string,
+    body: { ensuredAt: string; reason: string; note?: string },
+  ): InternalRewardAuditDetailViewModel {
+    const audit = createAuditEvent({
+      entityType: 'reward',
+      entityId: ledgerId,
+      action: 'reward_payout_ensured',
+      actorUserId: DEMO_OPERATOR_ID,
+      reason: body.reason,
+      note: body.note ?? null,
+      metadata: { ledgerId, ensuredAt: body.ensuredAt },
+      createdAt: body.ensuredAt,
+    })
+
+    const next = updateRewardDetail(ledgerId, (current) => ({
+      ...current,
+      auditEvents: [audit, ...current.auditEvents],
+    }))
+    prependAuditEvent(audit)
+    return clone(next)
+  },
+
+  recordOpsValidationProof(body: {
+    propositionId: string
+    proofComplete: boolean
+    failures: string[]
+    releaseReadinessStatus: string
+    releaseBlockingDependencies: string[]
+    note?: string
+    checkedAt?: string
+  }): { recorded: true; recordedAt: string } {
+    const recordedAt = body.checkedAt ?? new Date().toISOString()
+    prependAuditEvent(
+      createAuditEvent({
+        entityType: 'validation_proof_record',
+        entityId: body.propositionId,
+        action: 'validation_chain.proof_record',
+        actorUserId: DEMO_OPERATOR_ID,
+        reason: 'manual_proof_record',
+        note: body.note ?? null,
+        metadata: {
+          propositionId: body.propositionId,
+          proofComplete: body.proofComplete,
+          failureCount: body.failures.length,
+          releaseReadinessStatus: body.releaseReadinessStatus,
+          releaseBlockingDependencies: body.releaseBlockingDependencies,
+        },
+        createdAt: recordedAt,
+      }),
+    )
+    return { recorded: true as const, recordedAt }
+  },
+
+  getAdminPing(_token: string) {
+    return {
+      status: 'ok' as const,
+      timestamp: new Date().toISOString(),
+      walletAddress: 'demo-operator',
+      roles: ['operator', 'admin', 'system'] as string[],
+    }
+  },
 }

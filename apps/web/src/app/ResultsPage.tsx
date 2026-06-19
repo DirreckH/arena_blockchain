@@ -2,7 +2,9 @@ import { useState, type FormEvent } from 'react'
 import type {
   RespondentAccountActivityItemViewModel,
   RespondentResultOverviewViewModel,
+  ResultSummaryViewModel,
 } from '@arena/shared'
+import { arenaApi } from '../features/api/arena-api'
 import type { LucideIcon } from 'lucide-react'
 import {
   ArrowDownRight,
@@ -2993,6 +2995,9 @@ function ResultsPage() {
                 emptyMessage="暂无未开奖的命题，下注后会在此展示。"
               />
             </div>
+            <div className="results-slot results-slot-12">
+              <ResultPropositionLookupCard />
+            </div>
           </section>
         ) : null}
       </div>
@@ -3002,3 +3007,94 @@ function ResultsPage() {
 }
 
 export { ResultsPage }
+
+// ===========================================================================
+// A1 — Single-proposition result detail lookup (GET /arena/adjudication/results/:id).
+// Lets a signed-in respondent dig into the per-proposition resolution after seeing
+// the aggregated overview / list above.
+// ===========================================================================
+function ResultPropositionLookupCard() {
+  const { token, isAuthenticated } = useAuthSession()
+  const [propositionId, setPropositionId] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<ResultSummaryViewModel | null>(null)
+
+  async function lookup() {
+    if (!isAuthenticated || !token) {
+      setError('请先登录后再查询命题结果。')
+      return
+    }
+    const trimmed = propositionId.trim()
+    if (trimmed.length === 0) {
+      return
+    }
+    setLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      const next = await arenaApi.getRespondentPropositionResult(trimmed, token)
+      setResult(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '命题结果查询失败。')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <article className="results-card results-panel">
+      <div className="panel-head">
+        <h2>按命题查看我的结果</h2>
+        <span className="panel-head-note">输入命题 ID 拉取该命题对你的最新裁定与奖励状态。</span>
+      </div>
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+        <input
+          aria-label="命题 ID"
+          className="ops-input"
+          onChange={(event) => setPropositionId(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              void lookup()
+            }
+          }}
+          placeholder="proposition_id"
+          style={{ flex: 1 }}
+          type="text"
+          value={propositionId}
+        />
+        <button
+          className="primary-action"
+          disabled={loading || propositionId.trim().length === 0}
+          onClick={() => void lookup()}
+          type="button"
+        >
+          {loading ? '查询中…' : '查询'}
+        </button>
+      </div>
+      {error ? (
+        <p className="boundary-note" style={{ marginTop: '0.75rem' }}>
+          {error}
+        </p>
+      ) : null}
+      {result ? (
+        <div className="ops-kv-grid" style={{ marginTop: '1rem' }}>
+          <span className="ops-kv-label">命题 ID</span>
+          <span>{result.propositionId}</span>
+          <span className="ops-kv-label">裁定结果</span>
+          <span>{result.resultKind}</span>
+          <span className="ops-kv-label">获胜选项</span>
+          <span>{result.winningOption ?? '-'}</span>
+          <span className="ops-kv-label">作废原因</span>
+          <span>{result.voidReason ?? '-'}</span>
+          <span className="ops-kv-label">结算时间</span>
+          <span>{new Date(result.settledAt).toLocaleString()}</span>
+          <span className="ops-kv-label">我的奖励状态</span>
+          <span>{result.currentUserRewardStatus ?? '-'}</span>
+          <span className="ops-kv-label">我的结算结果</span>
+          <span>{result.currentUserSettlementOutcome ?? '-'}</span>
+        </div>
+      ) : null}
+    </article>
+  )
+}

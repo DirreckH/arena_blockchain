@@ -30,6 +30,13 @@ import type {
   RequesterOwnedPropositionOverviewViewModel,
   RequesterOwnedPropositionRecentItemViewModel,
   RequesterOwnedSettledPropositionReportViewModel,
+  RequesterOwnedPropositionAnalyticsViewModel,
+  RequesterReportPresetExportFormat,
+  RequesterReportPresetStatusScope,
+  RequesterReportPresetViewModel,
+  RequesterComparisonSetViewModel,
+  ResultSummaryViewModel,
+  ChainSnapshot,
   UpdateRequesterComparisonSetDeliveryPolicyInputViewModel,
   PublicCategoryDirectoryIndexViewModel,
   PublicCategoryDirectoryViewModel,
@@ -218,6 +225,80 @@ export type RequesterComparisonSetDeliveryRunReplayFilterRecord =
 export type ArchiveDraftResult = {
   propositionId: string
   archivedAt: string
+}
+
+// Input records for the recently added requester CRUD endpoints (B5/B6/C2/D2).
+export interface CreateRequesterReportPresetInputRecord {
+  name: string
+  description?: string
+  windowDays?: number
+  categories?: PropositionCategory[]
+  marketEnabledOnly?: boolean
+  statusScope?: RequesterReportPresetStatusScope
+  defaultExportFormat?: RequesterReportPresetExportFormat
+}
+
+export type UpdateRequesterReportPresetInputRecord = Partial<CreateRequesterReportPresetInputRecord>
+
+export interface CreateRequesterComparisonSetInputRecord {
+  name: string
+  description?: string
+  presetIds: string[]
+}
+
+export interface UpdateRequesterComparisonSetInputRecord {
+  name?: string
+  description?: string
+  presetIds?: string[]
+}
+
+export interface ValidationProofRecordInputRecord {
+  propositionId: string
+  proofComplete: boolean
+  failures: string[]
+  releaseReadinessStatus: string
+  releaseBlockingDependencies: string[]
+  validationRehearsalStatus?: string
+  validationCurrentStepId?: string | null
+  validationCurrentStepStatus?: string | null
+  completedStepCount?: number
+  remainingStepCount?: number
+  latestCheckpointStepId?: string | null
+  latestCheckpointStatus?: string | null
+  latestCheckpointAt?: string | null
+  publicSettledResultVisible?: boolean
+  publicIntegrityOverviewVisible?: boolean
+  rewardPayoutLedgerEntryCount?: number
+  rewardPayoutRecordCount?: number
+  rewardPayoutFinalizedWithoutPayoutCount?: number
+  rewardPayoutExecutingWithoutTxHashCount?: number
+  rewardPayoutStaleExecutingCount?: number
+  rewardPayoutStaleExecutingWithoutTxHashCount?: number
+  rewardPayoutStaleExecutingAwaitingConfirmationCount?: number
+  rewardPayoutCompletedWithExecutionTxHashCount?: number
+  rewardPayoutStatusCounts?: {
+    requested?: number
+    approved?: number
+    executing?: number
+    completed?: number
+    failed?: number
+    cancelled?: number
+    none?: number
+  }
+  summaryArtifactPath?: string | null
+  evidenceArtifactPath?: string | null
+  publicResultArtifactPath?: string | null
+  rewardPayoutArtifactPath?: string | null
+  publicIntegrityArtifactPath?: string | null
+  note?: string
+  checkedAt?: string
+}
+
+export interface AdminPingResponse {
+  status: 'ok'
+  timestamp: string
+  walletAddress?: string
+  roles: string[]
 }
 
 type RequestOptions = {
@@ -2022,6 +2103,221 @@ export const arenaApi = {
         '/arena/internal/validation-chain/unpause',
         { method: 'POST', body, token },
       ),
+    )
+  },
+
+  // ===========================================================================
+  // Backend-side endpoints recently added — see audit report (gaps A1/B1..B6/C1/C2/D1/D2).
+  // ===========================================================================
+
+  // A1 — single-proposition result detail for the signed-in respondent
+  getRespondentPropositionResult(propositionId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getRespondentPropositionResult(propositionId))
+    }
+    return requestJson<ResultSummaryViewModel>(
+      `/arena/adjudication/results/${propositionId}`,
+      { token },
+    )
+  },
+
+  // B1 — single submission detail for a requester
+  getSubmission(propositionId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getSubmission(propositionId))
+    }
+    return requestJson<PropositionDraftRecord>(
+      `/arena/propositions/submissions/${propositionId}`,
+      { token },
+    )
+  },
+
+  // B2 — list propositions owned by the requester (mine list)
+  listOwnedPropositions(token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.listOwnedPropositions())
+    }
+    return requestJson<RequesterOwnedPropositionRecentItemViewModel[]>(
+      '/arena/propositions/mine',
+      { token },
+    )
+  },
+
+  // B3 — requester analytics dashboard with windowDays / presetId filters
+  getRequesterAnalytics(
+    token: string,
+    filters?: { windowDays?: number; now?: string; presetId?: string },
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getRequesterAnalytics(filters))
+    }
+    const params = new URLSearchParams()
+    if (typeof filters?.windowDays === 'number') {
+      params.set('windowDays', String(filters.windowDays))
+    }
+    if (filters?.now) {
+      params.set('now', filters.now)
+    }
+    if (filters?.presetId) {
+      params.set('presetId', filters.presetId)
+    }
+    const suffix = params.toString()
+    return requestJson<RequesterOwnedPropositionAnalyticsViewModel>(
+      `/arena/propositions/mine/analytics${suffix ? `?${suffix}` : ''}`,
+      { token },
+    )
+  },
+
+  // B4 — multi-preset analytics comparison
+  compareRequesterAnalytics(
+    token: string,
+    body: { presetIds: string[]; now?: string },
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.compareRequesterAnalytics(body))
+    }
+    const params = new URLSearchParams()
+    body.presetIds.forEach((id) => params.append('presetIds', id))
+    if (body.now) {
+      params.set('now', body.now)
+    }
+    return requestJson<RequesterOwnedPropositionAnalyticsComparisonViewModel>(
+      `/arena/propositions/mine/analytics/compare?${params.toString()}`,
+      { token },
+    )
+  },
+
+  // B5 — report preset CRUD (4 endpoints)
+  createRequesterReportPreset(token: string, body: CreateRequesterReportPresetInputRecord) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.createRequesterReportPreset(body))
+    }
+    return requestJson<RequesterReportPresetViewModel>(
+      '/arena/propositions/mine/report-presets',
+      { method: 'POST', body, token },
+    )
+  },
+  getRequesterReportPreset(presetId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getRequesterReportPreset(presetId))
+    }
+    return requestJson<RequesterReportPresetViewModel>(
+      `/arena/propositions/mine/report-presets/${presetId}`,
+      { token },
+    )
+  },
+  updateRequesterReportPreset(
+    presetId: string,
+    token: string,
+    body: UpdateRequesterReportPresetInputRecord,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.updateRequesterReportPreset(presetId, body))
+    }
+    return requestJson<RequesterReportPresetViewModel>(
+      `/arena/propositions/mine/report-presets/${presetId}`,
+      { method: 'PATCH', body, token },
+    )
+  },
+  deleteRequesterReportPreset(presetId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.deleteRequesterReportPreset(presetId))
+    }
+    return requestJson<{ presetId: string; deleted: true }>(
+      `/arena/propositions/mine/report-presets/${presetId}`,
+      { method: 'DELETE', token },
+    )
+  },
+
+  // B6 — comparison set CRUD (4 endpoints)
+  createRequesterComparisonSet(token: string, body: CreateRequesterComparisonSetInputRecord) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.createRequesterComparisonSet(body))
+    }
+    return requestJson<RequesterComparisonSetViewModel>(
+      '/arena/propositions/mine/comparison-sets',
+      { method: 'POST', body, token },
+    )
+  },
+  getRequesterComparisonSet(comparisonSetId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.getRequesterComparisonSet(comparisonSetId))
+    }
+    return requestJson<RequesterComparisonSetViewModel>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}`,
+      { token },
+    )
+  },
+  updateRequesterComparisonSet(
+    comparisonSetId: string,
+    token: string,
+    body: UpdateRequesterComparisonSetInputRecord,
+  ) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.updateRequesterComparisonSet(comparisonSetId, body))
+    }
+    return requestJson<RequesterComparisonSetViewModel>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}`,
+      { method: 'PATCH', body, token },
+    )
+  },
+  deleteRequesterComparisonSet(comparisonSetId: string, token: string) {
+    if (maybeUseDemoToken(token)) {
+      return Promise.resolve(demoBackend.deleteRequesterComparisonSet(comparisonSetId))
+    }
+    return requestJson<{ comparisonSetId: string; deleted: true }>(
+      `/arena/propositions/mine/comparison-sets/${comparisonSetId}`,
+      { method: 'DELETE', token },
+    )
+  },
+
+  // C1 — operator ensure-payout (creates payout record on demand)
+  ensureOpsRewardPayout(
+    ledgerId: string,
+    body: { ensuredAt: string; reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.ensureOpsRewardPayout(ledgerId, body),
+      () =>
+        requestJson<InternalRewardAuditDetailViewModel>(
+          `/arena/internal/rewards/${ledgerId}/ensure-payout`,
+          { method: 'POST', body, token },
+        ),
+    )
+  },
+
+  // C2 — operator-side proof record submission
+  recordOpsValidationProof(
+    body: ValidationProofRecordInputRecord,
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.recordOpsValidationProof(body),
+      () =>
+        requestJson<{ recorded: true; recordedAt: string }>(
+          '/arena/internal/validation-chain/proof-record',
+          { method: 'POST', body, token },
+        ),
+    )
+  },
+
+  // D1 — public chain snapshot (footer/health badge)
+  getChainSnapshot() {
+    return requestJson<ChainSnapshot>('/system/chain').catch(() =>
+      demoBackend.getChainSnapshot(),
+    )
+  },
+
+  // D2 — admin/system ping for role self-check
+  getAdminPing(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.getAdminPing(token),
+      () =>
+        requestJson<AdminPingResponse>('/system/admin/ping', { token }),
     )
   },
 }

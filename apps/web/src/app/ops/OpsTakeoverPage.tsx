@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
+import { useState } from 'react'
 import { hasAnySystemRole, SystemRole } from '@arena/shared'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { arenaApi } from '../../features/api/arena-api'
@@ -327,6 +328,7 @@ export function OpsTakeoverPage({
                 ) : null}
               </div>
             </div>
+            <OpsProofRecordPanel busy={busy} setPendingAction={setPendingAction} token={token} />
           </section>
         </div>
 
@@ -375,5 +377,122 @@ export function OpsTakeoverPage({
         />
       ) : null}
     </>
+  )
+}
+
+// ===========================================================================
+// C2 — operator-side proof record submission panel.
+// Provides a minimal but typed form bridging the runtime contract proof endpoint
+// (POST /arena/internal/validation-chain/proof-record) so operators can backfill a
+// run when the automated job missed it.
+// ===========================================================================
+interface OpsProofRecordPanelProps {
+  busy: boolean
+  setPendingAction: (action: PendingAction | null) => void
+  token: string
+}
+
+function OpsProofRecordPanel({ busy, setPendingAction, token }: OpsProofRecordPanelProps) {
+  const [propositionId, setPropositionId] = useState('')
+  const [proofComplete, setProofComplete] = useState<'true' | 'false'>('true')
+  const [releaseReadinessStatus, setReleaseReadinessStatus] = useState('operator_manual')
+  const [failuresInput, setFailuresInput] = useState('')
+  const [blockingDepsInput, setBlockingDepsInput] = useState('')
+
+  function submit() {
+    const trimmed = propositionId.trim()
+    if (trimmed.length === 0) {
+      return
+    }
+    const failures = failuresInput
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    const blockingDependencies = blockingDepsInput
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    setPendingAction({
+      title: opsCopy.takeover.proofRecordTitle,
+      description: opsCopy.takeover.proofRecordDescription(trimmed),
+      withNote: true,
+      withReason: false,
+      requireReason: false,
+      successMessage: opsCopy.takeover.proofRecordSubmitted,
+      run: async ({ note }) =>
+        arenaApi.recordOpsValidationProof(
+          {
+            propositionId: trimmed,
+            proofComplete: proofComplete === 'true',
+            failures,
+            releaseReadinessStatus: releaseReadinessStatus.trim() || 'operator_manual',
+            releaseBlockingDependencies: blockingDependencies,
+            note: note || undefined,
+            checkedAt: new Date().toISOString(),
+          },
+          token,
+        ),
+    })
+  }
+
+  return (
+    <div className="ops-section" style={{ marginTop: '1rem' }}>
+      <p className="ops-section-title">{opsCopy.takeover.proofRecordPanelTitle}</p>
+      <p className="ops-muted">{opsCopy.takeover.proofRecordPanelHint}</p>
+      <div className="ops-kv-grid" style={{ alignItems: 'center' }}>
+        <span className="ops-kv-label">{opsCopy.takeover.proofRecordPropositionLabel}</span>
+        <input
+          className="ops-input"
+          onChange={(event) => setPropositionId(event.target.value)}
+          placeholder="proposition_id"
+          type="text"
+          value={propositionId}
+        />
+        <span className="ops-kv-label">{opsCopy.takeover.proofRecordCompleteLabel}</span>
+        <select
+          className="ops-input"
+          onChange={(event) => setProofComplete(event.target.value as 'true' | 'false')}
+          value={proofComplete}
+        >
+          <option value="true">{opsCopy.takeover.proofRecordCompleteYes}</option>
+          <option value="false">{opsCopy.takeover.proofRecordCompleteNo}</option>
+        </select>
+        <span className="ops-kv-label">{opsCopy.takeover.proofRecordReadinessLabel}</span>
+        <input
+          className="ops-input"
+          onChange={(event) => setReleaseReadinessStatus(event.target.value)}
+          placeholder="operator_manual"
+          type="text"
+          value={releaseReadinessStatus}
+        />
+        <span className="ops-kv-label">{opsCopy.takeover.proofRecordFailuresLabel}</span>
+        <input
+          className="ops-input"
+          onChange={(event) => setFailuresInput(event.target.value)}
+          placeholder={opsCopy.takeover.proofRecordCommaSeparated}
+          type="text"
+          value={failuresInput}
+        />
+        <span className="ops-kv-label">{opsCopy.takeover.proofRecordBlockingLabel}</span>
+        <input
+          className="ops-input"
+          onChange={(event) => setBlockingDepsInput(event.target.value)}
+          placeholder={opsCopy.takeover.proofRecordCommaSeparated}
+          type="text"
+          value={blockingDepsInput}
+        />
+      </div>
+      <div className="ops-actions">
+        <button
+          className="ops-btn ops-btn-primary"
+          disabled={busy || propositionId.trim().length === 0}
+          onClick={submit}
+          type="button"
+        >
+          <span className="ops-cmd-label">{opsCopy.takeover.proofRecordSubmit}</span>
+          <span className="ops-cmd-chip">proof-record</span>
+        </button>
+      </div>
+    </div>
   )
 }

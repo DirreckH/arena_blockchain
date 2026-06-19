@@ -36,6 +36,12 @@ import {
   type RequesterOwnedSettledPropositionReportRecord,
   type UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
 } from '../features/api/arena-api'
+import type {
+  RequesterOwnedPropositionAnalyticsComparisonViewModel,
+  RequesterOwnedPropositionAnalyticsViewModel,
+  RequesterOwnedPropositionRecentItemViewModel,
+  RequesterReportPresetViewModel,
+} from '@arena/shared'
 import { useAuthSession } from '../features/auth/auth-session'
 
 type SubmissionCardRecord = {
@@ -1430,6 +1436,214 @@ export function SubmissionsPage() {
     }
   }
 
+  const refreshComparisonSets = async () => {
+    if (!token) {
+      return
+    }
+    try {
+      const next = await arenaApi.listRequesterComparisonSets(token)
+      setComparisonSets(next)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '刷新对比集合失败')
+    }
+  }
+
+  const refreshReportPresets = async () => {
+    if (!token) {
+      return
+    }
+    try {
+      const next = await arenaApi.listRequesterReportPresets(token)
+      setReportPresets(next)
+      if (selectedPresetId && !next.items.some((entry) => entry.presetId === selectedPresetId)) {
+        setSelectedPresetId('')
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '刷新报告预设失败')
+    }
+  }
+
+  const handleCreateReportPreset = async () => {
+    if (!token) {
+      return
+    }
+    const name = window.prompt('预设名称', '新预设')
+    if (!name || name.trim().length === 0) {
+      return
+    }
+    const description = window.prompt('描述 (可选)', '') ?? undefined
+    const windowDaysRaw = window.prompt('时间窗 (天,1-365)', '30') ?? '30'
+    const windowDaysParsed = Number.parseInt(windowDaysRaw, 10)
+    const statusScopeRaw = (window.prompt('状态范围 (all / settled / unresolved)', 'all') ?? 'all').trim()
+    const statusScope: 'all' | 'settled' | 'unresolved' =
+      statusScopeRaw === 'settled' || statusScopeRaw === 'unresolved' ? statusScopeRaw : 'all'
+    const formatRaw = (window.prompt('默认导出格式 (json / csv)', 'json') ?? 'json').trim()
+    const defaultExportFormat: 'json' | 'csv' = formatRaw === 'csv' ? 'csv' : 'json'
+    setErrorMessage(null)
+    try {
+      await arenaApi.createRequesterReportPreset(token, {
+        name: name.trim(),
+        description: description?.trim() || undefined,
+        windowDays: Number.isFinite(windowDaysParsed) && windowDaysParsed > 0 ? windowDaysParsed : 30,
+        statusScope,
+        defaultExportFormat,
+      })
+      await refreshReportPresets()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '创建预设失败')
+    }
+  }
+
+  const handleEditReportPreset = async (presetId: string) => {
+    if (!token) {
+      return
+    }
+    setErrorMessage(null)
+    let current: RequesterReportPresetViewModel
+    try {
+      current = await arenaApi.getRequesterReportPreset(presetId, token)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '加载预设失败')
+      return
+    }
+    const name = window.prompt('预设名称', current.name)
+    if (name === null) {
+      return
+    }
+    const description = window.prompt('描述', current.description ?? '') ?? ''
+    const windowDaysRaw = window.prompt('时间窗 (天)', String(current.config.windowDays)) ?? String(current.config.windowDays)
+    const windowDaysParsed = Number.parseInt(windowDaysRaw, 10)
+    const statusScopeRaw = (
+      window.prompt('状态范围 (all / settled / unresolved)', current.config.statusScope) ?? current.config.statusScope
+    ).trim()
+    const statusScope: 'all' | 'settled' | 'unresolved' =
+      statusScopeRaw === 'settled' || statusScopeRaw === 'unresolved' || statusScopeRaw === 'all'
+        ? statusScopeRaw
+        : current.config.statusScope
+    const formatRaw = (
+      window.prompt('默认导出格式 (json / csv)', current.config.defaultExportFormat) ?? current.config.defaultExportFormat
+    ).trim()
+    const defaultExportFormat: 'json' | 'csv' = formatRaw === 'csv' ? 'csv' : 'json'
+    try {
+      await arenaApi.updateRequesterReportPreset(presetId, token, {
+        name: name.trim() || current.name,
+        description: description.trim() ? description.trim() : undefined,
+        windowDays: Number.isFinite(windowDaysParsed) && windowDaysParsed > 0 ? windowDaysParsed : current.config.windowDays,
+        statusScope,
+        defaultExportFormat,
+      })
+      await refreshReportPresets()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '更新预设失败')
+    }
+  }
+
+  const handleDeleteReportPreset = async (presetId: string, name: string) => {
+    if (!token) {
+      return
+    }
+    if (!window.confirm(`确认删除预设 "${name}"?该操作不可恢复。`)) {
+      return
+    }
+    setErrorMessage(null)
+    try {
+      await arenaApi.deleteRequesterReportPreset(presetId, token)
+      await refreshReportPresets()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '删除预设失败')
+    }
+  }
+
+  const handleCreateComparisonSet = async () => {
+    if (!token) {
+      return
+    }
+    const name = window.prompt('对比集名称', '新对比集')
+    if (!name || name.trim().length === 0) {
+      return
+    }
+    const description = window.prompt('对比集描述 (可选)', '') ?? undefined
+    const presetSeed = (reportPresets?.items ?? [])
+      .slice(0, 2)
+      .map((entry) => entry.presetId)
+      .join(',')
+    const presetIdsRaw = window.prompt('包含的预设 ID (逗号分隔)', presetSeed) ?? ''
+    const presetIds = presetIdsRaw
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    if (presetIds.length === 0) {
+      window.alert('对比集至少需要 1 个预设。')
+      return
+    }
+    setErrorMessage(null)
+    try {
+      await arenaApi.createRequesterComparisonSet(token, {
+        name: name.trim(),
+        description: description?.trim() || undefined,
+        presetIds,
+      })
+      await refreshComparisonSets()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '创建对比集失败')
+    }
+  }
+
+  const handleEditComparisonSet = async (item: {
+    comparisonSetId: string
+    name: string
+    description: string | null
+    presetIds: string[]
+  }) => {
+    if (!token) {
+      return
+    }
+    const name = window.prompt('对比集名称', item.name)
+    if (name === null) {
+      return
+    }
+    const description = window.prompt('对比集描述', item.description ?? '') ?? ''
+    const presetIdsRaw = window.prompt('预设 ID (逗号分隔)', item.presetIds.join(',')) ?? ''
+    const presetIds = presetIdsRaw
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+    if (presetIds.length === 0) {
+      window.alert('对比集至少需要 1 个预设。')
+      return
+    }
+    setErrorMessage(null)
+    try {
+      await arenaApi.updateRequesterComparisonSet(item.comparisonSetId, token, {
+        name: name.trim() || item.name,
+        description: description.trim() ? description.trim() : undefined,
+        presetIds,
+      })
+      await refreshComparisonSets()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '更新对比集失败')
+    }
+  }
+
+  const handleDeleteComparisonSet = async (comparisonSetId: string, name: string) => {
+    if (!token) {
+      return
+    }
+    if (!window.confirm(`确认删除对比集 "${name}"?该操作不可恢复。`)) {
+      return
+    }
+    setErrorMessage(null)
+    try {
+      await arenaApi.deleteRequesterComparisonSet(comparisonSetId, token)
+      await refreshComparisonSets()
+      setSelectedComparisonAnalytics((current) =>
+        current?.comparisonSet?.comparisonSetId === comparisonSetId ? null : current,
+      )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : '删除对比集失败')
+    }
+  }
+
   const handleCreateComparisonExport = async (comparisonSetId: string) => {
     if (!token) {
       return
@@ -2547,17 +2761,84 @@ export function SubmissionsPage() {
           </section>
         ) : null}
 
-        {isAuthenticated && !isLoading && comparisonSets?.items.length ? (
+        {isAuthenticated && !isLoading ? (
+          <section className="account-menu-panel" data-testid="requester-report-preset-section">
+            <div className="account-menu-panel-head">
+              <h2>报告预设</h2>
+              <span>
+                预设决定按时间窗 / 分类 / 状态范围聚合的方式,可在导出和对比集分析中复用。
+              </span>
+              <div className="submissions-export-row-actions">
+                <button
+                  className="primary-action"
+                  data-testid="requester-report-preset-create"
+                  onClick={() => void handleCreateReportPreset()}
+                  type="button"
+                >
+                  <span>新建预设</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="account-menu-status-list">
+              {(reportPresets?.items ?? []).map((preset) => (
+                <div
+                  className="account-menu-status-row"
+                  data-testid="requester-report-preset-item"
+                  key={preset.presetId}
+                >
+                  <div>
+                    <strong>{preset.name}</strong>
+                    <span>{preset.description ?? '无描述'}</span>
+                  </div>
+                  <div className="submissions-export-row-actions">
+                    <button
+                      className="secondary-action"
+                      data-testid="requester-report-preset-edit"
+                      onClick={() => void handleEditReportPreset(preset.presetId)}
+                      type="button"
+                    >
+                      <span>编辑</span>
+                    </button>
+                    <button
+                      className="secondary-action submissions-export-row-action-danger"
+                      data-testid="requester-report-preset-delete"
+                      onClick={() => void handleDeleteReportPreset(preset.presetId, preset.name)}
+                      type="button"
+                    >
+                      <span>删除</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {(reportPresets?.items.length ?? 0) === 0 ? (
+                <p className="boundary-note">暂无报告预设,点击"新建预设"创建第一个。</p>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {isAuthenticated && !isLoading ? (
           <section className="account-menu-panel" data-testid="requester-comparison-set-section">
             <div className="account-menu-panel-head">
               <h2>发起方对比集合</h2>
               <span>
                 已保存的发起方分组可以在当前已提交命题流程中重新打开、对比并导出。
               </span>
+              <div className="submissions-export-row-actions">
+                <button
+                  className="primary-action"
+                  data-testid="requester-comparison-set-create"
+                  onClick={() => void handleCreateComparisonSet()}
+                  type="button"
+                >
+                  <span>新建对比集</span>
+                </button>
+              </div>
             </div>
 
             <div className="account-menu-status-list">
-              {comparisonSets.items.map((item) => (
+              {(comparisonSets?.items ?? []).map((item) => (
                 <div
                   className="account-menu-status-row"
                   data-testid="requester-comparison-set-item"
@@ -2595,9 +2876,28 @@ export function SubmissionsPage() {
                       <FileClock size={14} />
                       <span>投递策略</span>
                     </button>
+                    <button
+                      className="secondary-action"
+                      data-testid="requester-comparison-set-edit"
+                      onClick={() => void handleEditComparisonSet(item)}
+                      type="button"
+                    >
+                      <span>编辑</span>
+                    </button>
+                    <button
+                      className="secondary-action submissions-export-row-action-danger"
+                      data-testid="requester-comparison-set-delete"
+                      onClick={() => void handleDeleteComparisonSet(item.comparisonSetId, item.name)}
+                      type="button"
+                    >
+                      <span>删除</span>
+                    </button>
                   </div>
                 </div>
               ))}
+              {(comparisonSets?.items.length ?? 0) === 0 ? (
+                <p className="boundary-note">暂无对比集合,点击"新建对比集"创建第一个。</p>
+              ) : null}
             </div>
 
             {selectedComparisonAnalytics ? (
@@ -3852,6 +4152,14 @@ export function SubmissionsPage() {
           </section>
         ) : null}
 
+        {isAuthenticated && !isLoading ? (
+          <RequesterAnalyticsPanel reportPresets={reportPresets} token={token} />
+        ) : null}
+
+        {isAuthenticated && !isLoading ? (
+          <OwnedPropositionsListPanel token={token} />
+        ) : null}
+
         {isAuthenticated && !isLoading && submissions.length === 0 ? (
           <section className="account-empty-card" data-testid="submission-empty-state">
             <div className="account-empty-icon" aria-hidden="true">
@@ -4143,6 +4451,349 @@ export function SubmissionsPage() {
           </section>
         ) : null}
       </div>
+    </section>
+  )
+}
+
+// ===========================================================================
+// B2 — Mine list panel (GET /arena/propositions/mine).
+// Renders the owner-perspective list independent from the submission timeline.
+// Each row also exposes a "查看详情" button that hits B1 (GET /submissions/:id).
+// ===========================================================================
+interface OwnedPropositionsListPanelProps {
+  token: string
+}
+
+function OwnedPropositionsListPanel({ token }: OwnedPropositionsListPanelProps) {
+  const [items, setItems] = useState<RequesterOwnedPropositionRecentItemViewModel[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const refresh = async () => {
+    if (!token) {
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await arenaApi.listOwnedPropositions(token)
+      setItems(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载我的命题列表失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void refresh()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  const showSubmissionDetail = async (propositionId: string) => {
+    try {
+      const detail = await arenaApi.getSubmission(propositionId, token)
+      window.alert(
+        [
+          `命题 ${detail.propositionId}`,
+          `标题: ${detail.title}`,
+          `分类: ${detail.category}`,
+          `提交状态: ${detail.submissionStatus}`,
+          `提交时间: ${detail.submittedAt ?? '-'}`,
+          `奖励预算: ${detail.rewardBudget}`,
+          `市场启用: ${detail.marketEnabled ? '是' : '否'}`,
+          `摘要: ${detail.summary}`,
+        ].join('\n'),
+      )
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : '加载提交详情失败')
+    }
+  }
+
+  return (
+    <section className="account-menu-panel" data-testid="requester-owned-list-section">
+      <div className="account-menu-panel-head">
+        <h2>我的命题(全部维度)</h2>
+        <span>
+          以命题为主键的全量列表,包含未派发、已派发、已审核完成的所有命题。点击"查看详情"可加载已提交命题的完整字段。
+        </span>
+        <div className="submissions-export-row-actions">
+          <button
+            className="secondary-action"
+            data-testid="requester-owned-list-refresh"
+            disabled={loading}
+            onClick={() => void refresh()}
+            type="button"
+          >
+            {loading ? '刷新中…' : '刷新'}
+          </button>
+        </div>
+      </div>
+
+      {error ? <p className="boundary-note">{error}</p> : null}
+
+      <div className="account-menu-status-list">
+        {(items ?? []).map((item) => (
+          <div
+            className="account-menu-status-row"
+            data-testid="requester-owned-list-item"
+            key={item.propositionId}
+          >
+            <div>
+              <strong>{item.title}</strong>
+              <span>
+                {item.category} · {item.status} · {item.submissionStatus}
+              </span>
+            </div>
+            <div className="submissions-export-row-actions">
+              <button
+                className="secondary-action"
+                data-testid="requester-owned-list-detail"
+                onClick={() => void showSubmissionDetail(item.propositionId)}
+                type="button"
+              >
+                <span>查看详情</span>
+              </button>
+            </div>
+          </div>
+        ))}
+        {!loading && (items?.length ?? 0) === 0 ? (
+          <p className="boundary-note">暂无命题。创建草稿并提交后会出现在这里。</p>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+// ===========================================================================
+// B3 + B4 — Mine analytics dashboard with windowDays / preset filters and
+// multi-preset comparison view.
+// ===========================================================================
+interface RequesterAnalyticsPanelProps {
+  reportPresets: RequesterReportPresetListRecord | null
+  token: string
+}
+
+function RequesterAnalyticsPanel({ reportPresets, token }: RequesterAnalyticsPanelProps) {
+  const [windowDays, setWindowDays] = useState<number>(30)
+  const [presetId, setPresetId] = useState<string>('')
+  const [analytics, setAnalytics] = useState<RequesterOwnedPropositionAnalyticsViewModel | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [comparisonPresetIds, setComparisonPresetIds] = useState<string[]>([])
+  const [comparison, setComparison] = useState<RequesterOwnedPropositionAnalyticsComparisonViewModel | null>(null)
+  const [comparisonLoading, setComparisonLoading] = useState(false)
+  const [comparisonError, setComparisonError] = useState<string | null>(null)
+
+  const loadAnalytics = async () => {
+    if (!token) {
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await arenaApi.getRequesterAnalytics(token, {
+        windowDays,
+        presetId: presetId || undefined,
+      })
+      setAnalytics(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载分析数据失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const runComparison = async () => {
+    if (!token) {
+      return
+    }
+    if (comparisonPresetIds.length < 2) {
+      window.alert('多预设对比需要至少 2 个预设。')
+      return
+    }
+    setComparisonLoading(true)
+    setComparisonError(null)
+    try {
+      const next = await arenaApi.compareRequesterAnalytics(token, {
+        presetIds: comparisonPresetIds,
+      })
+      setComparison(next)
+    } catch (err) {
+      setComparisonError(err instanceof Error ? err.message : '加载多预设对比失败')
+    } finally {
+      setComparisonLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadAnalytics()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  const togglePresetForComparison = (id: string) => {
+    setComparisonPresetIds((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id],
+    )
+  }
+
+  return (
+    <section className="account-menu-panel" data-testid="requester-analytics-section">
+      <div className="account-menu-panel-head">
+        <h2>命题运营分析</h2>
+        <span>
+          按时间窗 / 预设过滤的整体分析,以及在多预设之间做并列对比。
+        </span>
+      </div>
+
+      <div className="submissions-actions">
+        <label className="field-shell">
+          <span className="field-label">时间窗 (天)</span>
+          <input
+            data-testid="requester-analytics-window-days"
+            min={1}
+            max={365}
+            onChange={(event) => {
+              const next = Number.parseInt(event.target.value, 10)
+              if (Number.isFinite(next) && next > 0) {
+                setWindowDays(next)
+              }
+            }}
+            type="number"
+            value={windowDays}
+          />
+        </label>
+        <label className="field-shell">
+          <span className="field-label">预设</span>
+          <select
+            data-testid="requester-analytics-preset-select"
+            value={presetId}
+            onChange={(event) => setPresetId(event.target.value)}
+          >
+            <option value="">不使用预设(全量)</option>
+            {(reportPresets?.items ?? []).map((preset) => (
+              <option key={preset.presetId} value={preset.presetId}>
+                {preset.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="primary-action"
+          data-testid="requester-analytics-run"
+          disabled={loading}
+          onClick={() => void loadAnalytics()}
+          type="button"
+        >
+          {loading ? '加载中…' : '加载分析'}
+        </button>
+      </div>
+
+      {error ? <p className="boundary-note">{error}</p> : null}
+
+      {analytics ? (
+        <div className="submission-detail-grid submissions-export-detail-grid" data-testid="requester-analytics-summary">
+          <article className="account-summary-item">
+            <span>窗口</span>
+            <strong>{analytics.windowDays} 天</strong>
+            <small>{new Date(analytics.windowStartedAt).toLocaleString()} 起</small>
+          </article>
+          <article className="account-summary-item">
+            <span>已创建</span>
+            <strong>{analytics.totals.createdCount}</strong>
+            <small>窗口内创建命题数</small>
+          </article>
+          <article className="account-summary-item">
+            <span>已结算</span>
+            <strong>{analytics.totals.settledCount}</strong>
+            <small>窗口内结算命题数</small>
+          </article>
+          <article className="account-summary-item">
+            <span>未结算</span>
+            <strong>{analytics.totals.unresolvedCount}</strong>
+            <small>仍在审核 / 评估中</small>
+          </article>
+          <article className="account-summary-item">
+            <span>有效样本</span>
+            <strong>{analytics.totals.totalEffectiveSampleCount}</strong>
+            <small>累计有效样本数</small>
+          </article>
+          <article className="account-summary-item">
+            <span>下注笔数</span>
+            <strong>{analytics.totals.totalBetCount}</strong>
+            <small>累计市场下注笔数</small>
+          </article>
+          <article className="account-summary-item">
+            <span>下注总额</span>
+            <strong>{analytics.totals.totalBetStakeAmount}</strong>
+            <small>累计下注金额</small>
+          </article>
+          <article className="account-summary-item">
+            <span>独立交易者</span>
+            <strong>{analytics.totals.uniqueTraderCount}</strong>
+            <small>窗口内独立钱包数</small>
+          </article>
+        </div>
+      ) : null}
+
+      <div className="account-menu-panel-head" style={{ marginTop: '1rem' }}>
+        <h2>多预设对比</h2>
+        <span>勾选 2 个或以上预设,跨配置对比命题分析数据。</span>
+      </div>
+      <div className="account-menu-status-list" data-testid="requester-analytics-comparison-presets">
+        {(reportPresets?.items ?? []).map((preset) => (
+          <label key={preset.presetId} className="account-menu-status-row">
+            <input
+              checked={comparisonPresetIds.includes(preset.presetId)}
+              onChange={() => togglePresetForComparison(preset.presetId)}
+              type="checkbox"
+            />
+            <div>
+              <strong>{preset.name}</strong>
+              <span>{preset.description ?? '无描述'}</span>
+            </div>
+          </label>
+        ))}
+        {(reportPresets?.items.length ?? 0) === 0 ? (
+          <p className="boundary-note">先在上方"报告预设"区块创建至少 2 个预设。</p>
+        ) : null}
+      </div>
+      <div className="submissions-actions">
+        <button
+          className="secondary-action"
+          data-testid="requester-analytics-compare-run"
+          disabled={comparisonLoading || comparisonPresetIds.length < 2}
+          onClick={() => void runComparison()}
+          type="button"
+        >
+          {comparisonLoading ? '对比中…' : '执行对比'}
+        </button>
+      </div>
+      {comparisonError ? <p className="boundary-note">{comparisonError}</p> : null}
+      {comparison ? (
+        <div className="submission-detail-grid submissions-export-detail-grid" data-testid="requester-analytics-comparison-summary">
+          <article className="account-summary-item">
+            <span>对比预设数</span>
+            <strong>{comparison.summary.presetCount}</strong>
+            <small>本次比较包含的预设数量</small>
+          </article>
+          <article className="account-summary-item">
+            <span>累计创建</span>
+            <strong>{comparison.summary.totals.createdCount}</strong>
+            <small>所有预设的合计</small>
+          </article>
+          <article className="account-summary-item">
+            <span>累计结算</span>
+            <strong>{comparison.summary.totals.settledCount}</strong>
+            <small>所有预设的合计</small>
+          </article>
+          <article className="account-summary-item">
+            <span>累计下注金额</span>
+            <strong>{comparison.summary.totals.totalBetStakeAmount}</strong>
+            <small>所有预设的合计</small>
+          </article>
+        </div>
+      ) : null}
     </section>
   )
 }

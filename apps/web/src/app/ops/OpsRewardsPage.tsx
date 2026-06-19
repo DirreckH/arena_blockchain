@@ -244,6 +244,34 @@ export function OpsRewardsPage({
     })
   }
 
+  function ensurePayout(ledgerIdValue: string) {
+    setPendingAction({
+      title: opsCopy.rewards.dialogEnsureTitle,
+      description: opsCopy.rewards.ledgerIdLabel(ledgerIdValue),
+      withNote: true,
+      withReason: true,
+      requireReason: true,
+      reasonLabel: opsCopy.rewards.payoutReasonLabel,
+      reasonPlaceholder: 'ensure_reward_payout',
+      reasonDefaultValue: 'ensure_reward_payout',
+      successMessage: opsCopy.rewards.ensureSuccess,
+      run: async ({ note, reason }) => {
+        const result = await arenaApi.ensureOpsRewardPayout(
+          ledgerIdValue,
+          {
+            ensuredAt: new Date().toISOString(),
+            reason,
+            note: note || undefined,
+          },
+          token,
+        )
+        list.refresh()
+        detail.refresh()
+        return result
+      },
+    })
+  }
+
   function startPayoutExecution(ledgerIdValue: string) {
     setPendingAction({
       title: opsCopy.rewards.dialogStartExecutionTitle,
@@ -690,7 +718,20 @@ export function OpsRewardsPage({
                       </div>
                     </>
                   ) : (
-                    <p className="ops-muted">{opsCopy.rewards.noPayout}</p>
+                    <>
+                      <p className="ops-muted">{opsCopy.rewards.noPayout}</p>
+                      <div className="ops-actions">
+                        <button
+                          className="ops-btn ops-btn-primary"
+                          disabled={busy}
+                          onClick={() => ensurePayout(detailData.ledgerId)}
+                          type="button"
+                        >
+                          <span className="ops-cmd-label">{opsCopy.rewards.ensureCmdLabel}</span>
+                          <span className="ops-cmd-chip">ensure-payout</span>
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
                 <OpsAuditList

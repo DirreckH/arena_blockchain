@@ -1,7 +1,7 @@
-import { type ComponentType, type ReactNode, useEffect, useMemo, useState } from 'react'
-import { hasAnySystemRole, SystemRole } from '@arena/shared'
+import { type ComponentType, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { hasAnySystemRole, SystemRole, type ChainSnapshot } from '@arena/shared'
 import { Link } from 'react-router-dom'
-import { arenaApi } from '../../features/api/arena-api'
+import { arenaApi, type AdminPingResponse } from '../../features/api/arena-api'
 import {
   useOpsAnomalies,
   useOpsLifecycleDrift,
@@ -634,6 +634,20 @@ export function OpsHealthPage({
           onMarkRead={markAttentionRead}
           unreadAttentionCount={unreadAttentionCount}
         />
+
+        <OpsChainSnapshotPanel
+          EmptyComponent={EmptyComponent}
+          ErrorComponent={ErrorComponent}
+          LoadingComponent={LoadingComponent}
+        />
+
+        <OpsAdminPingPanel
+          EmptyComponent={EmptyComponent}
+          ErrorComponent={ErrorComponent}
+          LoadingComponent={LoadingComponent}
+          formatDate={formatDate}
+          token={token}
+        />
       </div>
 
       {actions}
@@ -653,5 +667,157 @@ export function OpsHealthPage({
         />
       ) : null}
     </>
+  )
+}
+
+// ===========================================================================
+// D1 — public chain snapshot panel (footer-style transparency display).
+// ===========================================================================
+interface OpsChainSnapshotPanelProps {
+  EmptyComponent: ComponentType<{ message: string }>
+  ErrorComponent: ComponentType<{
+    kind: ErrorStateKind
+    message: string
+    onRetry?: () => void
+    statusCode?: number | null
+  }>
+  LoadingComponent: ComponentType
+}
+
+function OpsChainSnapshotPanel({
+  EmptyComponent,
+  ErrorComponent,
+  LoadingComponent,
+}: OpsChainSnapshotPanelProps) {
+  const [snapshot, setSnapshot] = useState<ChainSnapshot | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await arenaApi.getChainSnapshot()
+      setSnapshot(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : opsCopy.health.chainSnapshotErrorFallback)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  return (
+    <section className="ops-card">
+      <div className="ops-card-head">
+        <p className="ops-card-title">{opsCopy.health.chainSnapshotTitle}</p>
+        <button
+          className="ops-btn ops-btn-secondary"
+          disabled={loading}
+          onClick={() => void refresh()}
+          type="button"
+        >
+          {opsCopy.health.chainSnapshotRefresh}
+        </button>
+      </div>
+      {loading ? (
+        <LoadingComponent />
+      ) : error ? (
+        <ErrorComponent kind="unknown" message={error} onRetry={() => void refresh()} />
+      ) : snapshot ? (
+        <div className="ops-kv-grid">
+          <span className="ops-kv-label">{opsCopy.health.chainSnapshotRpcUrl}</span>
+          <span>{snapshot.rpcUrl}</span>
+          <span className="ops-kv-label">{opsCopy.health.chainSnapshotConfiguredChainId}</span>
+          <span>{snapshot.configuredChainId}</span>
+          <span className="ops-kv-label">{opsCopy.health.chainSnapshotConnectedChainId}</span>
+          <span>{snapshot.connectedChainId}</span>
+          <span className="ops-kv-label">{opsCopy.health.chainSnapshotContractAddress}</span>
+          <span>{snapshot.contractAddress}</span>
+          <span className="ops-kv-label">{opsCopy.health.chainSnapshotArtifactPath}</span>
+          <span>{snapshot.artifactPath}</span>
+        </div>
+      ) : (
+        <EmptyComponent message={opsCopy.health.chainSnapshotEmpty} />
+      )}
+    </section>
+  )
+}
+
+// ===========================================================================
+// D2 — admin/system ping panel (role self-check).
+// ===========================================================================
+interface OpsAdminPingPanelProps {
+  EmptyComponent: ComponentType<{ message: string }>
+  ErrorComponent: ComponentType<{
+    kind: ErrorStateKind
+    message: string
+    onRetry?: () => void
+    statusCode?: number | null
+  }>
+  LoadingComponent: ComponentType
+  formatDate: (value: string | null | undefined) => string
+  token: string
+}
+
+function OpsAdminPingPanel({
+  EmptyComponent,
+  ErrorComponent,
+  LoadingComponent,
+  formatDate,
+  token,
+}: OpsAdminPingPanelProps) {
+  const [response, setResponse] = useState<AdminPingResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const ping = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await arenaApi.getAdminPing(token)
+      setResponse(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : opsCopy.health.adminPingErrorFallback)
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  return (
+    <section className="ops-card">
+      <div className="ops-card-head">
+        <p className="ops-card-title">{opsCopy.health.adminPingTitle}</p>
+        <button
+          className="ops-btn ops-btn-secondary"
+          disabled={loading}
+          onClick={() => void ping()}
+          type="button"
+        >
+          {opsCopy.health.adminPingRun}
+        </button>
+      </div>
+      {loading ? (
+        <LoadingComponent />
+      ) : error ? (
+        <ErrorComponent kind="unknown" message={error} onRetry={() => void ping()} />
+      ) : response ? (
+        <div className="ops-kv-grid">
+          <span className="ops-kv-label">{opsCopy.health.adminPingStatus}</span>
+          <span>{response.status}</span>
+          <span className="ops-kv-label">{opsCopy.health.adminPingTimestamp}</span>
+          <span>{formatDate(response.timestamp)}</span>
+          <span className="ops-kv-label">{opsCopy.health.adminPingWalletAddress}</span>
+          <span>{response.walletAddress ?? '-'}</span>
+          <span className="ops-kv-label">{opsCopy.health.adminPingRoles}</span>
+          <span>{response.roles.length > 0 ? response.roles.join(', ') : '-'}</span>
+        </div>
+      ) : (
+        <EmptyComponent message={opsCopy.health.adminPingEmpty} />
+      )}
+    </section>
   )
 }

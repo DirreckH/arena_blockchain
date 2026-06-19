@@ -43,6 +43,10 @@ import type {
   RequesterPropositionBudgetSummaryViewModel,
   RequesterPropositionSubmissionStatus,
   RequesterReportPresetListViewModel,
+  RequesterReportPresetViewModel,
+  RequesterComparisonSetViewModel,
+  RequesterOwnedPropositionRecentItemViewModel,
+  ChainSnapshot,
   SubmitAdjudicationResponseResult,
   UpdateRespondentAccountPreferencesInput,
   UpdateRespondentWatchlistResultViewModel,
@@ -52,6 +56,8 @@ import { DEFAULT_RESPONDENT_ACCOUNT_PREFERENCES } from '@arena/shared'
 import type {
   AuthVerifyResponse,
   CreateRequesterComparisonSetDeliveryPolicyInputRecord,
+  CreateRequesterComparisonSetInputRecord,
+  CreateRequesterReportPresetInputRecord,
   DeleteRequesterComparisonSetDeliveryPolicyResultRecord,
   DeleteRequesterComparisonSetExportResultRecord,
   PropositionDraftRecord,
@@ -69,6 +75,8 @@ import type {
   RequesterOwnedPropositionOverviewRecord,
   RequesterOwnedSettledPropositionReportRecord,
   UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
+  UpdateRequesterComparisonSetInputRecord,
+  UpdateRequesterReportPresetInputRecord,
 } from '../api/arena-api'
 import type {
   InternalDiscoveryCategoryConfigInput,
@@ -1827,6 +1835,68 @@ function createInitialState(): DemoState {
 }
 
 let demoState = createInitialState()
+
+// In-memory stores for the recently added requester CRUD endpoints (B5/B6).
+// Reset by demoBackend.reset() so live tests start clean.
+function buildInitialDemoRequesterReportPresets(): Map<string, RequesterReportPresetViewModel> {
+  return new Map<string, RequesterReportPresetViewModel>([
+    [
+      'preset-demo-settled',
+      {
+        presetId: 'preset-demo-settled',
+        name: 'Settled only',
+        description: 'Only settled requester propositions with completed reports.',
+        config: {
+          windowDays: 30,
+          categories: [],
+          marketEnabledOnly: false,
+          statusScope: 'settled',
+          defaultExportFormat: 'json',
+        },
+        createdAt: minusHours(8),
+        updatedAt: minusHours(4),
+      },
+    ],
+    [
+      'preset-demo-unresolved',
+      {
+        presetId: 'preset-demo-unresolved',
+        name: 'Unresolved watchlist',
+        description: 'Requester propositions still moving through review and settlement.',
+        config: {
+          windowDays: 14,
+          categories: [],
+          marketEnabledOnly: true,
+          statusScope: 'unresolved',
+          defaultExportFormat: 'csv',
+        },
+        createdAt: minusHours(8),
+        updatedAt: minusHours(2),
+      },
+    ],
+  ])
+}
+
+function buildInitialDemoRequesterComparisonSets(): Map<string, RequesterComparisonSetViewModel> {
+  return new Map<string, RequesterComparisonSetViewModel>([
+    [
+      'comparison-set-demo-core',
+      {
+        comparisonSetId: 'comparison-set-demo-core',
+        name: 'Core requester mix',
+        description: 'Saved comparison between settled and unresolved requester cohorts.',
+        presetIds: ['preset-demo-settled', 'preset-demo-unresolved'],
+        createdAt: minusHours(2),
+        updatedAt: minusHours(1),
+      },
+    ],
+  ])
+}
+
+let demoRequesterReportPresets = buildInitialDemoRequesterReportPresets()
+let demoRequesterReportPresetCounter = 1
+let demoRequesterComparisonSets = buildInitialDemoRequesterComparisonSets()
+let demoRequesterComparisonSetCounter = 1
 
 function getOverview() {
   return buildDemoOverview(demoState.markets, demoState.rewards)
@@ -3894,26 +3964,29 @@ export const demoBackend = {
     })
   },
   listRequesterReportPresets(): RequesterReportPresetListViewModel {
+    const items = Array.from(demoRequesterReportPresets.values()).map((preset) => ({
+      presetId: preset.presetId,
+      name: preset.name,
+      description: preset.description,
+      updatedAt: preset.updatedAt,
+    }))
     return structuredClone({
-      totalCount: 2,
-      items: [
-        {
-          presetId: 'preset-demo-settled',
-          name: 'Settled only',
-          description: 'Only settled requester propositions with completed reports.',
-          updatedAt: minusHours(4),
-        },
-        {
-          presetId: 'preset-demo-unresolved',
-          name: 'Unresolved watchlist',
-          description: 'Requester propositions still moving through review and settlement.',
-          updatedAt: minusHours(2),
-        },
-      ],
+      totalCount: items.length,
+      items,
     })
   },
   listRequesterComparisonSets(): RequesterComparisonSetListRecord {
-    return structuredClone(buildDemoRequesterComparisonSets())
+    const items = Array.from(demoRequesterComparisonSets.values()).map((set) => ({
+      comparisonSetId: set.comparisonSetId,
+      name: set.name,
+      description: set.description,
+      presetIds: set.presetIds,
+      updatedAt: set.updatedAt,
+    }))
+    return structuredClone({
+      totalCount: items.length,
+      items,
+    })
   },
   listRequesterDeliveryCredentials(): RequesterDeliveryCredentialDirectoryViewModel {
     return structuredClone({
@@ -3977,6 +4050,257 @@ export const demoBackend = {
   ): RequesterComparisonSetAnalyticsRecord {
     return structuredClone(buildDemoRequesterComparisonAnalytics(comparisonSetId))
   },
+
+  // -------------------------------------------------------------------------
+  // Demo fallbacks for the recently added respondent / requester endpoints.
+  // -------------------------------------------------------------------------
+  getRespondentPropositionResult(propositionId: string) {
+    const market = demoState.markets.find((entry) => entry.propositionId === propositionId)
+    if (!market) {
+      throw new Error('Demo proposition result not found')
+    }
+    return {
+      propositionId,
+      resultKind: 'resolved' as const,
+      winningOption: 0 as const,
+      voidReason: null,
+      settledAt: minusHours(1),
+      currentUserRewardStatus: 'finalized' as const,
+      currentUserSettlementOutcome: 'won' as const,
+    }
+  },
+  getSubmission(propositionId: string): PropositionDraftRecord {
+    const draft = demoState.drafts.find(
+      (entry) => entry.propositionId === propositionId && entry.submissionStatus === 'submitted',
+    )
+    if (!draft) {
+      throw new Error('Demo submission not found')
+    }
+    return structuredClone(draft)
+  },
+  listOwnedPropositions(): RequesterOwnedPropositionRecentItemViewModel[] {
+    return demoState.drafts.map((draft) => ({
+      propositionId: draft.propositionId,
+      title: draft.title,
+      category: draft.category,
+      status: draft.status,
+      submissionStatus: draft.submissionStatus,
+      submittedAt: draft.submittedAt,
+      marketEnabled: draft.marketEnabled,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+      publishedAt: null,
+      liveAt: null,
+      frozenAt: null,
+      settledAt: null,
+      minEffectiveSample: draft.minEffectiveSample,
+      effectiveSampleCount: 0,
+      reviewedResponseCount: 0,
+      revealSettlement: {
+        resultKind: null,
+        winningOption: null,
+      },
+    }))
+  },
+  getRequesterAnalytics(filters?: { windowDays?: number; now?: string; presetId?: string }) {
+    const settledDrafts = demoState.drafts.filter((draft) => draft.status === 'settled')
+    const unresolved = demoState.drafts.length - settledDrafts.length
+    const window = filters?.windowDays ?? 30
+    const now = filters?.now ?? minusHours(0)
+    const windowStartedAt = new Date(Date.parse(now) - window * 24 * 60 * 60 * 1000).toISOString()
+    const presetSnapshot = filters?.presetId
+      ? demoRequesterReportPresets.get(filters.presetId) ?? null
+      : null
+    return structuredClone({
+      windowDays: window,
+      now,
+      windowStartedAt,
+      preset: presetSnapshot
+        ? {
+            presetId: presetSnapshot.presetId,
+            name: presetSnapshot.name,
+            statusScope: presetSnapshot.config.statusScope,
+            categories: presetSnapshot.config.categories,
+            marketEnabledOnly: presetSnapshot.config.marketEnabledOnly,
+          }
+        : null,
+      totals: {
+        createdCount: demoState.drafts.length,
+        settledCount: settledDrafts.length,
+        unresolvedCount: unresolved,
+        marketEnabledCount: demoState.drafts.filter((draft) => draft.marketEnabled).length,
+        totalEffectiveSampleCount: 0,
+        totalReviewedResponseCount: 0,
+        totalBetCount: 0,
+        totalBetStakeAmount: '0',
+        uniqueTraderCount: 0,
+      },
+      lifecycle: {
+        averageHoursToPublish: null,
+        averageHoursToLive: null,
+        averageHoursToFreeze: null,
+        averageHoursToSettle: null,
+      },
+      categoryHistory: [],
+      trend: [],
+      delivery: {
+        exportCount: demoState.requesterExports.length,
+        latestExportAt: null,
+        latestExportId: null,
+      },
+    } satisfies RequesterOwnedPropositionAnalyticsViewModel)
+  },
+  compareRequesterAnalytics(body: { presetIds: string[]; now?: string }) {
+    return structuredClone({
+      totalCount: body.presetIds.length,
+      summary: {
+        presetCount: body.presetIds.length,
+        topPresetByCreatedCount: null,
+        topPresetBySettledCount: null,
+        topPresetByBetStakeAmount: null,
+        totals: {
+          createdCount: 0,
+          settledCount: 0,
+          unresolvedCount: 0,
+          totalEffectiveSampleCount: 0,
+          totalReviewedResponseCount: 0,
+          totalBetCount: 0,
+          totalBetStakeAmount: '0',
+          uniqueTraderCount: 0,
+        },
+      },
+      items: body.presetIds.map((presetId) => {
+        const preset = demoRequesterReportPresets.get(presetId)
+        return {
+          preset: {
+            presetId,
+            name: preset?.name ?? presetId,
+            statusScope: preset?.config.statusScope ?? 'all',
+            categories: preset?.config.categories ?? [],
+            marketEnabledOnly: preset?.config.marketEnabledOnly ?? false,
+          },
+          analytics: this.getRequesterAnalytics({ presetId, now: body.now }),
+        }
+      }),
+    } satisfies RequesterOwnedPropositionAnalyticsComparisonViewModel)
+  },
+  createRequesterReportPreset(body: CreateRequesterReportPresetInputRecord): RequesterReportPresetViewModel {
+    const presetId = `preset-demo-${demoRequesterReportPresetCounter++}`
+    const now = minusHours(0)
+    const preset: RequesterReportPresetViewModel = {
+      presetId,
+      name: body.name,
+      description: body.description ?? null,
+      config: {
+        windowDays: body.windowDays ?? 30,
+        categories: body.categories ?? [],
+        marketEnabledOnly: body.marketEnabledOnly ?? false,
+        statusScope: body.statusScope ?? 'all',
+        defaultExportFormat: body.defaultExportFormat ?? 'json',
+      },
+      createdAt: now,
+      updatedAt: now,
+    }
+    demoRequesterReportPresets.set(presetId, preset)
+    return structuredClone(preset)
+  },
+  getRequesterReportPreset(presetId: string): RequesterReportPresetViewModel {
+    const preset = demoRequesterReportPresets.get(presetId)
+    if (!preset) {
+      throw new Error(`Demo requester report preset ${presetId} not found`)
+    }
+    return structuredClone(preset)
+  },
+  updateRequesterReportPreset(
+    presetId: string,
+    body: UpdateRequesterReportPresetInputRecord,
+  ): RequesterReportPresetViewModel {
+    const current = demoRequesterReportPresets.get(presetId)
+    if (!current) {
+      throw new Error(`Demo requester report preset ${presetId} not found`)
+    }
+    const next: RequesterReportPresetViewModel = {
+      ...current,
+      name: body.name ?? current.name,
+      description: body.description !== undefined ? body.description ?? null : current.description,
+      config: {
+        windowDays: body.windowDays ?? current.config.windowDays,
+        categories: body.categories ?? current.config.categories,
+        marketEnabledOnly: body.marketEnabledOnly ?? current.config.marketEnabledOnly,
+        statusScope: body.statusScope ?? current.config.statusScope,
+        defaultExportFormat: body.defaultExportFormat ?? current.config.defaultExportFormat,
+      },
+      updatedAt: minusHours(0),
+    }
+    demoRequesterReportPresets.set(presetId, next)
+    return structuredClone(next)
+  },
+  deleteRequesterReportPreset(presetId: string) {
+    if (!demoRequesterReportPresets.has(presetId)) {
+      throw new Error(`Demo requester report preset ${presetId} not found`)
+    }
+    demoRequesterReportPresets.delete(presetId)
+    return { presetId, deleted: true as const }
+  },
+  createRequesterComparisonSet(
+    body: CreateRequesterComparisonSetInputRecord,
+  ): RequesterComparisonSetViewModel {
+    const comparisonSetId = `comparison-set-demo-${demoRequesterComparisonSetCounter++}`
+    const now = minusHours(0)
+    const set: RequesterComparisonSetViewModel = {
+      comparisonSetId,
+      name: body.name,
+      description: body.description ?? null,
+      presetIds: body.presetIds,
+      createdAt: now,
+      updatedAt: now,
+    }
+    demoRequesterComparisonSets.set(comparisonSetId, set)
+    return structuredClone(set)
+  },
+  getRequesterComparisonSet(comparisonSetId: string): RequesterComparisonSetViewModel {
+    const set = demoRequesterComparisonSets.get(comparisonSetId)
+    if (!set) {
+      throw new Error(`Demo requester comparison set ${comparisonSetId} not found`)
+    }
+    return structuredClone(set)
+  },
+  updateRequesterComparisonSet(
+    comparisonSetId: string,
+    body: UpdateRequesterComparisonSetInputRecord,
+  ): RequesterComparisonSetViewModel {
+    const current = demoRequesterComparisonSets.get(comparisonSetId)
+    if (!current) {
+      throw new Error(`Demo requester comparison set ${comparisonSetId} not found`)
+    }
+    const next: RequesterComparisonSetViewModel = {
+      ...current,
+      name: body.name ?? current.name,
+      description:
+        body.description !== undefined ? body.description ?? null : current.description,
+      presetIds: body.presetIds ?? current.presetIds,
+      updatedAt: minusHours(0),
+    }
+    demoRequesterComparisonSets.set(comparisonSetId, next)
+    return structuredClone(next)
+  },
+  deleteRequesterComparisonSet(comparisonSetId: string) {
+    if (!demoRequesterComparisonSets.has(comparisonSetId)) {
+      throw new Error(`Demo requester comparison set ${comparisonSetId} not found`)
+    }
+    demoRequesterComparisonSets.delete(comparisonSetId)
+    return { comparisonSetId, deleted: true as const }
+  },
+  getChainSnapshot(): ChainSnapshot {
+    return {
+      rpcUrl: 'http://127.0.0.1:8545',
+      configuredChainId: DEMO_CHAIN_ID,
+      connectedChainId: DEMO_CHAIN_ID,
+      contractAddress: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+      artifactPath: 'demo://artifacts/arena.demo.json',
+    }
+  },
+
   getRequesterComparisonSetDeliveryPolicyHealth(
     comparisonSetId: string,
     policyId: string,
@@ -4592,6 +4916,10 @@ export const demoBackend = {
   },
   reset() {
     demoState = createInitialState()
+    demoRequesterReportPresets = buildInitialDemoRequesterReportPresets()
+    demoRequesterReportPresetCounter = 1
+    demoRequesterComparisonSets = buildInitialDemoRequesterComparisonSets()
+    demoRequesterComparisonSetCounter = 1
     demoOpsBackend.reset()
   },
 }

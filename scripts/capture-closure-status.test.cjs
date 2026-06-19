@@ -13,6 +13,23 @@ const {
   summarizeRepoGates,
 } = require("./capture-closure-status.cjs");
 
+function createExternalExecutionFixture() {
+  const workspace = fs.mkdtempSync(
+    path.join(os.tmpdir(), "arena-closure-status-external-execution-"),
+  );
+  const envFilePath = path.join(workspace, "config", "staging.env");
+  const previousEnvPath = path.join(workspace, "config", "staging.previous.env");
+
+  fs.mkdirSync(path.dirname(envFilePath), { recursive: true });
+  fs.writeFileSync(envFilePath, "ARENA_VALIDATION_ENVIRONMENT=staging\n", "utf8");
+  fs.writeFileSync(previousEnvPath, "JWT_SECRET=previous\n", "utf8");
+
+  return {
+    envFilePath,
+    previousEnvPath,
+  };
+}
+
 test("parseArgs resolves closure status inputs", () => {
   const parsed = parseArgs([
     "--env-file",
@@ -109,17 +126,18 @@ test("evaluateExternalExecution marks local envs and missing staging inputs as b
 });
 
 test("evaluateExternalExecution keeps non-local closure blocked when staging infra wiring is still missing", () => {
+  const fixture = createExternalExecutionFixture();
   const evaluation = evaluateExternalExecution({
     authToken: "staging-token",
     baseUrl: "https://arena.example",
     envExists: true,
-    envFilePath: "F:/arena_blockchain/config/staging.env",
+    envFilePath: fixture.envFilePath,
     loadedEnv: {
       ARENA_VALIDATION_ENVIRONMENT: "staging",
       CHAIN_ID: "11155111",
       RPC_URL: "https://ethereum-sepolia-rpc.publicnode.com",
     },
-    previousEnvPath: "F:/arena_blockchain/config/staging.previous.env",
+    previousEnvPath: fixture.previousEnvPath,
     propositionId: "prop_stage_1",
     validationNetwork: "validation",
   });
@@ -139,6 +157,7 @@ test("evaluateExternalExecution keeps non-local closure blocked when staging inf
 });
 
 test("evaluateExternalExecution marks deployment-protected staging hosts as blocked", () => {
+  const fixture = createExternalExecutionFixture();
   const evaluation = evaluateExternalExecution({
     authToken: "staging-token",
     baseUrl: "https://arena.example",
@@ -148,7 +167,7 @@ test("evaluateExternalExecution marks deployment-protected staging hosts as bloc
       url: "https://arena.example/health/live",
     },
     envExists: true,
-    envFilePath: "F:/arena_blockchain/config/staging.env",
+    envFilePath: fixture.envFilePath,
     loadedEnv: {
       ARENA_VALIDATION_ENVIRONMENT: "staging",
       CHAIN_ID: "11155111",
@@ -160,7 +179,7 @@ test("evaluateExternalExecution marks deployment-protected staging hosts as bloc
       ARENA_REWARD_PAYOUT_ERC20_ADDRESS: "0x3333333333333333333333333333333333333333",
       ARENA_OPS_ALERT_WEBHOOK_TARGETS: "ops:https://alerts.example/hook",
     },
-    previousEnvPath: "F:/arena_blockchain/config/staging.previous.env",
+    previousEnvPath: fixture.previousEnvPath,
     propositionId: "prop_stage_1",
     validationNetwork: "validation",
   });

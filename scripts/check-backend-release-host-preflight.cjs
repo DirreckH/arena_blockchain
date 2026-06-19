@@ -104,7 +104,7 @@ function resolveDockerDesktopDataDiskPath(env = process.env) {
 }
 
 function readWindowsDriveFreeBytes(targetPath, runCommand = defaultRunCommand) {
-  const driveRoot = path.parse(path.resolve(targetPath)).root;
+  const driveRoot = path.win32.parse(path.win32.resolve(targetPath)).root;
   const driveName = driveRoot.replace(/[\\/:]+$/gu, "");
   if (!driveName) {
     throw new Error(`Unable to resolve a Windows drive root for ${targetPath}.`);

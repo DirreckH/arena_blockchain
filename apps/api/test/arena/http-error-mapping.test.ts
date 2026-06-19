@@ -12502,6 +12502,7 @@ test("validation chain internal command recovery route can return settled resolv
     assert.equal(response.body.recoveryReason, "resolve_settled_market");
     assert.deepEqual(response.body.plannedCommands, ["resolve_market"]);
   });
+});
 
 test("validation chain internal command recovery route returns 200 when recovery reuses pending jobs", async () => {
   await withHttpArenaApp(async ({ app, baseUrl }) => {
@@ -12610,7 +12611,6 @@ test("validation chain internal command recovery route returns 503 with structur
     assert.equal(response.body.requestStatus, "failed");
     assert.equal(response.body.commandSubmissions[0]?.errorMessage, "Redis unavailable");
   });
-});
 });
 
 test("validation chain internal command recovery route returns 409 for invalid recovery state", async () => {

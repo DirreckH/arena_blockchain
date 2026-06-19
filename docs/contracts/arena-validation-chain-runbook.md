@@ -6,7 +6,7 @@ For the current proposition-scoped operating path, prefer this command before
 manually hopping across monitoring routes and runbooks:
 
 ```powershell
-pnpm run validation:ops:brief -- --proposition-id <id> [--base-url <url>] [--auth-token <token>]
+pnpm run validation:ops:brief -- --proposition-id <id> --env-file <path-to-release-env> [--base-url <url>] [--auth-token <token>]
 ```
 
 The command refreshes and writes one coherent operator bundle under
@@ -40,12 +40,32 @@ rehearsal, and public beta proof are all green for the target proposition.
 推荐演练前执行：
 
 ```powershell
-pnpm run validation:env:check
-pnpm run validation:deps:check
-pnpm run validation:chain:check
-pnpm run validation:db:deploy
-pnpm run validation:db:status
+pnpm run validation:preflight -- --env-file <path-to-release-env>
+pnpm run validation:db:deploy -- --env-file <path-to-release-env>
+pnpm run validation:db:status -- --env-file <path-to-release-env>
 ```
+
+For non-local staging/testnet checks, prefer the wrapper above over manually
+running three separate commands. It now drives:
+
+- `pnpm run validation:env:check -- --env-file <path-to-release-env>`
+- `pnpm run validation:deps:check -- --env-file <path-to-release-env>`
+- `pnpm run validation:chain:check -- --env-file <path-to-release-env>`
+
+If the same pass also needs to deploy or repoint the validation contract, use:
+
+- `pnpm run validation:preflight -- --env-file <path-to-release-env> --deploy-validation --network validation`
+
+That deploy-aware preflight now executes:
+
+- `pnpm run validation:env:check -- --env-file <path-to-release-env>`
+- `pnpm run validation:deps:check -- --env-file <path-to-release-env>`
+- `pnpm run validation:deploy -- --env-file <path-to-release-env> --network validation`
+- `pnpm run validation:chain:check -- --env-file <path-to-release-env>`
+
+Non-local deploy evidence should now be kept under
+`validation-rehearsal/deployments/` by network name instead of overwriting the
+root local `deployment.validation.json`.
 
 Schema 校验 SQL：
 

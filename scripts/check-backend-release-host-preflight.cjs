@@ -7,11 +7,81 @@ const { spawnSync } = require("node:child_process");
 const {
   fail,
   info,
+  isAddress,
+  isPrivateKey,
   loadEnvFile,
+  normalizeAddress,
   pass,
 } = require("./_validation-common.cjs");
 
 const DEFAULT_MIN_DOCKER_DESKTOP_DRIVE_FREE_GB = 15;
+const DEFAULT_DOCKER_CLI_TIMEOUT_MS = 120000;
+const DEFAULT_WINDOWS_FREE_SPACE_TIMEOUT_MS = 45000;
+const HARDHAT_LOCAL_ADMIN_PRIVATE_KEY =
+  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+const LOCAL_ONLY_HOSTNAMES = new Set([
+  "127.0.0.1",
+  "0.0.0.0",
+  "::1",
+  "host.docker.internal",
+  "localhost",
+]);
+const REAL_RELEASE_ENVIRONMENTS = new Set(["staging", "prod"]);
+const PLACEHOLDER_ADDRESSES = new Set([
+  "0x0000000000000000000000000000000000000001",
+  "0x0000000000000000000000000000000000000002",
+  "0x0000000000000000000000000000000000000010",
+]);
+const PLACEHOLDER_JWT_SECRETS = new Set([
+  "arena-local-dev-secret-change-before-production",
+  "replace-with-a-long-random-secret",
+  "test-secret",
+]);
+
+function parseArgs(argv) {
+  const options = {
+    allowLocalRehearsal: false,
+    cwd: process.cwd(),
+    envFilePath: path.resolve(
+      process.cwd(),
+      "validation-local",
+      "release-rehearsal.env",
+    ),
+    minDockerDesktopDriveFreeGb: DEFAULT_MIN_DOCKER_DESKTOP_DRIVE_FREE_GB,
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+
+    if (argument === "--allow-local-rehearsal") {
+      options.allowLocalRehearsal = true;
+      continue;
+    }
+
+    if (argument === "--env-file") {
+      options.envFilePath = path.resolve(process.cwd(), argv[index + 1]);
+      index += 1;
+      continue;
+    }
+
+    if (argument === "--min-free-gb") {
+      options.minDockerDesktopDriveFreeGb = Number(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+
+  if (
+    !Number.isFinite(options.minDockerDesktopDriveFreeGb) ||
+    options.minDockerDesktopDriveFreeGb < 0
+  ) {
+    throw new Error("--min-free-gb must be a non-negative number.");
+  }
+
+  return options;
+}
 
 function formatGigabytes(bytes) {
   return `${Math.round((bytes / (1024 ** 3)) * 100) / 100} GiB`;
@@ -44,10 +114,14 @@ function readWindowsDriveFreeBytes(targetPath, runCommand = defaultRunCommand) {
   const result = runCommand(
     "powershell",
     ["-NoProfile", "-Command", command],
-    { timeoutMs: 15000 },
+    { timeoutMs: DEFAULT_WINDOWS_FREE_SPACE_TIMEOUT_MS },
   );
 
   if (result.status !== 0) {
+    const fallback = readWindowsDriveFreeBytesViaFsutil(driveName, runCommand);
+    if (fallback !== null) {
+      return fallback;
+    }
     const stderr = (result.stderr || result.stdout || "").trim();
     throw new Error(
       `Unable to inspect free space for ${driveRoot}: ${stderr || `powershell exited with ${result.status}`}.`,
@@ -59,6 +133,32 @@ function readWindowsDriveFreeBytes(targetPath, runCommand = defaultRunCommand) {
     throw new Error(
       `Unable to parse free space for ${driveRoot} from PowerShell output: ${(result.stdout || "").trim()}.`,
     );
+  }
+
+  return freeBytes;
+}
+
+function readWindowsDriveFreeBytesViaFsutil(driveName, runCommand = defaultRunCommand) {
+  const result = runCommand(
+    "fsutil",
+    ["volume", "diskfree", `${driveName}:`],
+    { timeoutMs: 15000 },
+  );
+
+  if (result.status !== 0) {
+    return null;
+  }
+
+  const match = String(result.stdout || "").match(
+    /Total free bytes\s*:\s*([0-9,]+)/iu,
+  );
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const freeBytes = Number(match[1].replace(/,/gu, ""));
+  if (!Number.isFinite(freeBytes) || freeBytes < 0) {
+    return null;
   }
 
   return freeBytes;
@@ -86,7 +186,7 @@ function checkDockerCliReachable(runCommand = defaultRunCommand) {
   const result = runCommand(
     "docker",
     ["version", "--format", "{{.Server.Version}}"],
-    { timeoutMs: 30000 },
+    { timeoutMs: DEFAULT_DOCKER_CLI_TIMEOUT_MS },
   );
 
   if (result.status !== 0) {
@@ -112,6 +212,153 @@ function checkDockerCliReachable(runCommand = defaultRunCommand) {
     ok: true,
     message: `Docker engine reachable: ${serverVersion}`,
   };
+}
+
+function getLoadedEnvValue(loadedEnv, key) {
+  const value = loadedEnv[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isLocalOnlyUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return LOCAL_ONLY_HOSTNAMES.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function pushMissingEnvFailure(loadedEnv, failures, key, description) {
+  if (getLoadedEnvValue(loadedEnv, key).length === 0) {
+    failures.push(`${key} is required for ${description}.`);
+  }
+}
+
+function validateLocalRehearsalEnv(loadedEnv, failures) {
+  const environment = getLoadedEnvValue(loadedEnv, "ARENA_VALIDATION_ENVIRONMENT");
+  if (environment.length === 0) {
+    failures.push(
+      "ARENA_VALIDATION_ENVIRONMENT is required in the release rehearsal env. Set it to local for repo-side Docker rehearsal.",
+    );
+    return;
+  }
+
+  if (environment !== "local") {
+    failures.push(
+      `ARENA_VALIDATION_ENVIRONMENT must stay local when --allow-local-rehearsal is set; received ${environment}. Use the strict host preflight for staging/prod promotion instead.`,
+    );
+  }
+}
+
+function validateRealReleaseEnv(loadedEnv, failures) {
+  const environment = getLoadedEnvValue(loadedEnv, "ARENA_VALIDATION_ENVIRONMENT");
+  if (environment.length === 0) {
+    failures.push(
+      "ARENA_VALIDATION_ENVIRONMENT is required for backend release host preflight. Use staging or prod for real promotion, or pass --allow-local-rehearsal for local Docker rehearsal.",
+    );
+  } else if (!REAL_RELEASE_ENVIRONMENTS.has(environment)) {
+    failures.push(
+      `ARENA_VALIDATION_ENVIRONMENT must be staging or prod for a real backend release host preflight; received ${environment}. Use --allow-local-rehearsal only for local Docker rehearsal.`,
+    );
+  }
+
+  for (const key of [
+    "JWT_SECRET",
+    "RPC_URL",
+    "CHAIN_ID",
+    "ARENA_CONTRACT_ADDRESS",
+    "ARENA_VALIDATION_CONTRACT_ADDRESS",
+    "ARENA_VALIDATION_OPERATOR_PRIVATE_KEY",
+    "ARENA_VALIDATION_ORACLE_PRIVATE_KEY",
+    "ARENA_VALIDATION_PAUSER_PRIVATE_KEY",
+    "ARENA_REWARD_PAYOUT_ERC20_ADDRESS",
+    "ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY",
+  ]) {
+    pushMissingEnvFailure(loadedEnv, failures, key, "non-local backend promotion");
+  }
+
+  for (const key of [
+    "ARENA_CONTRACT_ADDRESS",
+    "ARENA_VALIDATION_CONTRACT_ADDRESS",
+    "ARENA_REWARD_PAYOUT_ERC20_ADDRESS",
+  ]) {
+    const value = getLoadedEnvValue(loadedEnv, key);
+    if (value.length === 0) {
+      continue;
+    }
+
+    if (!isAddress(value)) {
+      failures.push(`${key} must be a 20-byte hex address for non-local backend promotion.`);
+      continue;
+    }
+
+    const normalized = normalizeAddress(value).toLowerCase();
+    if (PLACEHOLDER_ADDRESSES.has(normalized)) {
+      failures.push(
+        `${key} must not use the local placeholder address ${normalized} in a non-local backend promotion env.`,
+      );
+    }
+  }
+
+  const legacyAddress = getLoadedEnvValue(loadedEnv, "ARENA_CONTRACT_ADDRESS");
+  const validationAddress = getLoadedEnvValue(
+    loadedEnv,
+    "ARENA_VALIDATION_CONTRACT_ADDRESS",
+  );
+  if (
+    isAddress(legacyAddress) &&
+    isAddress(validationAddress) &&
+    normalizeAddress(legacyAddress) === normalizeAddress(validationAddress)
+  ) {
+    failures.push(
+      "ARENA_VALIDATION_CONTRACT_ADDRESS must not reuse ARENA_CONTRACT_ADDRESS in a non-local backend promotion env.",
+    );
+  }
+
+  for (const key of [
+    "ARENA_VALIDATION_OPERATOR_PRIVATE_KEY",
+    "ARENA_VALIDATION_ORACLE_PRIVATE_KEY",
+    "ARENA_VALIDATION_PAUSER_PRIVATE_KEY",
+    "ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY",
+  ]) {
+    const value = getLoadedEnvValue(loadedEnv, key);
+    if (value.length === 0) {
+      continue;
+    }
+
+    if (!isPrivateKey(value)) {
+      failures.push(
+        `${key} must be a 32-byte hex private key prefixed with 0x for non-local backend promotion.`,
+      );
+      continue;
+    }
+
+    if (value.toLowerCase() === HARDHAT_LOCAL_ADMIN_PRIVATE_KEY) {
+      failures.push(
+        `${key} must not reuse the local Hardhat bootstrap private key in a non-local backend promotion env.`,
+      );
+    }
+  }
+
+  for (const key of ["RPC_URL", "ARENA_COMPOSE_RPC_URL"]) {
+    const value = getLoadedEnvValue(loadedEnv, key);
+    if (value.length === 0) {
+      continue;
+    }
+
+    if (isLocalOnlyUrl(value)) {
+      failures.push(
+        `${key} must not point to localhost, 127.0.0.1, or host.docker.internal in a non-local backend promotion env.`,
+      );
+    }
+  }
+
+  const jwtSecret = getLoadedEnvValue(loadedEnv, "JWT_SECRET");
+  if (jwtSecret.length > 0 && PLACEHOLDER_JWT_SECRETS.has(jwtSecret)) {
+    failures.push(
+      "JWT_SECRET must not use a local/default placeholder value in a non-local backend promotion env.",
+    );
+  }
 }
 
 async function checkBackendReleaseHostPreflight(options = {}) {
@@ -140,6 +387,12 @@ async function checkBackendReleaseHostPreflight(options = {}) {
     const loaded = loadEnvFile(envFilePath, { override: false });
     loadedEnv = loaded.loaded;
 
+    logger.info(
+      options.allowLocalRehearsal === true
+        ? "Release host preflight mode: local-rehearsal"
+        : "Release host preflight mode: non-local promotion",
+    );
+
     if (!loaded.loaded.COMPOSE_PROJECT_NAME) {
       failures.push(
         `Release rehearsal env at ${envFilePath} is missing COMPOSE_PROJECT_NAME, so local release containers can collide with the default docker-compose.yml stack. Regenerate it with pnpm run backend:release:env:prepare.`,
@@ -148,6 +401,12 @@ async function checkBackendReleaseHostPreflight(options = {}) {
       logger.info(
         `Release rehearsal compose project: ${loaded.loaded.COMPOSE_PROJECT_NAME}`,
       );
+    }
+
+    if (options.allowLocalRehearsal === true) {
+      validateLocalRehearsalEnv(loadedEnv, failures);
+    } else {
+      validateRealReleaseEnv(loadedEnv, failures);
     }
   }
 
@@ -208,7 +467,9 @@ async function checkBackendReleaseHostPreflight(options = {}) {
 }
 
 async function main() {
-  const exitCode = await checkBackendReleaseHostPreflight();
+  const exitCode = await checkBackendReleaseHostPreflight(
+    parseArgs(process.argv.slice(2)),
+  );
   process.exit(exitCode);
 }
 
@@ -222,6 +483,7 @@ if (require.main === module) {
 module.exports = {
   checkBackendReleaseHostPreflight,
   checkDockerCliReachable,
+  parseArgs,
   readDriveFreeBytes,
   readWindowsDriveFreeBytes,
   resolveDockerDesktopDataDiskPath,

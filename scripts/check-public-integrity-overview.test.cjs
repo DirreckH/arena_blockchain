@@ -5,8 +5,27 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  parseCliArgs,
   checkPublicIntegrityOverview,
 } = require("./check-public-integrity-overview.cjs");
+
+test("parseCliArgs resolves env-file, proposition id, base-url, and output path", () => {
+  const parsed = parseCliArgs([
+    "--env-file",
+    "config/staging.env",
+    "--proposition-id",
+    "prop_integrity",
+    "--base-url",
+    "https://arena.example",
+    "--output",
+    "artifacts/public-integrity.json",
+  ]);
+
+  assert.equal(parsed.envFilePath, "config/staging.env");
+  assert.equal(parsed.propositionId, "prop_integrity");
+  assert.equal(parsed.baseUrl, "https://arena.example");
+  assert.equal(parsed.outputPath, "artifacts/public-integrity.json");
+});
 
 test("check-public-integrity-overview writes a proposition-scoped artifact when the proposition is visible in archive focus", async () => {
   const workspace = fs.mkdtempSync(

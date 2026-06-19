@@ -8,7 +8,16 @@ const {
 } = require("./_validation-common.cjs");
 
 const ROOT_DIR = process.cwd();
-const ENV_PATH = path.resolve(ROOT_DIR, ".env");
+const ENV_PATH = path.resolve(
+  ROOT_DIR,
+  process.env.ARENA_VALIDATION_DEPLOY_ENV_FILE || ".env",
+);
+const OUTPUT_PATH = path.resolve(
+  ROOT_DIR,
+  process.env.ARENA_VALIDATION_DEPLOY_OUTPUT_PATH || "deployment.validation.json",
+);
+const SHOULD_WRITE_ENV =
+  process.env.ARENA_VALIDATION_DEPLOY_WRITE_ENV !== "0";
 
 async function grantRoleIfNeeded(contract, roleName, account) {
   if (!account) {
@@ -76,15 +85,19 @@ async function main() {
     deployedAt: new Date().toISOString(),
   };
 
-  const outputPath = path.resolve(
-    process.cwd(),
-    "deployment.validation.json",
-  );
-  fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
-  console.log("Deployment info saved to:", outputPath);
-  updateEnvFileContractAddress(contract.address);
-  console.log("Next env update:");
-  console.log(`ARENA_VALIDATION_CONTRACT_ADDRESS=${contract.address}`);
+  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
+  fs.writeFileSync(OUTPUT_PATH, JSON.stringify(output, null, 2));
+  console.log("Deployment info saved to:", OUTPUT_PATH);
+
+  if (SHOULD_WRITE_ENV) {
+    updateEnvFileContractAddress(contract.address);
+    console.log("Next env update:");
+    console.log(`ARENA_VALIDATION_CONTRACT_ADDRESS=${contract.address}`);
+  } else {
+    console.log("Skipped env file contract-address rewrite for this deployment.");
+    console.log("Next staged env update:");
+    console.log(`ARENA_VALIDATION_CONTRACT_ADDRESS=${contract.address}`);
+  }
 }
 
 function updateEnvFileContractAddress(contractAddress) {

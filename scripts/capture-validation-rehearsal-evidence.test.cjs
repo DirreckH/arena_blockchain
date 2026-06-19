@@ -5,8 +5,30 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  parseCliArgs,
   captureValidationRehearsalEvidence,
 } = require("./capture-validation-rehearsal-evidence.cjs");
+
+test("parseCliArgs resolves env-file, proposition id, base-url, auth token, and output path", () => {
+  const parsed = parseCliArgs([
+    "--env-file",
+    "config/staging.env",
+    "--proposition-id",
+    "prop_blocked",
+    "--base-url",
+    "https://arena.example",
+    "--auth-token",
+    "secret-token",
+    "--output",
+    "artifacts/rehearsal-evidence.json",
+  ]);
+
+  assert.equal(parsed.envFilePath, "config/staging.env");
+  assert.equal(parsed.propositionId, "prop_blocked");
+  assert.equal(parsed.baseUrl, "https://arena.example");
+  assert.equal(parsed.authToken, "secret-token");
+  assert.equal(parsed.outputPath, "artifacts/rehearsal-evidence.json");
+});
 
 test("capture-validation-rehearsal-evidence exports the bundle and prints the current blocked step guidance", async () => {
   const workspace = fs.mkdtempSync(
@@ -70,6 +92,35 @@ test("capture-validation-rehearsal-evidence exports the bundle and prints the cu
         });
       }
 
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_blocked&limit=100&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 100,
+          offset: 0,
+        });
+      }
+
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_blocked&staleExecutionOnly=true&actionQueue=execution_recover&limit=1&offset=0",
+        ) ||
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_blocked&staleExecutionOnly=true&actionQueue=execution_confirm&limit=1&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 1,
+          offset: 0,
+        });
+      }
+
       throw new Error(`Unexpected URL ${url}`);
     },
     logger,
@@ -82,6 +133,12 @@ test("capture-validation-rehearsal-evidence exports the bundle and prints the cu
     "validation-rehearsal",
     "prop_blocked",
     "evidence-bundle.json",
+  );
+  const expectedRewardPayoutPath = path.join(
+    workspace,
+    "validation-rehearsal",
+    "prop_blocked",
+    "reward-payout-summary.json",
   );
 
   assert.equal(fs.existsSync(expectedOutputPath), true);
@@ -101,7 +158,14 @@ test("capture-validation-rehearsal-evidence exports the bundle and prints the cu
     logger.infoMessages[6],
     new RegExp(escapeRegExp(`Evidence bundle: ${expectedOutputPath}`), "u"),
   );
-  assert.deepEqual(logger.infoMessages.slice(7), [
+  assert.match(
+    logger.infoMessages[7],
+    new RegExp(
+      escapeRegExp(`Reward payout artifact: ${expectedRewardPayoutPath}`),
+      "u",
+    ),
+  );
+  assert.deepEqual(logger.infoMessages.slice(8), [
     "Blocking reasons:",
     "- no local validation bet has been persisted",
     "- no BetPlaced event has been persisted",
@@ -119,6 +183,7 @@ test("capture-validation-rehearsal-evidence reports a completed rehearsal withou
     path.join(os.tmpdir(), "arena-validation-capture-ready-"),
   );
   const outputPath = path.join(workspace, "custom-bundle.json");
+  const rewardPayoutPath = path.join(workspace, "reward-payout-summary.json");
   const logger = createLogger();
 
   const exitCode = await captureValidationRehearsalEvidence({
@@ -172,6 +237,35 @@ test("capture-validation-rehearsal-evidence reports a completed rehearsal withou
         });
       }
 
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_ready&limit=100&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 100,
+          offset: 0,
+        });
+      }
+
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_ready&staleExecutionOnly=true&actionQueue=execution_recover&limit=1&offset=0",
+        ) ||
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_ready&staleExecutionOnly=true&actionQueue=execution_confirm&limit=1&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 1,
+          offset: 0,
+        });
+      }
+
       throw new Error(`Unexpected URL ${url}`);
     },
     logger,
@@ -179,12 +273,17 @@ test("capture-validation-rehearsal-evidence reports a completed rehearsal withou
 
   assert.equal(exitCode, 0);
   assert.equal(fs.existsSync(outputPath), true);
+  assert.equal(fs.existsSync(rewardPayoutPath), true);
   assert.match(logger.infoMessages[1], /Rehearsal status for prop_ready: ready/u);
   assert.match(
     logger.infoMessages[2],
     /Current step: none \(all tracked rehearsal steps are complete\)/u,
   );
   assert.match(logger.infoMessages[3], /Completed steps: 5\/5/u);
+  assert.match(
+    logger.infoMessages[7],
+    new RegExp(escapeRegExp(`Reward payout artifact: ${rewardPayoutPath}`), "u"),
+  );
   assert.match(
     logger.infoMessages.at(-1),
     /No next commands remain; the tracked rehearsal steps are complete\./u,

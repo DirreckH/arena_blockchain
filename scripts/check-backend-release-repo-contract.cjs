@@ -18,8 +18,16 @@ const REQUIRED_FILES = [
   ".dockerignore",
   "docs/RELEASE_RUNBOOK.md",
   "ops/nginx/arena.conf",
+  "scripts/audit-node-dependencies.cjs",
+  "scripts/backup-postgres-database.cjs",
+  "scripts/check-secret-rotation.cjs",
   "scripts/check-backend-release-host-preflight.cjs",
+  "scripts/recover-backend-release-host.cjs",
+  "scripts/prove-runtime-contract-operator-monitoring.cjs",
+  "scripts/restore-postgres-database.cjs",
+  "scripts/run-database-rollback-rehearsal.cjs",
   "scripts/run-backend-release-rehearsal.cjs",
+  "scripts/run-external-release-evidence.cjs",
   "scripts/sync-prisma-runtime-artifacts.cjs",
 ];
 
@@ -33,12 +41,56 @@ const REQUIRED_RULES = [
         pattern: /"packageManager"\s*:\s*"pnpm@10\.32\.0"/u,
       },
       {
+        description: "validation repo test script",
+        pattern: /"validation:repo:test"\s*:\s*"node --test scripts\/bootstrap-validation-local\.test\.cjs scripts\/prepare-validation-local\.test\.cjs scripts\/prepare-backend-local\.test\.cjs scripts\/check-validation-env\.test\.cjs scripts\/check-validation-runtime-deps\.test\.cjs scripts\/check-validation-contract\.test\.cjs scripts\/run-validation-preflight\.test\.cjs scripts\/run-validation-deploy\.test\.cjs scripts\/drive-validation-proof\.test\.cjs scripts\/capture-validation-proof\.test\.cjs scripts\/capture-validation-operator-briefing\.test\.cjs scripts\/capture-validation-rehearsal-evidence\.test\.cjs scripts\/export-validation-rehearsal-evidence\.test\.cjs scripts\/check-public-settled-result\.test\.cjs scripts\/check-public-integrity-overview\.test\.cjs"/u,
+      },
+      {
         description: "release host preflight script",
-        pattern: /"backend:release:host:check"\s*:\s*"node scripts\/check-backend-release-host-preflight\.cjs"/u,
+        pattern: /"backend:release:host:check"\s*:\s*"node (?:-- )?scripts\/check-backend-release-host-preflight\.cjs"/u,
+      },
+      {
+        description: "release host recovery script",
+        pattern: /"backend:release:host:recover"\s*:\s*"node (?:-- )?scripts\/recover-backend-release-host\.cjs"/u,
+      },
+      {
+        description: "runtime-contract operator proof script",
+        pattern: /"backend:release:proof:operator"\s*:\s*"node (?:-- )?scripts\/prove-runtime-contract-operator-monitoring\.cjs"/u,
       },
       {
         description: "local release rehearsal script",
-        pattern: /"backend:release:rehearse:local"\s*:\s*"node scripts\/run-backend-release-rehearsal\.cjs"/u,
+        pattern: /"backend:release:rehearse:local"\s*:\s*"node (?:-- )?scripts\/run-backend-release-rehearsal\.cjs"/u,
+      },
+      {
+        description: "external release rehearsal script",
+        pattern: /"backend:release:rehearse:external"\s*:\s*"node (?:-- )?scripts\/run-backend-release-rehearsal\.cjs --mode external"/u,
+      },
+      {
+        description: "external release evidence orchestration script",
+        pattern: /"backend:release:evidence:external"\s*:\s*"node (?:-- )?scripts\/run-external-release-evidence\.cjs"/u,
+      },
+      {
+        description: "database backup script",
+        pattern: /"backend:db:backup"\s*:\s*"node (?:-- )?scripts\/backup-postgres-database\.cjs"/u,
+      },
+      {
+        description: "database restore script",
+        pattern: /"backend:db:restore"\s*:\s*"node (?:-- )?scripts\/restore-postgres-database\.cjs"/u,
+      },
+      {
+        description: "database rollback rehearsal script",
+        pattern: /"backend:db:rollback:rehearse"\s*:\s*"node (?:-- )?scripts\/run-database-rollback-rehearsal\.cjs"/u,
+      },
+      {
+        description: "secret rotation audit script",
+        pattern: /"backend:secrets:rotate:check"\s*:\s*"node (?:-- )?scripts\/check-secret-rotation\.cjs"/u,
+      },
+      {
+        description: "production dependency security audit script",
+        pattern: /"backend:security:audit:prod"\s*:\s*"node (?:-- )?scripts\/audit-node-dependencies\.cjs"/u,
+      },
+      {
+        description: "full dependency security audit script",
+        pattern: /"backend:security:audit:all"\s*:\s*"node (?:-- )?scripts\/audit-node-dependencies\.cjs --include-dev"/u,
       },
     ],
   },
@@ -264,6 +316,10 @@ const REQUIRED_RULES = [
         pattern: /pnpm run backend:release:repo:check/u,
       },
       {
+        description: "validation repo test step",
+        pattern: /pnpm run validation:repo:test/u,
+      },
+      {
         description: "docker image build step",
         pattern: /docker build -f apps\/api\/Dockerfile/u,
       },
@@ -326,6 +382,10 @@ const REQUIRED_RULES = [
         pattern: /pnpm run backend:release:env:prepare/u,
       },
       {
+        description: "validation repo test command",
+        pattern: /pnpm run validation:repo:test/u,
+      },
+      {
         description: "compose env-file invocation for local release rehearsal",
         pattern: /docker compose --env-file \$env:ARENA_ENV_FILE -f docker-compose\.prod\.yml/u,
       },
@@ -334,8 +394,24 @@ const REQUIRED_RULES = [
         pattern: /pnpm run backend:release:host:check/u,
       },
       {
+        description: "host recovery command",
+        pattern: /pnpm run backend:release:host:recover -- --clean-safe-caches --restart-docker --wait-for-docker-ms 180000/u,
+      },
+      {
+        description: "runtime-contract operator proof command",
+        pattern: /pnpm run backend:release:proof:operator -- --env-file <path-to-release-env> --base-url <https:\/\/host>/u,
+      },
+      {
         description: "local release rehearsal command",
         pattern: /pnpm run backend:release:rehearse:local/u,
+      },
+      {
+        description: "external release rehearsal command",
+        pattern: /pnpm run backend:release:rehearse:external -- --env-file <path-to-release-env> --base-url <https:\/\/host> --auth-token <operator-token> --proposition-id <id>/u,
+      },
+      {
+        description: "external release evidence command",
+        pattern: /pnpm run backend:release:evidence:external -- --env-file <path-to-release-env> --previous-env <path-to-previous-env> --base-url <https:\/\/host> --auth-token <operator-token> --proposition-id <id> --yes/u,
       },
       {
         description: "local release rehearsal up command without compose dependencies",
@@ -356,6 +432,30 @@ const REQUIRED_RULES = [
       {
         description: "rollback section",
         pattern: /^## Rollback$/mu,
+      },
+      {
+        description: "database backup command",
+        pattern: /pnpm run backend:db:backup/u,
+      },
+      {
+        description: "database restore command",
+        pattern: /pnpm run backend:db:restore/u,
+      },
+      {
+        description: "database rollback rehearsal command",
+        pattern: /pnpm run backend:db:rollback:rehearse/u,
+      },
+      {
+        description: "secret rotation check command",
+        pattern: /pnpm run backend:secrets:rotate:check/u,
+      },
+      {
+        description: "production dependency audit command",
+        pattern: /pnpm run backend:security:audit:prod/u,
+      },
+      {
+        description: "full dependency audit command",
+        pattern: /pnpm run backend:security:audit:all/u,
       },
     ],
   },

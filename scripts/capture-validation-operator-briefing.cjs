@@ -8,6 +8,7 @@ const {
   formatFetchFailure,
   info,
   loadEnvFile,
+  mergeRequestHeaders,
   pass,
 } = require("./_validation-common.cjs");
 const {
@@ -30,8 +31,12 @@ const VALIDATION_RUNBOOK_PATH =
 async function captureValidationOperatorBriefing(options = {}) {
   const cwd = options.cwd || process.cwd();
   const logger = options.logger || { fail, info, pass };
+  const envFilePath = path.resolve(
+    cwd,
+    options.envFilePath || ".env",
+  );
 
-  loadEnvFile(path.resolve(cwd, ".env"), { override: true });
+  loadEnvFile(envFilePath, { override: true });
 
   const propositionId = options.propositionId || "";
   if (!propositionId || propositionId.trim().length === 0) {
@@ -116,9 +121,9 @@ async function captureValidationOperatorBriefing(options = {}) {
 
   const validationChain = await fetchJsonOrThrow(fetchImpl, {
     url: `${baseUrl}/arena/internal/monitoring/validation-chain`,
-    headers: {
+    headers: mergeRequestHeaders({
       authorization: `Bearer ${authToken}`,
-    },
+    }, `${baseUrl}/arena/internal/monitoring/validation-chain`, options),
     label: "validation-chain monitoring",
   });
   fs.mkdirSync(path.dirname(validationChainPath), { recursive: true });
@@ -185,6 +190,8 @@ async function captureValidationOperatorBriefing(options = {}) {
   const briefing = buildOperatorBriefing({
     propositionId,
     baseUrl,
+    authToken,
+    envFilePath,
     proofDir,
     backendPath,
     validationChainPath,
@@ -234,16 +241,25 @@ function buildOperatorBriefing(input) {
   const runtimeOperatorSummary = input.backendRelease?.operatorSummary ?? {};
   const validationChainOperatorSummary =
     input.validationChain?.operatorSummary ?? {};
+  const rewardPayoutSummary = input.evidenceBundle?.rewardPayoutSummary ?? {};
   const publicSettledFound = input.publicResultArtifact?.found === true;
   const publicIntegrityVisible = input.publicIntegrityArtifact?.visible === true;
+  const envFileArgs = input.envFilePath
+    ? ` --env-file ${input.envFilePath}`
+    : "";
+  const authTokenArgs = input.authToken
+    ? " --auth-token <operator-token>"
+    : "";
   const betaGateFailures = buildBetaGateFailures({
     releaseReadiness: input.backendRelease?.releaseReadiness,
     validationRehearsal,
     publicSettledFound,
     publicIntegrityVisible,
   });
-  const proofCaptureCommand = `pnpm run validation:proof:capture -- --proposition-id ${input.propositionId} --base-url ${input.baseUrl}`;
-  const briefingCommand = `pnpm run validation:ops:brief -- --proposition-id ${input.propositionId} --base-url ${input.baseUrl}`;
+  const proofCaptureCommand =
+    `pnpm run validation:proof:capture -- --proposition-id ${input.propositionId}${envFileArgs} --base-url ${input.baseUrl}${authTokenArgs}`;
+  const briefingCommand =
+    `pnpm run validation:ops:brief -- --proposition-id ${input.propositionId}${envFileArgs} --base-url ${input.baseUrl}${authTokenArgs}`;
   const healthySummary =
     "Release readiness, validation runtime, proposition rehearsal, and public beta proof signals are all green.";
 
@@ -262,7 +278,7 @@ function buildOperatorBriefing(input) {
       "GET /arena/internal/monitoring/runtime-contract",
       "GET /health/ready",
       ...runtimeOperatorSummary.operatorActions,
-      `pnpm run backend:release:check -- --base-url ${input.baseUrl}`,
+      `pnpm run backend:release:check --${envFileArgs} --base-url ${input.baseUrl}${authTokenArgs}`,
     ]),
     runbookPath: BACKEND_RELEASE_RUNBOOK_PATH,
     artifactPath: input.backendPath,
@@ -328,6 +344,7 @@ function buildOperatorBriefing(input) {
     validationOperatorSummary,
     runtimeOperatorSummary,
     validationChainOperatorSummary,
+    rewardPayoutSummary,
     publicSettledFound,
     publicIntegrityVisible,
     proofCaptureCommand,
@@ -377,6 +394,37 @@ function buildOperatorBriefing(input) {
         validationRehearsal,
         validationOperatorSummary,
       },
+      rewardPayout: {
+        route: `${input.baseUrl}/arena/internal/rewards?propositionId=${encodeURIComponent(input.propositionId)}`,
+        artifactPath: path.resolve(input.proofDir, "reward-payout-summary.json"),
+        summary: {
+          propositionId: rewardPayoutSummary?.propositionId ?? input.propositionId,
+          generatedAt: rewardPayoutSummary?.generatedAt ?? null,
+          totalLedgerEntries: rewardPayoutSummary?.totalLedgerEntries ?? 0,
+          totalPayoutRecords: rewardPayoutSummary?.totalPayoutRecords ?? 0,
+          finalizedWithoutPayoutCount:
+            rewardPayoutSummary?.finalizedWithoutPayoutCount ?? 0,
+          executingWithoutTxHashCount:
+            rewardPayoutSummary?.executingWithoutTxHashCount ?? 0,
+          staleExecutingCount:
+            rewardPayoutSummary?.staleExecutingCount ?? 0,
+          staleExecutingWithoutTxHashCount:
+            rewardPayoutSummary?.staleExecutingWithoutTxHashCount ?? 0,
+          staleExecutingAwaitingConfirmationCount:
+            rewardPayoutSummary?.staleExecutingAwaitingConfirmationCount ?? 0,
+          completedWithExecutionTxHashCount:
+            rewardPayoutSummary?.completedWithExecutionTxHashCount ?? 0,
+          payoutStatusCounts: {
+            requested: rewardPayoutSummary?.payoutStatusCounts?.requested ?? 0,
+            approved: rewardPayoutSummary?.payoutStatusCounts?.approved ?? 0,
+            executing: rewardPayoutSummary?.payoutStatusCounts?.executing ?? 0,
+            completed: rewardPayoutSummary?.payoutStatusCounts?.completed ?? 0,
+            failed: rewardPayoutSummary?.payoutStatusCounts?.failed ?? 0,
+            cancelled: rewardPayoutSummary?.payoutStatusCounts?.cancelled ?? 0,
+            none: rewardPayoutSummary?.payoutStatusCounts?.none ?? 0,
+          },
+        },
+      },
       publicProof: {
         settledResultsRoute: `${input.baseUrl}/arena/public/results/settled`,
         integrityOverviewRoute: `${input.baseUrl}/arena/public/integrity/overview?propositionId=${encodeURIComponent(input.propositionId)}`,
@@ -395,6 +443,13 @@ function buildOperatorBriefing(input) {
 }
 
 function buildCurrentOperatorPath(input) {
+  const envFileArgs = input.envFilePath
+    ? ` --env-file ${input.envFilePath}`
+    : "";
+  const authTokenArgs = input.authToken
+    ? " --auth-token <operator-token>"
+    : "";
+
   if (input.runtimeOperatorSummary.requiresActionNow === true) {
     return {
       status: "action_required",
@@ -405,10 +460,10 @@ function buildCurrentOperatorPath(input) {
         "GET /arena/internal/monitoring/runtime-contract",
         "GET /health/ready",
         ...asStringArray(input.runtimeOperatorSummary.operatorActions),
-        `pnpm run backend:release:check -- --base-url ${input.baseUrl}`,
+        `pnpm run backend:release:check --${envFileArgs} --base-url ${input.baseUrl}${authTokenArgs}`,
       ]),
       proofCommands: uniqueStrings([
-        `pnpm run backend:release:check -- --base-url ${input.baseUrl}`,
+        `pnpm run backend:release:check --${envFileArgs} --base-url ${input.baseUrl}${authTokenArgs}`,
         input.briefingCommand,
       ]),
       routeChecks: [
@@ -524,6 +579,31 @@ function buildCurrentOperatorPath(input) {
     };
   }
 
+  const rewardPayoutFollowThrough = buildRewardPayoutFollowThrough(input);
+  if (rewardPayoutFollowThrough.requiresAction) {
+    return {
+      status: "action_required",
+      stage: "reward_payout",
+      summary: rewardPayoutFollowThrough.summary,
+      blockers: rewardPayoutFollowThrough.blockers,
+      operatorActions: uniqueStrings([
+        `GET /arena/internal/rewards?propositionId=${encodeURIComponent(input.propositionId)}`,
+        `GET /arena/internal/propositions/${input.propositionId}/evidence-bundle`,
+        ...rewardPayoutFollowThrough.operatorActions,
+        input.briefingCommand,
+      ]),
+      proofCommands: uniqueStrings([
+        input.proofCaptureCommand,
+        input.briefingCommand,
+      ]),
+      routeChecks: [
+        `${input.baseUrl}/arena/internal/rewards?propositionId=${encodeURIComponent(input.propositionId)}`,
+        `${input.baseUrl}/arena/internal/propositions/${input.propositionId}/evidence-bundle`,
+      ],
+      runbookPaths: [BACKEND_RELEASE_RUNBOOK_PATH],
+    };
+  }
+
   return {
     status: "ready",
     stage: "healthy",
@@ -543,6 +623,126 @@ function buildCurrentOperatorPath(input) {
     ],
     runbookPaths: [BACKEND_RELEASE_RUNBOOK_PATH, VALIDATION_RUNBOOK_PATH],
   };
+}
+
+function buildRewardPayoutFollowThrough(input) {
+  const summary = input.rewardPayoutSummary ?? {};
+  const payoutStatusCounts = summary.payoutStatusCounts ?? {};
+  const finalizedWithoutPayoutCount = asCount(
+    summary.finalizedWithoutPayoutCount,
+  );
+  const requestedCount = asCount(payoutStatusCounts.requested);
+  const approvedCount = asCount(payoutStatusCounts.approved);
+  const executingCount = asCount(payoutStatusCounts.executing);
+  const executingWithoutTxHashCount = asCount(
+    summary.executingWithoutTxHashCount,
+  );
+  const staleExecutingCount = asCount(summary.staleExecutingCount);
+  const staleExecutingWithoutTxHashCount = asCount(
+    summary.staleExecutingWithoutTxHashCount,
+  );
+  const staleExecutingAwaitingConfirmationCount = asCount(
+    summary.staleExecutingAwaitingConfirmationCount,
+  );
+  const failedCount = asCount(payoutStatusCounts.failed);
+  const cancelledCount = asCount(payoutStatusCounts.cancelled);
+  const executingAwaitingConfirmationCount = Math.max(
+    0,
+    executingCount - executingWithoutTxHashCount,
+  );
+  const freshExecutingWithoutTxHashCount = Math.max(
+    0,
+    executingWithoutTxHashCount - staleExecutingWithoutTxHashCount,
+  );
+  const freshExecutingAwaitingConfirmationCount = Math.max(
+    0,
+    executingAwaitingConfirmationCount - staleExecutingAwaitingConfirmationCount,
+  );
+
+  const issues = [];
+  const blockers = [];
+  const operatorActions = [];
+
+  if (finalizedWithoutPayoutCount > 0) {
+    issues.push(
+      `${finalizedWithoutPayoutCount} finalized rewards still lack payout records`,
+    );
+    blockers.push("finalized_rewards_without_payout_records");
+  }
+
+  if (requestedCount > 0) {
+    issues.push(`${requestedCount} payouts are still waiting for approval`);
+    blockers.push("reward_payouts_pending_approval");
+  }
+
+  if (approvedCount > 0) {
+    issues.push(`${approvedCount} approved payouts are still waiting for execution`);
+    blockers.push("reward_payouts_pending_execution");
+  }
+
+  if (staleExecutingWithoutTxHashCount > 0) {
+    issues.push(
+      `${staleExecutingWithoutTxHashCount} executing payouts have gone stale without recorded transaction hashes`,
+    );
+    blockers.push("stale_executing_reward_payouts_missing_tx_hash");
+  }
+
+  if (freshExecutingWithoutTxHashCount > 0) {
+    issues.push(
+      `${freshExecutingWithoutTxHashCount} executing payouts still lack recorded transaction hashes`,
+    );
+    blockers.push("executing_reward_payouts_missing_tx_hash");
+  }
+
+  if (staleExecutingAwaitingConfirmationCount > 0) {
+    issues.push(
+      `${staleExecutingAwaitingConfirmationCount} executing payouts have gone stale while awaiting confirmation`,
+    );
+    blockers.push("stale_reward_payouts_pending_confirmation");
+  }
+
+  if (freshExecutingAwaitingConfirmationCount > 0) {
+    issues.push(
+      `${freshExecutingAwaitingConfirmationCount} executing payouts still await confirmation`,
+    );
+    blockers.push("executing_reward_payouts_pending_confirmation");
+  }
+
+  if (failedCount > 0) {
+    issues.push(`${failedCount} payouts are currently failed and need retry or resolution`);
+    blockers.push("failed_reward_payouts");
+  }
+
+  if (cancelledCount > 0) {
+    issues.push(`${cancelledCount} payouts are cancelled and still need operator review`);
+    blockers.push("cancelled_reward_payouts");
+  }
+
+  if (staleExecutingCount > 0) {
+    operatorActions.push(
+      `GET /arena/internal/rewards?propositionId=${encodeURIComponent(input.propositionId)}&staleExecutionOnly=true`,
+    );
+  }
+
+  if (issues.length === 0) {
+    return {
+      requiresAction: false,
+      summary: "Reward payout follow-through is green.",
+      blockers: [],
+      operatorActions: [],
+    };
+  }
+
+  return {
+    requiresAction: true,
+    summary: `Reward payout follow-through is incomplete: ${issues.join("; ")}.`,
+    blockers,
+    operatorActions,
+  };
+}
+
+function asCount(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function buildBetaGateFailures(input) {
@@ -590,6 +790,9 @@ function logBriefingSummary(logger, briefing) {
   );
   logger.info(
     `Proposition evidence artifact: ${briefing.surfaces.propositionEvidence.artifactPath}`,
+  );
+  logger.info(
+    `Reward payout artifact: ${briefing.surfaces.rewardPayout.artifactPath}`,
   );
   logger.info(
     `Public settled-result artifact: ${briefing.surfaces.publicProof.publicSettledResultArtifact}`,
@@ -695,6 +898,12 @@ function parseCliArgs(argv) {
     const token = argv[index];
     const next = argv[index + 1];
 
+    if (token === "--env-file" && next) {
+      parsed.envFilePath = next;
+      index += 1;
+      continue;
+    }
+
     if (token === "--proposition-id" && next) {
       parsed.propositionId = next;
       index += 1;
@@ -743,4 +952,5 @@ if (require.main === module) {
 
 module.exports = {
   captureValidationOperatorBriefing,
+  parseCliArgs,
 };

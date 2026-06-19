@@ -7,6 +7,7 @@ const {
   fail,
   info,
   loadEnvFile,
+  mergeRequestHeaders,
   pass,
 } = require("./_validation-common.cjs");
 const {
@@ -25,8 +26,12 @@ const {
 async function captureValidationProof(options = {}) {
   const cwd = options.cwd || process.cwd();
   const logger = options.logger || { fail, info, pass };
+  const envFilePath = path.resolve(
+    cwd,
+    options.envFilePath || ".env",
+  );
 
-  loadEnvFile(path.resolve(cwd, ".env"), { override: true });
+  loadEnvFile(envFilePath, { override: true });
 
   const propositionId = options.propositionId || "";
   if (!propositionId || propositionId.trim().length === 0) {
@@ -44,6 +49,9 @@ async function captureValidationProof(options = {}) {
     path.resolve(proofDir, "backend-release-readiness.json");
   const evidencePath =
     options.evidenceOutputPath || path.resolve(proofDir, "evidence-bundle.json");
+  const rewardPayoutPath =
+    options.rewardPayoutOutputPath ||
+    path.resolve(proofDir, "reward-payout-summary.json");
   const publicResultPath =
     options.publicOutputPath ||
     path.resolve(proofDir, "public-settled-result.json");
@@ -52,6 +60,15 @@ async function captureValidationProof(options = {}) {
     path.resolve(proofDir, "public-integrity-overview.json");
   const summaryPath =
     options.outputPath || path.resolve(proofDir, "proof-summary.json");
+  const fetchImpl = options.fetchImpl || fetch;
+  const baseUrl = stripTrailingSlash(
+    options.baseUrl ||
+      process.env.ARENA_INTERNAL_API_BASE_URL ||
+      process.env.VITE_API_BASE_URL ||
+      "http://127.0.0.1:4000",
+  );
+  const authToken =
+    options.authToken || process.env.ARENA_INTERNAL_OPERATOR_BEARER_TOKEN || "";
 
   const releaseLogger = createBufferedLogger();
   await checkBackendReleaseReadiness({
@@ -119,6 +136,7 @@ async function captureValidationProof(options = {}) {
   const publicIntegrityArtifact = JSON.parse(
     fs.readFileSync(publicIntegrityPath, "utf8"),
   );
+  const rewardPayoutSummary = evidence?.rewardPayoutSummary ?? null;
   const releaseReady = backendRelease?.releaseReadiness?.status === "ready";
   const rehearsal = evidence?.propositionExport?.validationRehearsal;
   const rehearsalSummary = rehearsal?.summary ?? {};
@@ -209,9 +227,36 @@ async function captureValidationProof(options = {}) {
       liveReachedSampleThreshold:
         publicIntegrityArtifact?.focus?.liveItem?.reachedSampleThreshold ?? null,
     },
+    rewardPayout: {
+      propositionId: rewardPayoutSummary?.propositionId ?? propositionId,
+      generatedAt: rewardPayoutSummary?.generatedAt ?? null,
+      totalLedgerEntries: rewardPayoutSummary?.totalLedgerEntries ?? 0,
+      totalPayoutRecords: rewardPayoutSummary?.totalPayoutRecords ?? 0,
+      finalizedWithoutPayoutCount:
+        rewardPayoutSummary?.finalizedWithoutPayoutCount ?? 0,
+      executingWithoutTxHashCount:
+        rewardPayoutSummary?.executingWithoutTxHashCount ?? 0,
+      staleExecutingCount: rewardPayoutSummary?.staleExecutingCount ?? 0,
+      staleExecutingWithoutTxHashCount:
+        rewardPayoutSummary?.staleExecutingWithoutTxHashCount ?? 0,
+      staleExecutingAwaitingConfirmationCount:
+        rewardPayoutSummary?.staleExecutingAwaitingConfirmationCount ?? 0,
+      completedWithExecutionTxHashCount:
+        rewardPayoutSummary?.completedWithExecutionTxHashCount ?? 0,
+      payoutStatusCounts: {
+        requested: rewardPayoutSummary?.payoutStatusCounts?.requested ?? 0,
+        approved: rewardPayoutSummary?.payoutStatusCounts?.approved ?? 0,
+        executing: rewardPayoutSummary?.payoutStatusCounts?.executing ?? 0,
+        completed: rewardPayoutSummary?.payoutStatusCounts?.completed ?? 0,
+        failed: rewardPayoutSummary?.payoutStatusCounts?.failed ?? 0,
+        cancelled: rewardPayoutSummary?.payoutStatusCounts?.cancelled ?? 0,
+        none: rewardPayoutSummary?.payoutStatusCounts?.none ?? 0,
+      },
+    },
     artifacts: {
       backendReleaseReadiness: backendPath,
       evidenceBundle: evidencePath,
+      rewardPayoutSummary: rewardPayoutPath,
       publicSettledResult: publicResultPath,
       publicIntegrityOverview: publicIntegrityPath,
       proofSummary: summaryPath,
@@ -220,6 +265,16 @@ async function captureValidationProof(options = {}) {
 
   fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
   fs.writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+
+  if (authToken && authToken.trim().length > 0) {
+    await registerValidationProofRecord({
+      fetchImpl,
+      baseUrl,
+      authToken,
+      summary,
+      logger,
+    });
+  }
 
   logger.info(
     `Proof status for ${propositionId}: ${summary.proofComplete ? "complete" : "incomplete"}`,
@@ -259,8 +314,12 @@ async function captureValidationProof(options = {}) {
       );
     }
   }
+  logger.info(
+    `Reward payouts: ${summary.rewardPayout.payoutStatusCounts.completed} completed, ${summary.rewardPayout.finalizedWithoutPayoutCount} finalized rewards still pending payout follow-through, ${summary.rewardPayout.staleExecutingCount} stale executing payouts`,
+  );
   logger.info(`Backend release snapshot: ${backendPath}`);
   logger.info(`Evidence bundle: ${evidencePath}`);
+  logger.info(`Reward payout artifact: ${rewardPayoutPath}`);
   logger.info(`Public result artifact: ${publicResultPath}`);
   logger.info(`Public integrity artifact: ${publicIntegrityPath}`);
   logger.info(`Proof summary: ${summaryPath}`);
@@ -302,6 +361,13 @@ async function captureValidationProof(options = {}) {
     }
   }
 
+  logSuggestedFollowUpCommands(logger, {
+    authToken,
+    baseUrl,
+    envFilePath,
+    propositionId,
+  });
+
   logger.fail("Validation proposition proof is incomplete.");
   return 1;
 }
@@ -329,12 +395,121 @@ function replayBufferedFailures(buffer, logger) {
   }
 }
 
+function logSuggestedFollowUpCommands(logger, options) {
+  logger.info("Suggested follow-up commands:");
+  logger.info(buildValidationProofCaptureCommand(options));
+  logger.info(buildValidationOperatorBriefingCommand(options));
+}
+
+function buildValidationProofCaptureCommand(options) {
+  const envFileArgs = options.envFilePath
+    ? ` --env-file ${options.envFilePath}`
+    : "";
+  const authTokenArgs = options.authToken ? " --auth-token <operator-token>" : "";
+  return `- pnpm run validation:proof:capture -- --proposition-id ${options.propositionId}${envFileArgs} --base-url ${options.baseUrl}${authTokenArgs}`;
+}
+
+function buildValidationOperatorBriefingCommand(options) {
+  const envFileArgs = options.envFilePath
+    ? ` --env-file ${options.envFilePath}`
+    : "";
+  const authTokenArgs = options.authToken ? " --auth-token <operator-token>" : "";
+  return `- pnpm run validation:ops:brief -- --proposition-id ${options.propositionId}${envFileArgs} --base-url ${options.baseUrl}${authTokenArgs}`;
+}
+
+async function registerValidationProofRecord(input) {
+  const proofRecordUrl = `${input.baseUrl}/arena/internal/validation-chain/proof-record`;
+  const response = await input.fetchImpl(
+    proofRecordUrl,
+    {
+      method: "POST",
+      headers: mergeRequestHeaders({
+        authorization: `Bearer ${input.authToken}`,
+        "content-type": "application/json",
+      }, proofRecordUrl, input),
+      body: JSON.stringify({
+        propositionId: input.summary.propositionId,
+        proofComplete: input.summary.proofComplete,
+        failures: input.summary.failures,
+        releaseReadinessStatus: input.summary.releaseReadiness.status,
+        releaseBlockingDependencies:
+          input.summary.releaseReadiness.blockingDependencies,
+        validationRehearsalStatus: input.summary.validationRehearsal.status,
+        validationCurrentStepId:
+          input.summary.validationRehearsal.currentStepId ?? null,
+        validationCurrentStepStatus:
+          input.summary.validationRehearsal.currentStepStatus ?? null,
+        completedStepCount:
+          input.summary.validationRehearsal.completedStepCount ?? 0,
+        remainingStepCount:
+          input.summary.validationRehearsal.remainingStepCount ?? 0,
+        latestCheckpointStepId:
+          input.summary.validationRehearsal.latestCheckpointStepId ?? null,
+        latestCheckpointStatus:
+          input.summary.validationRehearsal.latestCheckpointStatus ?? null,
+        latestCheckpointAt:
+          input.summary.validationRehearsal.latestCheckpointAt ?? null,
+        publicSettledResultVisible: input.summary.publicSettledResult.found,
+        publicIntegrityOverviewVisible:
+          input.summary.publicIntegrityOverview.visible,
+        rewardPayoutLedgerEntryCount:
+          input.summary.rewardPayout.totalLedgerEntries ?? 0,
+        rewardPayoutRecordCount:
+          input.summary.rewardPayout.totalPayoutRecords ?? 0,
+        rewardPayoutFinalizedWithoutPayoutCount:
+          input.summary.rewardPayout.finalizedWithoutPayoutCount ?? 0,
+        rewardPayoutExecutingWithoutTxHashCount:
+          input.summary.rewardPayout.executingWithoutTxHashCount ?? 0,
+        rewardPayoutStaleExecutingCount:
+          input.summary.rewardPayout.staleExecutingCount ?? 0,
+        rewardPayoutStaleExecutingWithoutTxHashCount:
+          input.summary.rewardPayout.staleExecutingWithoutTxHashCount ?? 0,
+        rewardPayoutStaleExecutingAwaitingConfirmationCount:
+          input.summary.rewardPayout
+            .staleExecutingAwaitingConfirmationCount ?? 0,
+        rewardPayoutCompletedWithExecutionTxHashCount:
+          input.summary.rewardPayout.completedWithExecutionTxHashCount ?? 0,
+        rewardPayoutStatusCounts:
+          input.summary.rewardPayout.payoutStatusCounts ?? null,
+        summaryArtifactPath: input.summary.artifacts.proofSummary,
+        evidenceArtifactPath: input.summary.artifacts.evidenceBundle,
+        rewardPayoutArtifactPath: input.summary.artifacts.rewardPayoutSummary,
+        publicResultArtifactPath: input.summary.artifacts.publicSettledResult,
+        publicIntegrityArtifactPath:
+          input.summary.artifacts.publicIntegrityOverview,
+        checkedAt: input.summary.checkedAt,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const body = typeof response.text === "function" ? await response.text() : "";
+    throw new Error(
+      `Unable to register validation proof record: HTTP ${response.status} ${body}`.trim(),
+    );
+  }
+
+  input.logger.info(
+    `Validation proof record registered for ${input.summary.propositionId}.`,
+  );
+}
+
+function stripTrailingSlash(value) {
+  return String(value).replace(/\/+$/u, "");
+}
+
 function parseCliArgs(argv) {
   const parsed = {};
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     const next = argv[index + 1];
+
+    if (token === "--env-file" && next) {
+      parsed.envFilePath = next;
+      index += 1;
+      continue;
+    }
 
     if (token === "--proposition-id" && next) {
       parsed.propositionId = next;
@@ -377,5 +552,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildValidationOperatorBriefingCommand,
+  buildValidationProofCaptureCommand,
   captureValidationProof,
+  parseCliArgs,
 };

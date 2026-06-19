@@ -5,8 +5,27 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  parseCliArgs,
   checkPublicSettledResult,
 } = require("./check-public-settled-result.cjs");
+
+test("parseCliArgs resolves env-file, proposition id, base-url, and output path", () => {
+  const parsed = parseCliArgs([
+    "--env-file",
+    "config/staging.env",
+    "--proposition-id",
+    "prop_123",
+    "--base-url",
+    "https://arena.example",
+    "--output",
+    "artifacts/public-result.json",
+  ]);
+
+  assert.equal(parsed.envFilePath, "config/staging.env");
+  assert.equal(parsed.propositionId, "prop_123");
+  assert.equal(parsed.baseUrl, "https://arena.example");
+  assert.equal(parsed.outputPath, "artifacts/public-result.json");
+});
 
 test("check-public-settled-result writes a proposition-scoped public verification artifact when the settled proposition is visible", async () => {
   const workspace = fs.mkdtempSync(

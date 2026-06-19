@@ -54,6 +54,18 @@ test("bootstrap-validation-local creates a runnable local validation env", () =>
   );
   assert.match(
     envContents,
+    /^ARENA_REWARD_PAYOUT_ASSET_SYMBOL=USDC$/m,
+  );
+  assert.match(
+    envContents,
+    /^ARENA_REWARD_PAYOUT_ERC20_ADDRESS=0x[a-fA-F0-9]{40}$/m,
+  );
+  assert.match(
+    envContents,
+    /^ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY=0x[a-f0-9]{64}$/m,
+  );
+  assert.match(
+    envContents,
     /^ADMIN_WALLET_ADDRESSES=0x[a-f0-9]{40}$/m,
   );
   assert.match(

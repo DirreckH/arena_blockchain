@@ -8,14 +8,19 @@ const {
   formatFetchFailure,
   info,
   loadEnvFile,
+  mergeRequestHeaders,
   pass,
 } = require("./_validation-common.cjs");
 
 async function checkPublicIntegrityOverview(options = {}) {
   const cwd = options.cwd || process.cwd();
   const logger = options.logger || { fail, info, pass };
+  const envFilePath = path.resolve(
+    cwd,
+    options.envFilePath || ".env",
+  );
 
-  loadEnvFile(path.resolve(cwd, ".env"), { override: true });
+  loadEnvFile(envFilePath, { override: true });
 
   const propositionId = options.propositionId || "";
   const baseUrl = stripTrailingSlash(
@@ -43,6 +48,11 @@ async function checkPublicIntegrityOverview(options = {}) {
 
   const overview = await fetchJsonOrThrow(fetchImpl, {
     url: `${baseUrl}/arena/public/integrity/overview?propositionId=${encodeURIComponent(propositionId)}`,
+    headers: mergeRequestHeaders(
+      {},
+      `${baseUrl}/arena/public/integrity/overview?propositionId=${encodeURIComponent(propositionId)}`,
+      options,
+    ),
     label: "public integrity overview",
   });
   const focus = overview?.focus ?? null;
@@ -124,6 +134,7 @@ async function fetchJsonOrThrow(fetchImpl, input) {
   try {
     response = await fetchImpl(input.url, {
       method: "GET",
+      headers: input.headers,
     });
   } catch (error) {
     throw new Error(formatFetchFailure(error, input));
@@ -149,6 +160,12 @@ function parseCliArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     const next = argv[index + 1];
+
+    if (token === "--env-file" && next) {
+      parsed.envFilePath = next;
+      index += 1;
+      continue;
+    }
 
     if (token === "--proposition-id" && next) {
       parsed.propositionId = next;
@@ -186,4 +203,5 @@ if (require.main === module) {
 
 module.exports = {
   checkPublicIntegrityOverview,
+  parseCliArgs,
 };

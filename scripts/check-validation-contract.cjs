@@ -18,8 +18,32 @@ const {
 
 const DEFAULT_ADMIN_ROLE = ethers.constants.HashZero;
 
-async function main() {
-  const envState = loadEnvFile(undefined, { override: true });
+function parseArgs(argv) {
+  const options = {
+    envFilePath: undefined,
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+
+    if (argument === "--") {
+      continue;
+    }
+
+    if (argument === "--env-file") {
+      options.envFilePath = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unknown argument: ${argument}`);
+  }
+
+  return options;
+}
+
+async function main(options = {}) {
+  const envState = loadEnvFile(options.envFilePath, { override: true });
   info(
     envState.exists
       ? `Loaded .env from ${envState.envPath}`
@@ -197,7 +221,7 @@ function resolveSigner(label, roleName) {
   };
 }
 
-main().catch((error) => {
+main(parseArgs(process.argv.slice(2))).catch((error) => {
   fail(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

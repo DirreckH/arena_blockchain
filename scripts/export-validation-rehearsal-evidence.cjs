@@ -8,14 +8,19 @@ const {
   formatFetchFailure,
   info,
   loadEnvFile,
+  mergeRequestHeaders,
   pass,
 } = require("./_validation-common.cjs");
 
 async function exportValidationRehearsalEvidence(options = {}) {
   const cwd = options.cwd || process.cwd();
   const logger = options.logger || { fail, info, pass };
+  const envFilePath = path.resolve(
+    cwd,
+    options.envFilePath || ".env",
+  );
 
-  loadEnvFile(path.resolve(cwd, ".env"), { override: true });
+  loadEnvFile(envFilePath, { override: true });
 
   const propositionId = options.propositionId || "";
   const baseUrl = stripTrailingSlash(
@@ -29,6 +34,9 @@ async function exportValidationRehearsalEvidence(options = {}) {
   const outputPath =
     options.outputPath ||
     path.resolve(cwd, "validation-rehearsal-evidence.json");
+  const rewardPayoutSummaryPath =
+    options.rewardPayoutSummaryPath ||
+    path.resolve(path.dirname(outputPath), "reward-payout-summary.json");
   const fetchImpl = options.fetchImpl || fetch;
 
   if (!propositionId || propositionId.trim().length === 0) {
@@ -45,9 +53,9 @@ async function exportValidationRehearsalEvidence(options = {}) {
     return 1;
   }
 
-  const headers = {
+  const headers = mergeRequestHeaders({
     authorization: `Bearer ${authToken}`,
-  };
+  }, `${baseUrl}/arena/internal/propositions/${propositionId}/evidence-bundle`, options);
 
   const bundle =
     (await tryFetchEvidenceBundle(fetchImpl, {
@@ -61,8 +69,19 @@ async function exportValidationRehearsalEvidence(options = {}) {
       headers,
     }));
 
+  const rewardPayoutSummary = await captureRewardPayoutSummary(fetchImpl, {
+    propositionId,
+    baseUrl,
+    headers,
+  });
+  bundle.rewardPayoutSummary = rewardPayoutSummary;
+
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(bundle, null, 2)}\n`);
+  fs.writeFileSync(
+    rewardPayoutSummaryPath,
+    `${JSON.stringify(rewardPayoutSummary, null, 2)}\n`,
+  );
   logger.pass(`Validation rehearsal evidence exported to ${outputPath}`);
   return 0;
 }
@@ -132,6 +151,98 @@ async function fetchEvidenceBundleFromFallbackRoutes(fetchImpl, input) {
   };
 }
 
+async function captureRewardPayoutSummary(fetchImpl, input) {
+  const rewardsPage = await fetchJsonOrThrow(fetchImpl, {
+    url: `${input.baseUrl}/arena/internal/rewards?propositionId=${encodeURIComponent(input.propositionId)}&limit=100&offset=0`,
+    headers: input.headers,
+    label: "reward payout evidence",
+  });
+  const staleExecutionRecoverPage = await fetchJsonOrThrow(fetchImpl, {
+    url: `${input.baseUrl}/arena/internal/rewards?propositionId=${encodeURIComponent(input.propositionId)}&staleExecutionOnly=true&actionQueue=execution_recover&limit=1&offset=0`,
+    headers: input.headers,
+    label: "stale reward payout recovery evidence",
+  });
+  const staleExecutionConfirmPage = await fetchJsonOrThrow(fetchImpl, {
+    url: `${input.baseUrl}/arena/internal/rewards?propositionId=${encodeURIComponent(input.propositionId)}&staleExecutionOnly=true&actionQueue=execution_confirm&limit=1&offset=0`,
+    headers: input.headers,
+    label: "stale reward payout confirmation evidence",
+  });
+
+  const items = Array.isArray(rewardsPage?.items) ? rewardsPage.items : [];
+  const payoutStatusCounts = {
+    requested: 0,
+    approved: 0,
+    executing: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0,
+    none: 0,
+  };
+
+  let totalPayoutRecords = 0;
+  let finalizedWithoutPayoutCount = 0;
+  let executingWithoutTxHashCount = 0;
+  let completedWithExecutionTxHashCount = 0;
+  const staleExecutingWithoutTxHashCount = asCount(
+    staleExecutionRecoverPage?.totalCount,
+  );
+  const staleExecutingAwaitingConfirmationCount = asCount(
+    staleExecutionConfirmPage?.totalCount,
+  );
+
+  for (const item of items) {
+    const payoutStatus =
+      typeof item?.payoutStatus === "string" ? item.payoutStatus : null;
+    const ledgerStatus = typeof item?.status === "string" ? item.status : null;
+    const hasPayoutRecord = Boolean(item?.payoutId);
+    const hasExecutionTxHash =
+      typeof item?.payoutExecutionTxHash === "string" &&
+      item.payoutExecutionTxHash.trim().length > 0;
+
+    if (payoutStatus && Object.hasOwn(payoutStatusCounts, payoutStatus)) {
+      payoutStatusCounts[payoutStatus] += 1;
+    } else {
+      payoutStatusCounts.none += 1;
+    }
+
+    if (hasPayoutRecord) {
+      totalPayoutRecords += 1;
+    }
+
+    if (ledgerStatus === "finalized" && !hasPayoutRecord) {
+      finalizedWithoutPayoutCount += 1;
+    }
+
+    if (payoutStatus === "executing" && !hasExecutionTxHash) {
+      executingWithoutTxHashCount += 1;
+    }
+
+    if (payoutStatus === "completed" && hasExecutionTxHash) {
+      completedWithExecutionTxHashCount += 1;
+    }
+  }
+
+  return {
+    propositionId: input.propositionId,
+    generatedAt: new Date().toISOString(),
+    totalLedgerEntries: items.length,
+    totalPayoutRecords,
+    finalizedWithoutPayoutCount,
+    executingWithoutTxHashCount,
+    staleExecutingCount:
+      staleExecutingWithoutTxHashCount +
+      staleExecutingAwaitingConfirmationCount,
+    staleExecutingWithoutTxHashCount,
+    staleExecutingAwaitingConfirmationCount,
+    completedWithExecutionTxHashCount,
+    payoutStatusCounts,
+  };
+}
+
+function asCount(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 async function fetchJsonOrThrow(fetchImpl, input) {
   let response;
   try {
@@ -163,6 +274,12 @@ function parseCliArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     const next = argv[index + 1];
+
+    if (token === "--env-file" && next) {
+      parsed.envFilePath = next;
+      index += 1;
+      continue;
+    }
 
     if (token === "--proposition-id" && next) {
       parsed.propositionId = next;
@@ -206,4 +323,5 @@ if (require.main === module) {
 
 module.exports = {
   exportValidationRehearsalEvidence,
+  parseCliArgs,
 };

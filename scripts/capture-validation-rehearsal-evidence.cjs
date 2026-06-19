@@ -16,8 +16,12 @@ const {
 async function captureValidationRehearsalEvidence(options = {}) {
   const cwd = options.cwd || process.cwd();
   const logger = options.logger || { fail, info, pass };
+  const envFilePath = path.resolve(
+    cwd,
+    options.envFilePath || ".env",
+  );
 
-  loadEnvFile(path.resolve(cwd, ".env"), { override: true });
+  loadEnvFile(envFilePath, { override: true });
 
   const propositionId = options.propositionId || "";
   if (!propositionId || propositionId.trim().length === 0) {
@@ -35,6 +39,9 @@ async function captureValidationRehearsalEvidence(options = {}) {
       propositionId,
       "evidence-bundle.json",
     );
+  const rewardPayoutSummaryPath =
+    options.rewardPayoutSummaryPath ||
+    path.resolve(path.dirname(outputPath), "reward-payout-summary.json");
 
   const exportLogger = {
     fail(message) {
@@ -87,6 +94,7 @@ async function captureValidationRehearsalEvidence(options = {}) {
   );
   logger.info(`Runbook: ${rehearsal?.runbookPath ?? "unknown"}`);
   logger.info(`Evidence bundle: ${outputPath}`);
+  logger.info(`Reward payout artifact: ${rewardPayoutSummaryPath}`);
 
   const blockingReasons = Array.isArray(summary.blockingReasons)
     ? summary.blockingReasons
@@ -122,6 +130,12 @@ function parseCliArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     const next = argv[index + 1];
+
+    if (token === "--env-file" && next) {
+      parsed.envFilePath = next;
+      index += 1;
+      continue;
+    }
 
     if (token === "--proposition-id" && next) {
       parsed.propositionId = next;
@@ -165,4 +179,5 @@ if (require.main === module) {
 
 module.exports = {
   captureValidationRehearsalEvidence,
+  parseCliArgs,
 };

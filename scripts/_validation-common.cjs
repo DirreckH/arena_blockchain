@@ -192,8 +192,103 @@ function formatFetchFailure(error, input) {
   return `Unable to reach ${label} at ${targetUrl}: ${fallbackMessage}`;
 }
 
+function parseOptionalList(value) {
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  return value
+    .split(/[,\n]/u)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function buildVercelProtectionBypassHeaders(options = {}) {
+  const bypassToken = String(
+    options.vercelProtectionBypassToken ||
+      process.env.VERCEL_PROTECTION_BYPASS_TOKEN ||
+      "",
+  ).trim();
+  const trustedOidcToken = String(
+    options.vercelTrustedOidcToken ||
+      process.env.VERCEL_TRUSTED_OIDC_TOKEN ||
+      "",
+  ).trim();
+  const bypassPaths = parseOptionalList(
+    String(
+      options.vercelProtectionBypassPaths ||
+        process.env.VERCEL_PROTECTION_BYPASS_PATHS ||
+        "",
+    ),
+  );
+
+  const headers = {};
+
+  if (bypassToken) {
+    headers["x-vercel-protection-bypass"] = bypassToken;
+    headers["x-vercel-set-bypass-cookie"] = "true";
+  }
+
+  if (trustedOidcToken) {
+    headers["x-vercel-trusted-oidc-idp-token"] = trustedOidcToken;
+  }
+
+  return {
+    bypassPaths,
+    headers,
+  };
+}
+
+function shouldAttachVercelProtectionBypassHeader(url, bypassPaths = []) {
+  if (typeof url !== "string" || url.trim().length === 0) {
+    return false;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  const hostname = String(parsed.hostname || "").toLowerCase();
+  if (!(hostname.endsWith(".vercel.app") || hostname === "vercel.app")) {
+    return false;
+  }
+
+  if (bypassPaths.length === 0) {
+    return true;
+  }
+
+  return bypassPaths.some((candidate) => {
+    const normalized = String(candidate || "").trim();
+    if (!normalized) {
+      return false;
+    }
+
+    return parsed.pathname.startsWith(normalized);
+  });
+}
+
+function mergeRequestHeaders(baseHeaders, url, options = {}) {
+  const merged = {
+    ...(baseHeaders || {}),
+  };
+  const vercelBypass = buildVercelProtectionBypassHeaders(options);
+
+  if (
+    Object.keys(vercelBypass.headers).length > 0 &&
+    shouldAttachVercelProtectionBypassHeader(url, vercelBypass.bypassPaths)
+  ) {
+    Object.assign(merged, vercelBypass.headers);
+  }
+
+  return merged;
+}
+
 module.exports = {
   addressFromPrivateKey,
+  buildVercelProtectionBypassHeaders,
   createHs256Jwt,
   fail,
   formatFetchFailure,
@@ -201,9 +296,11 @@ module.exports = {
   isAddress,
   isPrivateKey,
   loadEnvFile,
+  mergeRequestHeaders,
   normalizeAddress,
   pass,
   resolveValidationArtifactPath,
   shortAddress,
+  shouldAttachVercelProtectionBypassHeader,
   verifyHs256Jwt,
 };

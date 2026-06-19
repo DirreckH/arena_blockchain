@@ -9,7 +9,10 @@ const {
   loadEnvFile,
   pass,
 } = require("./_validation-common.cjs");
+const { prepareReleaseRehearsalEnv } = require("./prepare-release-rehearsal-env.cjs");
 const {
+  emitLocalRemediation,
+  inspectContainerRuntime,
   inspectRuntimeDependencies,
 } = require("./check-validation-runtime-deps.cjs");
 
@@ -26,6 +29,10 @@ async function prepareValidationLocal(options = {}) {
   const isRpcReachable = options.isRpcReachable || defaultIsRpcReachable;
   const inspectRuntimeDependenciesFn =
     options.inspectRuntimeDependencies || inspectRuntimeDependencies;
+  const inspectContainerRuntimeFn =
+    options.inspectContainerRuntime || inspectContainerRuntime;
+  const prepareReleaseRehearsalEnvFn =
+    options.prepareReleaseRehearsalEnv || prepareReleaseRehearsalEnv;
   const rpcPollIntervalMs = options.rpcPollIntervalMs ?? 1500;
   const rpcReadyTimeoutMs = options.rpcReadyTimeoutMs ?? 60_000;
 
@@ -59,7 +66,10 @@ async function prepareValidationLocal(options = {}) {
       env: process.env,
     });
 
-    emitDependencyDiagnostics(logger, dependencyInspection.results);
+    emitDependencyDiagnostics(logger, dependencyInspection.results, {
+      env: process.env,
+      inspectContainerRuntime: inspectContainerRuntimeFn,
+    });
 
     const failedNames = new Set(dependencyInspection.failedNames);
     const onlyRpcMissing =
@@ -130,6 +140,19 @@ async function prepareValidationLocal(options = {}) {
     }
   }
 
+  const rewardPayoutTokenResult = await runCommand(
+    createCommand({
+      label: "validation:reward-payout:deploy",
+      command: "pnpm",
+      args: ["run", "validation:reward-payout:deploy"],
+      cwd,
+      env: process.env,
+    }),
+  );
+  if (!isSuccess(rewardPayoutTokenResult)) {
+    return 1;
+  }
+
   const chainCheckResult = await runCommand(
     createCommand({
       label: "validation:chain:check",
@@ -149,10 +172,9 @@ async function prepareValidationLocal(options = {}) {
         label: "validation:deploy",
         command: "pnpm",
         args: [
-          "exec",
-          "hardhat",
           "run",
-          "scripts/deploy-validation-market.cjs",
+          "validation:deploy",
+          "--",
           "--network",
           "localhost",
         ],
@@ -206,6 +228,14 @@ async function prepareValidationLocal(options = {}) {
     }),
   );
   if (!isSuccess(dbStatusResult)) {
+    return 1;
+  }
+
+  const releaseRehearsalEnvResult = await prepareReleaseRehearsalEnvFn({ cwd });
+  if (!releaseRehearsalEnvResult || releaseRehearsalEnvResult.ok !== true) {
+    logger.fail(
+      `Unable to refresh validation-local/release-rehearsal.env at ${path.resolve(cwd, "validation-local", "release-rehearsal.env")}. Fix the release rehearsal env source values and rerun pnpm run validation:prepare:local.`,
+    );
     return 1;
   }
 
@@ -280,6 +310,8 @@ async function waitForRpcReachable({
 }
 
 function emitDependencyDiagnostics(logger, results) {
+  const options = arguments[2] || {};
+
   for (const result of results) {
     if (result.ok) {
       logger.pass(`${result.name}: ${result.message}`);
@@ -287,71 +319,11 @@ function emitDependencyDiagnostics(logger, results) {
       logger.fail(`${result.name}: ${result.message}`);
     }
   }
-
-  if (process.env.ARENA_VALIDATION_ENVIRONMENT !== "local") {
-    return;
-  }
-
-  const failedNames = new Set(
-    results.filter((result) => !result.ok).map((result) => result.name),
-  );
-
-  if (failedNames.size === 0) {
-    return;
-  }
-
-  const dockerStatus = detectDockerCli();
-  const needsContainerRuntime =
-    failedNames.has("postgres") || failedNames.has("redis");
-
-  if (needsContainerRuntime && !dockerStatus.available) {
-    logger.info(
-      "Local runtime blocker: Docker or another compatible container runtime is not available in PATH, so pnpm run deps:up cannot start Postgres or Redis here.",
-    );
-    logger.info(
-      "Install Docker Desktop or provide equivalent local Postgres and Redis services, then rerun pnpm run validation:deps:check.",
-    );
-  } else if (needsContainerRuntime) {
-    logger.info(
-      "Local runtime blocker: Postgres or Redis is down. Start them with pnpm run deps:up, then rerun pnpm run validation:deps:check.",
-    );
-  }
-
-  if (failedNames.has("rpc")) {
-    logger.info(
-      "Local runtime blocker: the Hardhat/local RPC is unavailable. Start it with pnpm exec hardhat node, redeploy the validation contract if needed, then rerun pnpm run validation:deps:check and pnpm run validation:chain:check.",
-    );
-  }
-}
-
-function detectDockerCli() {
-  try {
-    const result = spawnSync("docker", ["--version"], {
-      encoding: "utf8",
-      timeout: 3000,
-      windowsHide: true,
-    });
-
-    if (result.error) {
-      return {
-        available: false,
-        reason: result.error.message,
-      };
-    }
-
-    return {
-      available: result.status === 0,
-      reason:
-        result.status === 0
-          ? null
-          : (result.stderr || result.stdout || `exit ${result.status}`).trim(),
-    };
-  } catch (error) {
-    return {
-      available: false,
-      reason: error instanceof Error ? error.message : "unknown docker detection error",
-    };
-  }
+  emitLocalRemediation(results, {
+    env: options.env || process.env,
+    inspectContainerRuntime: options.inspectContainerRuntime,
+    logger,
+  });
 }
 
 function sleep(durationMs) {
@@ -421,3 +393,4 @@ if (require.main === module) {
 module.exports = {
   prepareValidationLocal,
 };
+

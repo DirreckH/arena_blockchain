@@ -1,5 +1,9 @@
 import "@nomicfoundation/hardhat-toolbox";
 
+const validationDeployKey =
+  process.env.ARENA_VALIDATION_DEPLOYER_PRIVATE_KEY || process.env.PRIVATE_KEY || "";
+const validationRpcUrl = process.env.RPC_URL || process.env.SEPOLIA_URL || "";
+
 /** @type import('hardhat/config').HardhatUserConfig */
 export default {
   solidity: {
@@ -17,6 +21,10 @@ export default {
     },
     localhost: {
       url: "http://127.0.0.1:8545"
+    },
+    validation: {
+      url: validationRpcUrl,
+      accounts: validationDeployKey ? [validationDeployKey] : []
     },
     sepolia: {
       url: process.env.SEPOLIA_URL || "",

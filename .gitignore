@@ -23,15 +23,23 @@ dist-ssr
 *.sln
 *.sw?
 .env
+config/staging.env
+config/staging.previous.env
+config/staging.closure-inputs.json
 
 .learnings/
 .playwright-cli/
 output/
+validation-local/
+validation-rehearsal/
+backend-release-readiness.json
 
 artifacts
 cache
 .embedded-postgres/
 deployment.validation.json
 .codex-artifacts/
+.codex-temp/
 .playwright-mcp/
 tmp-home-shot.png
+.tmp-homepage-ui.png

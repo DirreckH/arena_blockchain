@@ -8,6 +8,7 @@ const {
   formatFetchFailure,
   info,
   loadEnvFile,
+  mergeRequestHeaders,
   pass,
 } = require("./_validation-common.cjs");
 
@@ -17,8 +18,12 @@ const BACKEND_RELEASE_RUNBOOK_PATH =
 async function checkBackendReleaseReadiness(options = {}) {
   const cwd = options.cwd || process.cwd();
   const logger = options.logger || { fail, info, pass };
+  const envFilePath = path.resolve(
+    cwd,
+    options.envFilePath || ".env",
+  );
 
-  loadEnvFile(path.resolve(cwd, ".env"), { override: true });
+  loadEnvFile(envFilePath, { override: true });
 
   const baseUrl = stripTrailingSlash(
     options.baseUrl ||
@@ -41,9 +46,9 @@ async function checkBackendReleaseReadiness(options = {}) {
 
   const runtimeContract = await fetchJsonOrThrow(fetchImpl, {
     url: `${baseUrl}/arena/internal/monitoring/runtime-contract`,
-    headers: {
+    headers: mergeRequestHeaders({
       authorization: `Bearer ${authToken}`,
-    },
+    }, `${baseUrl}/arena/internal/monitoring/runtime-contract`, options),
     label: "backend runtime contract",
   });
 
@@ -101,6 +106,20 @@ async function checkBackendReleaseReadiness(options = {}) {
     }
   }
 
+  if (blockedGates.some((gate) => uniqueStrings(gate.operatorActions).length > 0)) {
+    logger.info("Blocked gate operator actions:");
+    for (const gate of blockedGates) {
+      const operatorActions = uniqueStrings(gate.operatorActions);
+      if (operatorActions.length === 0) {
+        continue;
+      }
+      logger.info(`- ${gate.id}`);
+      for (const action of operatorActions) {
+        logger.info(`  - ${action}`);
+      }
+    }
+  }
+
   const operatorActions = Array.isArray(runtimeContract.validationChain?.operatorActions)
     ? runtimeContract.validationChain.operatorActions
     : [];
@@ -120,7 +139,17 @@ async function checkBackendReleaseReadiness(options = {}) {
     }
   }
 
+  if (runtimeContract.validationProofRecord) {
+    logValidationProofRecordSummary(logger, runtimeContract.validationProofRecord);
+  } else {
+    logger.info("Validation proof record: missing");
+  }
+
   if (runtimeContract.releaseReadiness?.status === "blocked") {
+    logSuggestedRerunCommands(logger, {
+      baseUrl,
+      propositionId: runtimeContract.validationProofRecord?.propositionId,
+    });
     logger.fail("Backend release readiness is blocked.");
     return 1;
   }
@@ -156,6 +185,61 @@ function uniqueStrings(values) {
   );
 }
 
+function logValidationProofRecordSummary(logger, proofRecord) {
+  logger.info(
+    `Validation proof record: ${proofRecord.proofComplete ? "complete" : "incomplete"} / ${proofRecord.environment ?? "unknown"} / chain ${proofRecord.chainId ?? "unknown"} / proposition ${proofRecord.propositionId ?? "unknown"}`,
+  );
+  logger.info(
+    `Validation proof release status: ${proofRecord.releaseReadinessStatus ?? "unknown"}`,
+  );
+  logger.info(
+    `Validation proof payout summary: ledgers=${proofRecord.rewardPayoutLedgerEntryCount ?? 0}, payouts=${proofRecord.rewardPayoutRecordCount ?? 0}, finalizedWithoutPayout=${proofRecord.rewardPayoutFinalizedWithoutPayoutCount ?? 0}, executingWithoutTxHash=${proofRecord.rewardPayoutExecutingWithoutTxHashCount ?? 0}, staleExecuting=${proofRecord.rewardPayoutStaleExecutingCount ?? 0}`,
+  );
+
+  const payoutStatusCounts = proofRecord.rewardPayoutStatusCounts || {};
+  logger.info(
+    `Validation proof payout statuses: requested=${payoutStatusCounts.requested ?? 0}, approved=${payoutStatusCounts.approved ?? 0}, executing=${payoutStatusCounts.executing ?? 0}, completed=${payoutStatusCounts.completed ?? 0}, failed=${payoutStatusCounts.failed ?? 0}, cancelled=${payoutStatusCounts.cancelled ?? 0}, none=${payoutStatusCounts.none ?? 0}`,
+  );
+
+  const proofBlockingDependencies = uniqueStrings(
+    proofRecord.releaseBlockingDependencies,
+  );
+  if (proofBlockingDependencies.length === 0) {
+    logger.info("Validation proof blocking dependencies: none");
+  } else {
+    logger.info(
+      `Validation proof blocking dependencies: ${proofBlockingDependencies.join(", ")}`,
+    );
+  }
+
+  if (typeof proofRecord.summaryArtifactPath === "string" && proofRecord.summaryArtifactPath.length > 0) {
+    logger.info(`Validation proof summary artifact: ${proofRecord.summaryArtifactPath}`);
+  }
+  if (typeof proofRecord.evidenceArtifactPath === "string" && proofRecord.evidenceArtifactPath.length > 0) {
+    logger.info(`Validation proof evidence artifact: ${proofRecord.evidenceArtifactPath}`);
+  }
+  if (
+    typeof proofRecord.rewardPayoutArtifactPath === "string" &&
+    proofRecord.rewardPayoutArtifactPath.length > 0
+  ) {
+    logger.info(
+      `Validation proof reward payout artifact: ${proofRecord.rewardPayoutArtifactPath}`,
+    );
+  }
+}
+
+function logSuggestedRerunCommands(logger, options) {
+  logger.info("Suggested rerun commands after remediation:");
+  logger.info(
+    `- pnpm run backend:release:check -- --base-url ${options.baseUrl} --auth-token <operator-token>`,
+  );
+  if (typeof options.propositionId === "string" && options.propositionId.length > 0) {
+    logger.info(
+      `- pnpm run validation:proof:capture -- --proposition-id ${options.propositionId} --base-url ${options.baseUrl} --env-file <path-to-release-env> --auth-token <operator-token>`,
+    );
+  }
+}
+
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/u, "");
 }
@@ -166,6 +250,12 @@ function parseCliArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     const next = argv[index + 1];
+
+    if (token === "--env-file" && next) {
+      parsed.envFilePath = next;
+      index += 1;
+      continue;
+    }
 
     if (token === "--output" && next) {
       parsed.outputPath = next;
@@ -204,4 +294,5 @@ if (require.main === module) {
 module.exports = {
   BACKEND_RELEASE_RUNBOOK_PATH,
   checkBackendReleaseReadiness,
+  parseCliArgs,
 };

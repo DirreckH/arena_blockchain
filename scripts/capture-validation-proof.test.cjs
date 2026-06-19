@@ -5,21 +5,64 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  buildValidationOperatorBriefingCommand,
+  buildValidationProofCaptureCommand,
+  parseCliArgs,
   captureValidationProof,
 } = require("./capture-validation-proof.cjs");
+
+test("parseCliArgs resolves env-file, proposition id, base-url, auth token, and output path", () => {
+  const parsed = parseCliArgs([
+    "--env-file",
+    "config/staging.env",
+    "--proposition-id",
+    "prop_complete",
+    "--base-url",
+    "https://arena.example",
+    "--auth-token",
+    "secret-token",
+    "--output",
+    "artifacts/proof-summary.json",
+  ]);
+
+  assert.equal(parsed.envFilePath, "config/staging.env");
+  assert.equal(parsed.propositionId, "prop_complete");
+  assert.equal(parsed.baseUrl, "https://arena.example");
+  assert.equal(parsed.authToken, "secret-token");
+  assert.equal(parsed.outputPath, "artifacts/proof-summary.json");
+});
+
+test("proof follow-up command builders keep proposition, env, and base URL aligned while redacting auth tokens", () => {
+  const options = {
+    propositionId: "prop_123",
+    envFilePath: "config/staging.env",
+    baseUrl: "https://arena.example",
+    authToken: "secret-token",
+  };
+
+  assert.equal(
+    buildValidationProofCaptureCommand(options),
+    "- pnpm run validation:proof:capture -- --proposition-id prop_123 --env-file config/staging.env --base-url https://arena.example --auth-token <operator-token>",
+  );
+  assert.equal(
+    buildValidationOperatorBriefingCommand(options),
+    "- pnpm run validation:ops:brief -- --proposition-id prop_123 --env-file config/staging.env --base-url https://arena.example --auth-token <operator-token>",
+  );
+});
 
 test("capture-validation-proof writes a complete proposition proof when internal rehearsal is ready and the public settled result is visible", async () => {
   const workspace = fs.mkdtempSync(
     path.join(os.tmpdir(), "arena-validation-proof-complete-"),
   );
   const logger = createLogger();
+  const recordedRequests = [];
 
   const exitCode = await captureValidationProof({
     cwd: workspace,
     propositionId: "prop_complete",
     baseUrl: "http://127.0.0.1:4000",
     authToken: "secret-token",
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init = {}) => {
       if (String(url).endsWith("/arena/internal/monitoring/runtime-contract")) {
         return jsonResponse({
           status: "ok",
@@ -36,11 +79,22 @@ test("capture-validation-proof writes a complete proposition proof when internal
           releaseReadiness: {
             status: "ready",
             blockingDependencies: [],
-            completedGateCount: 4,
-            totalGateCount: 4,
+            completedGateCount: 5,
+            totalGateCount: 5,
           },
           releaseChecklist: [],
         });
+      }
+
+      if (String(url).endsWith("/arena/internal/validation-chain/proof-record")) {
+        recordedRequests.push({
+          url: String(url),
+          method: init.method,
+          authorization: init.headers.authorization,
+          vercelBypass: init.headers["x-vercel-protection-bypass"] || null,
+          body: JSON.parse(init.body),
+        });
+        return jsonResponse({ status: "stored" });
       }
 
       if (
@@ -89,6 +143,49 @@ test("capture-validation-proof writes a complete proposition proof when internal
         });
       }
 
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_complete&limit=100&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [
+            {
+              ledgerId: "ledger_complete_1",
+              propositionId: "prop_complete",
+              status: "finalized",
+              finalAmount: "75",
+              payoutId: "payout_complete_1",
+              payoutStatus: "completed",
+              payoutAmount: "75",
+              payoutAssetSymbol: "USDC",
+              payoutRequestedAt: "2026-05-28T03:56:00.000Z",
+              payoutApprovedAt: "2026-05-28T03:57:00.000Z",
+              payoutCompletedAt: "2026-05-28T03:58:30.000Z",
+              payoutExecutionTxHash:
+                "0x2222222222222222222222222222222222222222",
+            },
+            {
+              ledgerId: "ledger_complete_2",
+              propositionId: "prop_complete",
+              status: "finalized",
+              finalAmount: "15",
+              payoutId: null,
+              payoutStatus: null,
+              payoutAmount: null,
+              payoutAssetSymbol: null,
+              payoutRequestedAt: null,
+              payoutApprovedAt: null,
+              payoutCompletedAt: null,
+              payoutExecutionTxHash: null,
+            },
+          ],
+          totalCount: 2,
+          limit: 100,
+          offset: 0,
+        });
+      }
+
       if (String(url).endsWith("/arena/public/results/settled")) {
         return jsonResponse({
           totalCount: 1,
@@ -109,6 +206,32 @@ test("capture-validation-proof writes a complete proposition proof when internal
               onChain: true,
             },
           ],
+        });
+      }
+
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_complete&staleExecutionOnly=true&actionQueue=execution_recover&limit=1&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 1,
+          offset: 0,
+        });
+      }
+
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_complete&staleExecutionOnly=true&actionQueue=execution_confirm&limit=1&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 1,
+          offset: 0,
         });
       }
 
@@ -170,6 +293,7 @@ test("capture-validation-proof writes a complete proposition proof when internal
   const summaryPath = path.join(proofDir, "proof-summary.json");
   const backendPath = path.join(proofDir, "backend-release-readiness.json");
   const evidencePath = path.join(proofDir, "evidence-bundle.json");
+  const rewardPayoutPath = path.join(proofDir, "reward-payout-summary.json");
   const publicPath = path.join(proofDir, "public-settled-result.json");
   const publicIntegrityPath = path.join(
     proofDir,
@@ -179,6 +303,7 @@ test("capture-validation-proof writes a complete proposition proof when internal
   assert.equal(fs.existsSync(summaryPath), true);
   assert.equal(fs.existsSync(backendPath), true);
   assert.equal(fs.existsSync(evidencePath), true);
+  assert.equal(fs.existsSync(rewardPayoutPath), true);
   assert.equal(fs.existsSync(publicPath), true);
   assert.equal(fs.existsSync(publicIntegrityPath), true);
 
@@ -193,44 +318,170 @@ test("capture-validation-proof writes a complete proposition proof when internal
   assert.equal(summary.publicIntegrityOverview.visible, true);
   assert.equal(summary.publicIntegrityOverview.focusSource, "archive");
   assert.equal(summary.publicIntegrityOverview.focusSettlementTxHash, "0xdef");
+  assert.equal(summary.rewardPayout.totalLedgerEntries, 2);
+  assert.equal(summary.rewardPayout.totalPayoutRecords, 1);
+  assert.equal(summary.rewardPayout.finalizedWithoutPayoutCount, 1);
+  assert.equal(summary.rewardPayout.staleExecutingCount, 0);
+  assert.equal(summary.rewardPayout.completedWithExecutionTxHashCount, 1);
+  assert.equal(summary.rewardPayout.payoutStatusCounts.completed, 1);
+  assert.equal(summary.artifacts.rewardPayoutSummary, rewardPayoutPath);
+  assert.equal(recordedRequests.length, 1);
+  assert.equal(
+    recordedRequests[0].url,
+    "http://127.0.0.1:4000/arena/internal/validation-chain/proof-record",
+  );
+  assert.equal(recordedRequests[0].method, "POST");
+  assert.equal(recordedRequests[0].authorization, "Bearer secret-token");
+  assert.equal(recordedRequests[0].vercelBypass, null);
+  assert.equal(recordedRequests[0].body.propositionId, "prop_complete");
+  assert.equal(recordedRequests[0].body.proofComplete, true);
+  assert.deepEqual(recordedRequests[0].body.failures, []);
+  assert.equal(recordedRequests[0].body.rewardPayoutStaleExecutingCount, 0);
+  assert.equal(
+    recordedRequests[0].body.rewardPayoutStaleExecutingWithoutTxHashCount,
+    0,
+  );
+  assert.equal(
+    recordedRequests[0].body
+      .rewardPayoutStaleExecutingAwaitingConfirmationCount,
+    0,
+  );
+  assert.equal(
+    recordedRequests[0].body.rewardPayoutArtifactPath,
+    rewardPayoutPath,
+  );
 
   assert.deepEqual(logger.failMessages, []);
   assert.deepEqual(logger.passMessages, [
     "Validation proposition proof is complete for prop_complete",
   ]);
-  assert.match(logger.infoMessages[0], /Proof status for prop_complete: complete/u);
-  assert.match(logger.infoMessages[1], /Release readiness: ready/u);
-  assert.match(logger.infoMessages[2], /Validation rehearsal: ready/u);
-  assert.match(logger.infoMessages[3], /Public settled result: visible/u);
-  assert.match(logger.infoMessages[4], /Public integrity overview: visible/u);
-  assert.match(
-    logger.infoMessages[5],
-    /Latest checkpoint: projection_and_settlement \(complete\) at 2026-05-28T03:55:00.000Z/u,
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Proof status for prop_complete: complete/u.test(message),
+    ),
+    true,
   );
-  assert.match(logger.infoMessages[6], /Public settled at: 2026-05-28T03:58:00.000Z/u);
-  assert.match(logger.infoMessages[7], /Public settlement tx: 0xdef/u);
-  assert.match(logger.infoMessages[8], /Public integrity focus source: archive/u);
-  assert.match(logger.infoMessages[9], /Public integrity settled at: 2026-05-28T03:58:00.000Z/u);
-  assert.match(logger.infoMessages[10], /Public integrity settlement tx: 0xdef/u);
-  assert.match(
-    logger.infoMessages[11],
-    new RegExp(escapeRegExp(`Backend release snapshot: ${backendPath}`), "u"),
+  assert.equal(
+    logger.infoMessages.some((message) => /Release readiness: ready/u.test(message)),
+    true,
   );
-  assert.match(
-    logger.infoMessages[12],
-    new RegExp(escapeRegExp(`Evidence bundle: ${evidencePath}`), "u"),
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Validation rehearsal: ready/u.test(message),
+    ),
+    true,
   );
-  assert.match(
-    logger.infoMessages[13],
-    new RegExp(escapeRegExp(`Public result artifact: ${publicPath}`), "u"),
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Public settled result: visible/u.test(message),
+    ),
+    true,
   );
-  assert.match(
-    logger.infoMessages[14],
-    new RegExp(escapeRegExp(`Public integrity artifact: ${publicIntegrityPath}`), "u"),
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Public integrity overview: visible/u.test(message),
+    ),
+    true,
   );
-  assert.match(
-    logger.infoMessages[15],
-    new RegExp(escapeRegExp(`Proof summary: ${summaryPath}`), "u"),
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Latest checkpoint: projection_and_settlement \(complete\) at 2026-05-28T03:55:00.000Z/u.test(
+        message,
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Public settled at: 2026-05-28T03:58:00.000Z/u.test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Public settlement tx: 0xdef/u.test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Public integrity focus source: archive/u.test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Public integrity settled at: 2026-05-28T03:58:00.000Z/u.test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Public integrity settlement tx: 0xdef/u.test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      /Reward payouts: 1 completed, 1 finalized rewards still pending payout follow-through, 0 stale executing payouts/u.test(
+        message,
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      new RegExp(escapeRegExp(`Backend release snapshot: ${backendPath}`), "u").test(
+        message,
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      new RegExp(escapeRegExp(`Evidence bundle: ${evidencePath}`), "u").test(
+        message,
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      new RegExp(escapeRegExp(`Public result artifact: ${publicPath}`), "u").test(
+        message,
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      new RegExp(
+        escapeRegExp(`Public integrity artifact: ${publicIntegrityPath}`),
+        "u",
+      ).test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      new RegExp(
+        escapeRegExp(`Reward payout artifact: ${rewardPayoutPath}`),
+        "u",
+      ).test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.some((message) =>
+      new RegExp(escapeRegExp(`Proof summary: ${summaryPath}`), "u").test(message),
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.includes(
+      "Validation proof record registered for prop_complete.",
+    ),
+    true,
   );
 });
 
@@ -239,13 +490,14 @@ test("capture-validation-proof writes an incomplete proof summary when internal 
     path.join(os.tmpdir(), "arena-validation-proof-incomplete-"),
   );
   const logger = createLogger();
+  const recordedRequests = [];
 
   const exitCode = await captureValidationProof({
     cwd: workspace,
     propositionId: "prop_incomplete",
     baseUrl: "https://arena.example",
     authToken: "secret-token",
-    fetchImpl: async (url) => {
+    fetchImpl: async (url, init = {}) => {
       if (String(url).endsWith("/arena/internal/monitoring/runtime-contract")) {
         return jsonResponse({
           status: "degraded",
@@ -322,6 +574,45 @@ test("capture-validation-proof writes an incomplete proof summary when internal 
         });
       }
 
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_incomplete&limit=100&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 100,
+          offset: 0,
+        });
+      }
+
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_incomplete&staleExecutionOnly=true&actionQueue=execution_recover&limit=1&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 1,
+          offset: 0,
+        });
+      }
+
+      if (
+        String(url).endsWith(
+          "/arena/internal/rewards?propositionId=prop_incomplete&staleExecutionOnly=true&actionQueue=execution_confirm&limit=1&offset=0",
+        )
+      ) {
+        return jsonResponse({
+          items: [],
+          totalCount: 0,
+          limit: 1,
+          offset: 0,
+        });
+      }
+
       if (String(url).endsWith("/arena/public/results/settled")) {
         return jsonResponse({
           totalCount: 0,
@@ -360,6 +651,17 @@ test("capture-validation-proof writes an incomplete proof summary when internal 
         });
       }
 
+      if (String(url).endsWith("/arena/internal/validation-chain/proof-record")) {
+        recordedRequests.push({
+          url: String(url),
+          method: init.method,
+          authorization: init.headers.authorization,
+          vercelBypass: init.headers["x-vercel-protection-bypass"] || null,
+          body: JSON.parse(init.body),
+        });
+        return jsonResponse({ status: "stored" });
+      }
+
       throw new Error(`Unexpected URL ${url}`);
     },
     logger,
@@ -369,7 +671,9 @@ test("capture-validation-proof writes an incomplete proof summary when internal 
 
   const proofDir = path.join(workspace, "validation-rehearsal", "prop_incomplete");
   const summaryPath = path.join(proofDir, "proof-summary.json");
+  const rewardPayoutPath = path.join(proofDir, "reward-payout-summary.json");
   assert.equal(fs.existsSync(summaryPath), true);
+  assert.equal(fs.existsSync(rewardPayoutPath), true);
 
   const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
   assert.equal(summary.proofComplete, false);
@@ -383,6 +687,32 @@ test("capture-validation-proof writes an incomplete proof summary when internal 
   assert.equal(summary.validationRehearsal.status, "blocked");
   assert.equal(summary.publicSettledResult.found, false);
   assert.equal(summary.publicIntegrityOverview.visible, false);
+  assert.equal(summary.rewardPayout.totalLedgerEntries, 0);
+  assert.equal(summary.artifacts.rewardPayoutSummary, rewardPayoutPath);
+  assert.equal(recordedRequests.length, 1);
+  assert.equal(recordedRequests[0].body.propositionId, "prop_incomplete");
+  assert.equal(recordedRequests[0].vercelBypass, null);
+  assert.equal(recordedRequests[0].body.proofComplete, false);
+  assert.deepEqual(recordedRequests[0].body.failures, [
+    "releaseReadiness.blocked",
+    "validationRehearsal.blocked",
+    "publicSettledResult.missing",
+    "publicIntegrityOverview.missing",
+  ]);
+  assert.equal(recordedRequests[0].body.rewardPayoutStaleExecutingCount, 0);
+  assert.equal(
+    recordedRequests[0].body.rewardPayoutStaleExecutingWithoutTxHashCount,
+    0,
+  );
+  assert.equal(
+    recordedRequests[0].body
+      .rewardPayoutStaleExecutingAwaitingConfirmationCount,
+    0,
+  );
+  assert.equal(
+    recordedRequests[0].body.rewardPayoutArtifactPath,
+    rewardPayoutPath,
+  );
   assert.deepEqual(logger.passMessages, []);
   assert.deepEqual(logger.failMessages, [
     "Validation proposition proof is incomplete.",
@@ -410,6 +740,22 @@ test("capture-validation-proof writes an incomplete proof summary when internal 
   assert.equal(
     logger.infoMessages.includes(
       "Public integrity note: Proposition prop_incomplete is not yet visible in the public integrity overview.",
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.includes("Suggested follow-up commands:"),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.includes(
+      `- pnpm run validation:proof:capture -- --proposition-id prop_incomplete --env-file ${path.join(workspace, ".env")} --base-url https://arena.example --auth-token <operator-token>`,
+    ),
+    true,
+  );
+  assert.equal(
+    logger.infoMessages.includes(
+      `- pnpm run validation:ops:brief -- --proposition-id prop_incomplete --env-file ${path.join(workspace, ".env")} --base-url https://arena.example --auth-token <operator-token>`,
     ),
     true,
   );

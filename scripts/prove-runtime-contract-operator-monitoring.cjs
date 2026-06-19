@@ -11,6 +11,7 @@ const {
   formatFetchFailure,
   info,
   loadEnvFile,
+  mergeRequestHeaders,
   normalizeAddress,
   pass,
 } = require("./_validation-common.cjs");
@@ -96,14 +97,18 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function createAuthClient(baseUrl, env) {
+function createAuthClient(baseUrl, env, options = {}) {
   let accessToken = null;
   let identity = null;
+  const fetchJsonImpl = options.fetchJsonImpl || fetchJson;
+  const signMessageImpl =
+    options.signMessageImpl ||
+    (async (privateKey, message) => new ethers.Wallet(privateKey).signMessage(message));
 
   async function authenticate() {
     const privateKey = env.ARENA_VALIDATION_OPERATOR_PRIVATE_KEY;
     const walletAddress = normalizeAddress(addressFromPrivateKey(privateKey));
-    const challengeResponse = await fetchJson(`${baseUrl}/auth/challenge`, {
+    const challengeResponse = await fetchJsonImpl(`${baseUrl}/auth/challenge`, {
       method: "POST",
       body: {
         walletAddress,
@@ -111,10 +116,8 @@ function createAuthClient(baseUrl, env) {
       },
       label: "auth challenge",
     });
-    const signature = await new ethers.Wallet(privateKey).signMessage(
-      challengeResponse.message,
-    );
-    const verifyResponse = await fetchJson(`${baseUrl}/auth/verify`, {
+    const signature = await signMessageImpl(privateKey, challengeResponse.message);
+    const verifyResponse = await fetchJsonImpl(`${baseUrl}/auth/verify`, {
       method: "POST",
       body: {
         walletAddress,
@@ -138,7 +141,7 @@ function createAuthClient(baseUrl, env) {
     }
 
     try {
-      return await fetchJson(`${baseUrl}${targetPath}`, {
+      return await fetchJsonImpl(`${baseUrl}${targetPath}`, {
         method: "GET",
         token: accessToken,
         label: targetPath,
@@ -149,7 +152,7 @@ function createAuthClient(baseUrl, env) {
         error.status === 401
       ) {
         await authenticate();
-        return fetchJson(`${baseUrl}${targetPath}`, {
+        return fetchJsonImpl(`${baseUrl}${targetPath}`, {
           method: "GET",
           token: accessToken,
           label: targetPath,
@@ -193,16 +196,17 @@ async function fetchJson(url, input) {
 }
 
 async function fetchJsonResponse(url, input) {
-  const response = await fetch(url, {
+  const fetchImpl = input.fetchImpl || fetch;
+  const response = await fetchImpl(url, {
     method: input.method,
-    headers: {
+    headers: mergeRequestHeaders({
       "content-type": "application/json",
       ...(input.token
         ? {
             authorization: `Bearer ${input.token}`,
           }
         : {}),
-    },
+    }, url, input),
     body: input.body ? JSON.stringify(input.body) : undefined,
   }).catch((error) => {
     throw new Error(
@@ -224,9 +228,14 @@ async function fetchJsonResponse(url, input) {
 }
 
 async function fetchReadinessSnapshot(baseUrl) {
+  return fetchReadinessSnapshotWithFetch(baseUrl, fetch);
+}
+
+async function fetchReadinessSnapshotWithFetch(baseUrl, fetchImpl) {
   const response = await fetchJsonResponse(`${baseUrl}/health/ready`, {
     method: "GET",
     label: "health ready",
+    fetchImpl,
   });
 
   if (response.ok) {
@@ -317,9 +326,29 @@ function summarizeRuntimeContract(snapshot) {
   };
 }
 
+function buildPropositionFollowUpCommand(scriptName, envFilePath, baseUrl) {
+  return [
+    "pnpm run",
+    scriptName,
+    "--",
+    "--proposition-id",
+    "<id>",
+    "--env-file",
+    envFilePath,
+    "--base-url",
+    baseUrl,
+    "--auth-token",
+    "<operator-token>",
+  ].join(" ");
+}
+
 async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
   const cwd = options.cwd || process.cwd();
   const logger = options.logger || { fail, info, pass };
+  const loadEnvFileImpl = options.loadEnvFileImpl || loadEnvFile;
+  const runCommandImpl = options.runCommandImpl || runCommand;
+  const fetchImpl = options.fetchImpl || fetch;
+  const waitForStateImpl = options.waitForStateImpl || waitForState;
   const envFilePath =
     options.envFilePath ||
     path.resolve(cwd, "validation-local", "release-rehearsal.env");
@@ -331,7 +360,7 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     return 1;
   }
 
-  const loadedEnv = loadEnvFile(envFilePath, { override: true }).loaded;
+  const loadedEnv = loadEnvFileImpl(envFilePath, { override: true }).loaded;
   const composeEnvFilePath = envFilePath.replace(/\\/gu, "/");
   const baseUrl = options.baseUrl || "http://127.0.0.1:4000";
   const dockerComposeEnv = {
@@ -345,9 +374,16 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     "-f",
     "docker-compose.prod.yml",
   ];
-  const authClient = createAuthClient(baseUrl, loadedEnv);
+  const authClient = createAuthClient(baseUrl, loadedEnv, {
+    fetchJsonImpl: (url, input) =>
+      fetchJson(url, {
+        ...input,
+        fetchImpl,
+      }),
+    signMessageImpl: options.signMessageImpl,
+  });
 
-  runCommand(
+  runCommandImpl(
     createCommand(
       "docker:compose:up",
       "docker",
@@ -358,7 +394,7 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     logger,
   );
 
-  await waitForState(
+  await waitForStateImpl(
     "api live startup",
     3 * 60 * 1000,
     options.pollIntervalMs ?? 15 * 1000,
@@ -366,6 +402,7 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
       const healthLive = await fetchJson(`${baseUrl}/health/live`, {
         method: "GET",
         label: "health live",
+        fetchImpl,
       });
 
       return {
@@ -375,12 +412,12 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     },
   );
 
-  await waitForState(
+  await waitForStateImpl(
     "initial readiness recovery",
     3 * 60 * 1000,
     options.pollIntervalMs ?? 15 * 1000,
     async () => {
-      const healthReady = await fetchReadinessSnapshot(baseUrl);
+      const healthReady = await fetchReadinessSnapshotWithFetch(baseUrl, fetchImpl);
 
       return {
         done: healthReady.status === "ok",
@@ -393,9 +430,9 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
   const initialRuntimeContract = await authClient.authorizedJson(
     "/arena/internal/monitoring/runtime-contract",
   );
-  const initialReady = await fetchReadinessSnapshot(baseUrl);
+  const initialReady = await fetchReadinessSnapshotWithFetch(baseUrl, fetchImpl);
 
-  runCommand(
+  runCommandImpl(
     createCommand(
       "docker:compose:stop:scheduler-worker",
       "docker",
@@ -406,12 +443,12 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     logger,
   );
 
-  const degraded = await waitForState(
+  const degraded = await waitForStateImpl(
     "scheduler worker degradation proof",
     options.degradedTimeoutMs ?? 6 * 60 * 1000,
     options.pollIntervalMs ?? 15 * 1000,
     async () => {
-      const healthReady = await fetchReadinessSnapshot(baseUrl);
+      const healthReady = await fetchReadinessSnapshotWithFetch(baseUrl, fetchImpl);
       const runtimeContract = await authClient.authorizedJson(
         "/arena/internal/monitoring/runtime-contract",
       );
@@ -432,7 +469,7 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     },
   );
 
-  runCommand(
+  runCommandImpl(
     createCommand(
       "docker:compose:restart:scheduler-worker",
       "docker",
@@ -443,12 +480,12 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     logger,
   );
 
-  const recovered = await waitForState(
+  const recovered = await waitForStateImpl(
     "scheduler worker recovery proof",
     options.recoveredTimeoutMs ?? 4 * 60 * 1000,
     options.pollIntervalMs ?? 15 * 1000,
     async () => {
-      const healthReady = await fetchReadinessSnapshot(baseUrl);
+      const healthReady = await fetchReadinessSnapshotWithFetch(baseUrl, fetchImpl);
       const runtimeContract = await authClient.authorizedJson(
         "/arena/internal/monitoring/runtime-contract",
       );
@@ -503,6 +540,23 @@ async function captureRuntimeContractOperatorMonitoringProof(options = {}) {
     `Recovered release status: ${proof.recovered.runtimeContract.releaseReadiness?.status}`,
   );
   logger.info(`Proof artifact: ${outputPath}`);
+  logger.info(
+    `Next: archive ${outputPath} alongside the matching proposition-scoped validation evidence set, then rerun proposition proof closure with:`,
+  );
+  logger.info(
+    `  ${buildPropositionFollowUpCommand(
+      "validation:ops:brief",
+      envFilePath,
+      baseUrl,
+    )}`,
+  );
+  logger.info(
+    `  ${buildPropositionFollowUpCommand(
+      "validation:proof:capture",
+      envFilePath,
+      baseUrl,
+    )}`,
+  );
   logger.pass(
     "Runtime-contract operator monitoring proof captured across degraded and recovered scheduler-worker states.",
   );

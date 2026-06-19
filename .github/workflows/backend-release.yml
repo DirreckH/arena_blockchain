@@ -49,6 +49,9 @@ jobs:
       - name: Validation-chain tests
         run: pnpm --filter @arena/api test:validation-chain
 
+      - name: Validation repo tests
+        run: pnpm run validation:repo:test
+
       - name: Backend build
         run: pnpm run backend:build
 

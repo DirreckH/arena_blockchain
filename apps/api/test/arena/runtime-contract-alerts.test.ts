@@ -370,216 +370,246 @@ const buildValidationContractReadinessStub = () =>
     },
   }) as never;
 
+const markArtifactDependenciesReady = (
+  monitoring: InternalMonitoringService,
+): InternalMonitoringService => {
+  const patchedMonitoring = monitoring as unknown as {
+    checkArenaArtifactDependency: () => {
+      name: "arena_artifact";
+      status: "up";
+    };
+    checkValidationArtifactDependency: () => {
+      name: "validation_artifact";
+      status: "up";
+    };
+  };
+
+  patchedMonitoring.checkArenaArtifactDependency = () => ({
+    name: "arena_artifact",
+    status: "up",
+  });
+  patchedMonitoring.checkValidationArtifactDependency = () => ({
+    name: "validation_artifact",
+    status: "up",
+  });
+
+  return monitoring;
+};
+
 const createBlockedRuntimeMonitoring = (
   records: Array<ReturnType<typeof buildRuntimeContractAlertRecord>>,
 ) =>
-  new InternalMonitoringService(
-    {
-      async assertReady() {
-        return undefined;
-      },
-    } as never,
-    {
-      nodeEnv: "production",
-      validationEnvironment: "local",
-      port: 4000,
-      chainId: 1337,
-      rpcUrl: "http://127.0.0.1:8545",
-      arenaContractAddress: "0x0000000000000000000000000000000000000001",
-      validationContractAddress: "0x0000000000000000000000000000000000000002",
-      validationOperatorPrivateKey:
-        "0x1111111111111111111111111111111111111111111111111111111111111111",
-      validationOraclePrivateKey:
-        "0x2222222222222222222222222222222222222222222222222222222222222222",
-      validationPauserPrivateKey:
-        "0x3333333333333333333333333333333333333333333333333333333333333333",
-    } as never,
-    {
-      async assertReady() {
-        return undefined;
-      },
-    } as never,
-    {
-      async ping() {
-        return "PONG";
-      },
-    } as never,
-    {
-      getLiveSnapshot() {
-        return {
-          status: "ok",
-          timestamp: "2026-06-02T00:06:00.000Z",
-        };
-      },
-      async getReadinessSnapshot() {
-        return {
-          status: "degraded",
-          timestamp: "2026-06-02T00:06:00.000Z",
-          dependencies: [
-            { name: "database", status: "up" },
-            { name: "redis", status: "up" },
-            { name: "rpc", status: "up" },
-            {
-              name: "scheduler_queue",
-              status: "down",
-              details: "scheduler worker heartbeat is missing",
-            },
-          ],
-        };
-      },
-    } as never,
-    {
-      async getQueueOverview() {
-        return {
-          status: "degraded",
-          timestamp: "2026-06-02T00:06:00.000Z",
-          redis: { status: "up" },
-          queues: [
-            {
-              name: "scheduler",
-              status: "down",
-              paused: false,
-              details: "scheduler worker heartbeat is missing",
-              policy: {
-                retryable: true,
-                attempts: 5,
-                backoffType: "exponential",
-                backoffDelayMs: 1000,
+  markArtifactDependenciesReady(
+    new InternalMonitoringService(
+      {
+        async assertReady() {
+          return undefined;
+        },
+      } as never,
+      {
+        nodeEnv: "production",
+        validationEnvironment: "local",
+        port: 4000,
+        chainId: 1337,
+        rpcUrl: "http://127.0.0.1:8545",
+        arenaContractAddress: "0x0000000000000000000000000000000000000001",
+        validationContractAddress: "0x0000000000000000000000000000000000000002",
+        validationOperatorPrivateKey:
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+        validationOraclePrivateKey:
+          "0x2222222222222222222222222222222222222222222222222222222222222222",
+        validationPauserPrivateKey:
+          "0x3333333333333333333333333333333333333333333333333333333333333333",
+      } as never,
+      {
+        async assertReady() {
+          return undefined;
+        },
+      } as never,
+      {
+        async ping() {
+          return "PONG";
+        },
+      } as never,
+      {
+        getLiveSnapshot() {
+          return {
+            status: "ok",
+            timestamp: "2026-06-02T00:06:00.000Z",
+          };
+        },
+        async getReadinessSnapshot() {
+          return {
+            status: "degraded",
+            timestamp: "2026-06-02T00:06:00.000Z",
+            dependencies: [
+              { name: "database", status: "up" },
+              { name: "redis", status: "up" },
+              { name: "rpc", status: "up" },
+              {
+                name: "scheduler_queue",
+                status: "down",
+                details: "scheduler worker heartbeat is missing",
               },
-              counts: {
-                waiting: 0,
-                active: 0,
-                delayed: 0,
-                completed: 0,
-                failed: 0,
+            ],
+          };
+        },
+      } as never,
+      {
+        async getQueueOverview() {
+          return {
+            status: "degraded",
+            timestamp: "2026-06-02T00:06:00.000Z",
+            redis: { status: "up" },
+            queues: [
+              {
+                name: "scheduler",
+                status: "down",
+                paused: false,
+                details: "scheduler worker heartbeat is missing",
+                policy: {
+                  retryable: true,
+                  attempts: 5,
+                  backoffType: "exponential",
+                  backoffDelayMs: 1000,
+                },
+                counts: {
+                  waiting: 0,
+                  active: 0,
+                  delayed: 0,
+                  completed: 0,
+                  failed: 0,
+                },
               },
-            },
-          ],
-        };
-      },
-    } as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {
-      async listByEntity() {
-        return records;
-      },
-    } as never,
-    buildValidationContractReadinessStub(),
-    undefined as never,
-    {
-      async getLatestProof() {
-        return null;
-      },
-    } as never,
+            ],
+          };
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        async listByEntity() {
+          return records;
+        },
+      } as never,
+      buildValidationContractReadinessStub(),
+      undefined as never,
+      {
+        async getLatestProof() {
+          return null;
+        },
+      } as never,
+    ),
   );
 
 const createReadyRuntimeMonitoring = (
   records: Array<ReturnType<typeof buildRuntimeContractAlertRecord>>,
 ) =>
-  new InternalMonitoringService(
-    {
-      async assertReady() {
-        return undefined;
-      },
-    } as never,
-    {
-      nodeEnv: "production",
-      validationEnvironment: "local",
-      port: 4000,
-      chainId: 1337,
-      rpcUrl: "http://127.0.0.1:8545",
-      arenaContractAddress: "0x0000000000000000000000000000000000000001",
-      validationContractAddress: "0x0000000000000000000000000000000000000002",
-      validationOperatorPrivateKey:
-        "0x1111111111111111111111111111111111111111111111111111111111111111",
-      validationOraclePrivateKey:
-        "0x2222222222222222222222222222222222222222222222222222222222222222",
-      validationPauserPrivateKey:
-        "0x3333333333333333333333333333333333333333333333333333333333333333",
-    } as never,
-    {
-      async assertReady() {
-        return undefined;
-      },
-    } as never,
-    {
-      async ping() {
-        return "PONG";
-      },
-    } as never,
-    {
-      getLiveSnapshot() {
-        return {
-          status: "ok",
-          timestamp: "2026-06-02T00:06:00.000Z",
-        };
-      },
-      async getReadinessSnapshot() {
-        return {
-          status: "ok",
-          timestamp: "2026-06-02T00:06:00.000Z",
-          dependencies: [
-            { name: "database", status: "up" },
-            { name: "redis", status: "up" },
-            { name: "rpc", status: "up" },
-            { name: "scheduler_queue", status: "up" },
-          ],
-        };
-      },
-    } as never,
-    {
-      async getQueueOverview() {
-        return {
-          status: "ok",
-          timestamp: "2026-06-02T00:06:00.000Z",
-          redis: { status: "up" },
-          queues: [
-            {
-              name: "scheduler",
-              status: "up",
-              paused: false,
-              details: null,
-              policy: {
-                retryable: true,
-                attempts: 5,
-                backoffType: "exponential",
-                backoffDelayMs: 1000,
+  markArtifactDependenciesReady(
+    new InternalMonitoringService(
+      {
+        async assertReady() {
+          return undefined;
+        },
+      } as never,
+      {
+        nodeEnv: "production",
+        validationEnvironment: "local",
+        port: 4000,
+        chainId: 1337,
+        rpcUrl: "http://127.0.0.1:8545",
+        arenaContractAddress: "0x0000000000000000000000000000000000000001",
+        validationContractAddress: "0x0000000000000000000000000000000000000002",
+        validationOperatorPrivateKey:
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+        validationOraclePrivateKey:
+          "0x2222222222222222222222222222222222222222222222222222222222222222",
+        validationPauserPrivateKey:
+          "0x3333333333333333333333333333333333333333333333333333333333333333",
+      } as never,
+      {
+        async assertReady() {
+          return undefined;
+        },
+      } as never,
+      {
+        async ping() {
+          return "PONG";
+        },
+      } as never,
+      {
+        getLiveSnapshot() {
+          return {
+            status: "ok",
+            timestamp: "2026-06-02T00:06:00.000Z",
+          };
+        },
+        async getReadinessSnapshot() {
+          return {
+            status: "ok",
+            timestamp: "2026-06-02T00:06:00.000Z",
+            dependencies: [
+              { name: "database", status: "up" },
+              { name: "redis", status: "up" },
+              { name: "rpc", status: "up" },
+              { name: "scheduler_queue", status: "up" },
+            ],
+          };
+        },
+      } as never,
+      {
+        async getQueueOverview() {
+          return {
+            status: "ok",
+            timestamp: "2026-06-02T00:06:00.000Z",
+            redis: { status: "up" },
+            queues: [
+              {
+                name: "scheduler",
+                status: "up",
+                paused: false,
+                details: null,
+                policy: {
+                  retryable: true,
+                  attempts: 5,
+                  backoffType: "exponential",
+                  backoffDelayMs: 1000,
+                },
+                counts: {
+                  waiting: 0,
+                  active: 0,
+                  delayed: 0,
+                  completed: 0,
+                  failed: 0,
+                },
               },
-              counts: {
-                waiting: 0,
-                active: 0,
-                delayed: 0,
-                completed: 0,
-                failed: 0,
-              },
-            },
-          ],
-        };
-      },
-    } as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {
-      async listByEntity() {
-        return records;
-      },
-    } as never,
-    buildValidationContractReadinessStub(),
-    undefined as never,
-    {
-      async getLatestProof() {
-        return null;
-      },
-    } as never,
+            ],
+          };
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        async listByEntity() {
+          return records;
+        },
+      } as never,
+      buildValidationContractReadinessStub(),
+      undefined as never,
+      {
+        async getLatestProof() {
+          return null;
+        },
+      } as never,
+    ),
   );
 
 test("runtime contract audit records deduped release alerts only when the blocker set changes", async () => {

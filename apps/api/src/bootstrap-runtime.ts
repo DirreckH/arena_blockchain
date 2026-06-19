@@ -3,9 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { Logger } from "nestjs-pino";
 
-import { AppModule } from "./app.module";
 import { AppConfigService } from "./config/app-config.service";
-import { WorkerModule } from "./worker.module";
 
 type ProcessRole = "api" | "worker" | "all";
 
@@ -51,6 +49,16 @@ function createDefaultSwaggerDocument(app: unknown) {
     .build();
 
   return SwaggerModule.createDocument(app as never, swaggerConfig);
+}
+
+async function loadDefaultAppModule(): Promise<unknown> {
+  const { AppModule } = await import("./app.module");
+  return AppModule;
+}
+
+async function loadDefaultWorkerModule(): Promise<unknown> {
+  const { WorkerModule } = await import("./worker.module");
+  return WorkerModule;
 }
 
 async function startWorkerContext(
@@ -115,12 +123,24 @@ export async function bootstrap(
   const createApplicationContext =
     dependencies.createApplicationContext ??
     ((module: unknown, options: { bufferLogs: true }) =>
-      NestFactory.create(module as never, options));
-  const appModule = dependencies.appModule ?? AppModule;
-  const workerModule = dependencies.workerModule ?? WorkerModule;
+      NestFactory.createApplicationContext(module as never, options));
   const createSwaggerDocument =
     dependencies.createSwaggerDocument ?? createDefaultSwaggerDocument;
   const setupSwagger = dependencies.setupSwagger ?? SwaggerModule.setup;
+  const needsAppModule = requestedRole !== "worker";
+  const needsWorkerModule = requestedRole !== "api";
+  const appModule = needsAppModule
+    ? (dependencies.appModule ??
+      (dependencies.createApp === undefined
+        ? await loadDefaultAppModule()
+        : null))
+    : null;
+  const workerModule = needsWorkerModule
+    ? (dependencies.workerModule ??
+      (dependencies.createApplicationContext === undefined
+        ? await loadDefaultWorkerModule()
+        : null))
+    : null;
 
   if (requestedRole === "worker") {
     return {

@@ -9,6 +9,7 @@ const {
 test("prepare-validation-local bootstraps, starts the local RPC, deploys, and finishes preflight in documented order", async () => {
   const commands = [];
   const backgroundStarts = [];
+  const releaseEnvRefreshes = [];
   let rpcChecks = 0;
 
   const exitCode = await prepareValidationLocal({
@@ -36,6 +37,13 @@ test("prepare-validation-local bootstraps, starts the local RPC, deploys, and fi
       backgroundStarts.push(command.label);
       return { started: true, pid: 4242 };
     },
+    prepareReleaseRehearsalEnv: async (options) => {
+      releaseEnvRefreshes.push(options);
+      return {
+        ok: true,
+        outputPath: path.join(options.cwd, "validation-local", "release-rehearsal.env"),
+      };
+    },
     rpcPollIntervalMs: 0,
     rpcReadyTimeoutMs: 1000,
   });
@@ -54,6 +62,8 @@ test("prepare-validation-local bootstraps, starts the local RPC, deploys, and fi
   ]);
   assert.deepEqual(backgroundStarts, ["hardhat:node"]);
   assert.equal(rpcChecks, 3);
+  assert.equal(releaseEnvRefreshes.length, 1);
+  assert.equal(releaseEnvRefreshes[0].cwd, path.resolve(__dirname, ".."));
 });
 
 test("prepare-validation-local reuses a healthy local validation deployment instead of redeploying it", async () => {
@@ -206,6 +216,7 @@ test("prepare-validation-local falls back to validation dependency diagnostics w
 test("prepare-validation-local continues when deps:up fails but dependency diagnostics prove external services are already reachable", async () => {
   const commands = [];
   const backgroundStarts = [];
+  const releaseEnvRefreshes = [];
 
   const exitCode = await prepareValidationLocal({
     cwd: path.resolve(__dirname, ".."),
@@ -254,6 +265,13 @@ test("prepare-validation-local continues when deps:up fails but dependency diagn
       backgroundStarts.push(command.label);
       return { started: true, pid: 4242 };
     },
+    prepareReleaseRehearsalEnv: async (options) => {
+      releaseEnvRefreshes.push(options);
+      return {
+        ok: true,
+        outputPath: path.join(options.cwd, "validation-local", "release-rehearsal.env"),
+      };
+    },
   });
 
   assert.equal(exitCode, 0);
@@ -269,11 +287,14 @@ test("prepare-validation-local continues when deps:up fails but dependency diagn
     "validation:db:status",
   ]);
   assert.deepEqual(backgroundStarts, []);
+  assert.equal(releaseEnvRefreshes.length, 1);
+  assert.equal(releaseEnvRefreshes[0].cwd, path.resolve(__dirname, ".."));
 });
 
 test("prepare-validation-local continues when deps:up fails and diagnostics show only the local RPC is missing", async () => {
   const commands = [];
   const backgroundStarts = [];
+  const releaseEnvRefreshes = [];
   let rpcChecks = 0;
 
   const exitCode = await prepareValidationLocal({
@@ -323,6 +344,13 @@ test("prepare-validation-local continues when deps:up fails and diagnostics show
       backgroundStarts.push(command.label);
       return { started: true, pid: 4242 };
     },
+    prepareReleaseRehearsalEnv: async (options) => {
+      releaseEnvRefreshes.push(options);
+      return {
+        ok: true,
+        outputPath: path.join(options.cwd, "validation-local", "release-rehearsal.env"),
+      };
+    },
     rpcPollIntervalMs: 0,
     rpcReadyTimeoutMs: 1000,
   });
@@ -341,6 +369,8 @@ test("prepare-validation-local continues when deps:up fails and diagnostics show
   ]);
   assert.deepEqual(backgroundStarts, ["hardhat:node"]);
   assert.equal(rpcChecks, 3);
+  assert.equal(releaseEnvRefreshes.length, 1);
+  assert.equal(releaseEnvRefreshes[0].cwd, path.resolve(__dirname, ".."));
 });
 
 test("prepare-validation-local surfaces container engine remediation when deps:up fails before Postgres and Redis come up", async () => {

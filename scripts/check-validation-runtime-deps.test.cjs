@@ -399,6 +399,7 @@ test("emitLocalRemediation explains an engine outage separately from a missing C
 
 test("inspectContainerRuntime captures WSL and Docker data-disk diagnostics when the engine is unreachable", () => {
   const runtime = inspectContainerRuntime({
+    platform: "win32",
     env: {
       LOCALAPPDATA: "C:\\Users\\Administrator\\AppData\\Local",
     },

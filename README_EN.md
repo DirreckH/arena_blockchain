@@ -2,118 +2,158 @@
 
 English | [简体中文](./README.md)
 
-[![Status](https://img.shields.io/badge/status-active_mvp_baseline-0A66C2?style=flat-square)](./README_EN.md)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-6-646CFF?style=flat-square&logo=vite&logoColor=white)](https://vite.dev/)
-[![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs&logoColor=white)](https://nestjs.com/)
-[![Hardhat](https://img.shields.io/badge/Hardhat-2-FFF100?style=flat-square&logo=ethereum&logoColor=black)](https://hardhat.org/)
-[![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io/)
+[![Status](https://img.shields.io/badge/status-consensus_prediction_market_mvp-0A66C2?style=flat-square)](./README_EN.md)
 
-Arena is a dual-layer Web3 / AI system that puts respondent adjudication and result-driven validation markets on the same product path.
+Arena is a consensus prediction market: it turns "how a real target group will ultimately judge something" into a tradable, verifiable, and settleable market.
 
-In more protocol-native language, Arena can be summarized as:
+Traditional prediction markets are good at trading external events: prices, games, elections, and public news. Arena focuses on a different, more frequent class of outcomes that show up in business, AI, and community decision-making: which option a target audience will support, which direction real users will choose, or whether a proposal, piece of content, product concept, or contribution will pass collective validation.
 
-`Arena = short-term judgment oracle + long-term domain reputation graph`
+Those outcomes usually live inside surveys, polls, research reports, or internal review workflows. They carry signal, but they rarely have market incentives, public progress, settlement records, or composable financial expression. Arena's core idea is simple: once collective judgment can be defined, sampled, hidden, revealed, and settled, it can become a new prediction-market asset.
 
-It is designed for subjective decision-making in DAOs and onchain communities: in the short term it produces callable collective decision signals, and in the long term it accumulates domain-specific judgment reputation across participants.
+The current minimum loop is:
 
-It is not a generic prediction market, it is not a demo that loosely stitches together surveys, trading, and wallet login, and it is not simply a Snapshot replacement. Arena's adjudication layer produces verifiable outcomes, the validation layer handles staking, settlement, and refunds around those outcomes, and before resolution the public surface exposes progress, not directional signal.
+`create an outcome market -> participants stake / verify -> target group responds -> effective samples form -> consensus result is revealed -> market settles`
 
-The repository already contains three concrete baselines:
+Before reveal, the market shows progress but not direction. Participants can take positions without seeing the live response trend; once sample and time conditions are met, Arena reveals the official result and settles claims or refunds around it.
 
-- `Product shape`: a Chinese-first frontend shell with continuous flows across discovery, market detail, drafts, challenge submission, adjudication, watchlist, and results.
-- `Application runtime`: a NestJS API, Prisma, Redis, state machines, and the shared Arena domain model covering proposition, market, bet, reward, reputation, watchlist, and internal ops flows.
-- `Validation chain`: a Hardhat / Solidity validation-market contract path plus runtime chain integration for the minimum credible settlement loop of non-rolling, single-question, binary markets.
+## TL;DR
 
-## 🧭 Protocol Positioning
+- `One-liner`: Arena is a Web3 prediction market for trading collective consensus outcomes.
+- `Core asset`: not just betting on public news, but trading how a defined group will ultimately choose or judge.
+- `Core experience`: market creation, hidden sampling, public progress, result reveal, settlement.
+- `Current MVP`: non-rolling, single-question, binary consensus markets.
+- `Live demo`: `pnpm install` -> `pnpm web:dev` -> open `http://localhost:5173` -> type `demo`.
+- `Current status`: browsable product shell, real backend paths, demo fallback, and minimum on-chain settlement capability.
 
-From a product perspective, Arena is better described not as a pure prediction market, but as a judgment-oracle protocol for subjective decision contexts.
+## Why This Market Matters
 
-It can be abstracted into two layers:
+Many important decisions do not have a natural price feed, but they do have a clear group outcome.
 
-`Arena = Consensus Oracle + Domain Reputation Graph`
+Brands want to know whether a target audience will accept a new concept. AI teams want to know which model output human reviewers trust more. DAOs want to know whether a grant, proposal, or contribution will pass community validation. Content platforms want to know whether a creator, curation result, or governance action will be accepted by the intended community.
 
-More plainly:
+Today, these questions usually fall into three imperfect categories:
 
-`Arena = judgment oracle + domain reputation graph`
+- `Surveys`: collect answers, but do not create market risk or externally settleable outcomes.
+- `Votes`: express preferences, but often become identity or mobilization contests and rarely preserve hidden sampling.
+- `Traditional prediction markets`: trade events well, but lack stable resolution sources for subjective group outcomes.
 
-Each layer solves a different problem:
+Arena combines the useful parts into one product path: define a resolvable group question, open a market around the future result, then use effective samples to produce the official outcome and settle the market.
 
-- `Consensus Oracle`
-  - Solves "how is the crowd judging this question right now?"
-  - Fits DAO and onchain-community workflows such as grant funding, proposal screening, contribution verification, whitelist admission, and content moderation.
-  - Produces short-cycle decision signals that can be consumed by governance contracts, grant protocols, task platforms, or content protocols.
+This is not a survey page with wallet login. It is a way to make collective consensus tradable and verifiable.
 
-```json
-{
-  "proposal_id": "grant-2026-042",
-  "epoch": 12,
-  "support_rate": 76.4,
-  "verified_participants": 1832,
-  "confidence": 0.82,
-  "result": "support"
-}
-```
+## Why Now
 
-- `Domain Reputation Graph`
-  - Solves "whose judgment should carry more weight?"
-  - Arena continuously records how participants judge questions across domains such as AI model evaluation, DeFi risk recognition, DAO governance, open-source contribution review, and content curation.
-  - What accumulates over time is not a one-off voting preference, but domain-specific judgment reputation derived from long-run behavior.
+Three shifts make consensus markets more timely:
 
-These two layers form Arena's core flywheel:
+- `AI is creating more subjective evaluation`: model outputs, content quality, preference signals, and safety boundaries increasingly depend on human feedback, but that feedback is still trapped in closed labeling and scoring systems.
+- `On-chain settlement lowers trust costs`: custody, settlement, and claim records belong in a transparent settlement layer, while the full sampling workflow does not need to be forced on-chain.
+- `Communities and brands need faster decision markets`: DAOs, creator communities, consumer brands, and content platforms need something faster than research studies and more incentive-aligned than ordinary voting.
 
-`short-term consensus output -> enters reputation history -> affects future task weighting -> improves future signal quality -> keeps compounding domain reputation`
+Arena starts with a narrow, legible market type: binary, non-rolling, one-shot consensus questions. That is small enough to demo end to end in a hackathon MVP, but broad enough to expand into AI evaluation, consumer research, DAO governance, content validation, and open task markets.
 
-That is what makes Arena different from ordinary DAO voting. It does not stop at "who supports this outcome?" It also asks:
+## How The Product Works
 
-- Who supported this conclusion?
-- Have these participants been reliable before?
-- In which domain have they been reliable?
-- Can this result be called directly by an external protocol?
+The user story is direct.
 
-From that perspective, Arena is not just a voting interface replacement. It can become a judgment-signal layer on top of Snapshot, DAO governance systems, grant platforms, task platforms, and content protocols.
+1. A market creator proposes a resolvable question.
+2. Arena defines the target group, sample requirements, time window, and binary outcomes.
+3. Market participants stake or verify before reveal.
+4. The target group submits answers; Arena reviews them and counts effective samples.
+5. The frontend shows progress, but not which side is leading.
+6. Once resolution conditions are met, Arena reveals the official result.
+7. The market settles from that result, and users claim gains or receive refunds.
 
-The current repository's `Adjudication layer + Validation layer` is the minimum runnable protocol path for that thesis:
+This creates two useful roles at once:
 
-- `Adjudication layer` produces the short-term judgment result and enforces the process constraints around it.
-- `Validation layer` handles capital validation, settlement, and refunds around the result.
-- `Reputation` domain and runtime pieces support the accumulation of long-term domain reputation and later weighting logic.
+- `Market participants`: express a view before reveal, take risk, then claim gains or receive refunds after settlement.
+- `Market creators`: launch an outcome market with progress, incentives, and settlement records instead of a static poll or survey.
 
-## 🚀 TL;DR
+## Example Markets
 
-- What this is
-  - A Web3 / AI dual-layer system for DAOs and onchain communities: it emits short-term judgment-oracle signals, accumulates long-term domain reputation, and uses validation markets to verify and settle around outcomes.
-- What already runs
-  - The frontend product shell, the API / shared-domain baseline, and the validation-chain contract plus minimal runtime integration.
-- Fastest way to try it
-  - `pnpm install`
-  - `pnpm web:dev`
-  - Open `http://localhost:5173`
-  - Type `demo` in the login flow
-- Where to look for full local integration
-  - Start with "Quick Start" below, then follow "Detailed Setup" for API and validation-chain runtime.
+Arena can turn many hard-to-trade questions into prediction markets.
 
-## ⚡ Quick Start
+| Scenario | Market that can be formed |
+| --- | --- |
+| AI model evaluation | Will target reviewers choose Model A or Model B? |
+| Consumer brand testing | Will core users prefer concept A or concept B? |
+| DAO grants | Will effective samples support this project entering the next round? |
+| Content governance | Will the target community say this content should be promoted or removed? |
+| Product roadmap | Will beta users accept this feature direction? |
+| Contribution review | Will maintainers validate this open-source contribution? |
 
-### 30-second product-shell run
+The shared pattern is that the result is not an external price feed. It is a clearly defined collective consensus outcome. Arena's goal is to give these outcomes markets, progress, and settlement.
 
-If you only want to see the current Arena product shape, you do not need a database, Redis, or chain runtime yet:
+## Why Judges And Investors Should Care
+
+Arena's hackathon value is not "another prediction-market UI." It introduces a new supply source for markets: collective consensus outcomes.
+
+- `New asset class`: turns research, review, preference testing, and community validation into tradable results.
+- `New market supply`: markets do not need to wait for public news; brands, DAOs, AI teams, and platforms can create them directly.
+- `New trust model`: direction is hidden before reveal, then settlement happens around the official result.
+- `Expansion path`: from the binary MVP into rolling questions, multi-question research, AI evaluation markets, and requester dashboards.
+- `Demoable today`: the repository already runs a product shell, demo session, market detail views, results, account state, and a local settlement path.
+
+That makes Arena closer to infrastructure for continuously creating new markets than a one-off betting page.
+
+## Current MVP
+
+The current version is intentionally narrow. The goal is to run one complete consensus prediction-market path, not to build a full exchange all at once.
+
+In scope:
+
+- Non-rolling propositions.
+- Single-question survey / outcome markets.
+- Binary outcomes.
+- Simple staking and one-shot settlement.
+- Platform dispatch, answer submission, basic review, effective-sample counting, and unified reveal.
+- Pre-reveal progress display without direction leakage.
+- Replaceable seams between demo sessions and real APIs.
+
+Explicitly out of scope:
+
+- Complex long surveys.
+- Deep open-ended answer analysis.
+- Rolling propositions and periodic settlement.
+- Complex AMMs.
+- Complex order books.
+- Multi-asset staking.
+- Any pre-reveal directional intermediate state.
+
+## What You Can See Today
+
+The current repository already has a demoable product shape:
+
+- Home and market feed.
+- Market ranking and detail pages.
+- Challenge / draft creation path.
+- Response task reading and submission path.
+- Results, watchlist, activity, and account shell.
+- Type `demo` to enter a full seeded session.
+- API failures can fall back to demo data so the product remains visible.
+- The local backend and validation-chain can run the minimum settlement path.
+
+## Quick Start
+
+To view the product shell without preparing a database, Redis, or local chain:
 
 ```powershell
 pnpm install
 pnpm web:dev
 ```
 
-Then open:
+Open:
 
 - `http://localhost:5173`
 
-For the first pass, use the `demo` login shortcut and walk through the full shell: home, market detail, drafts, challenge submission, adjudication, results, and watchlist.
+For the first pass, type `demo` in the login flow and walk through home, market detail, drafts, challenge submission, adjudication, results, and watchlist.
 
-### Minimal local integration
+## Developer Appendix
 
-If you want the frontend to talk to a local API, the shortest path is:
+The following details are kept for reproducibility and continued development. For a hackathon demo, the "Quick Start" path is usually enough.
+
+### Local Integration
+
+If you want the local backend, validation runtime, and frontend to work together, use the repository wrapper:
 
 ```powershell
 pnpm install
@@ -128,455 +168,44 @@ $env:VITE_CHAIN_ID="1337"
 pnpm web:dev
 ```
 
-Full validation-chain deployment, role wiring, and preflight checks are covered later under "Detailed Setup".
-The local bootstrap script writes a development-ready `.env` with Hardhat-local
-signer keys and default Postgres / Redis / RPC wiring, so the rest of the
-validation preflight commands can run without hand-editing the first draft.
-`backend:prepare:local` builds on top of that validation bootstrap path: it
-prepares the local validation runtime, starts the production-style API when
-needed, waits for `/health/live` and `/health/ready`, and then runs the repo's
-canonical backend release check so local A-track verification reaches the same
-runtime contract used by later proposition proof capture.
+`backend:prepare:local` reuses `validation:prepare:local`, prepares the local validation runtime, starts the backend when needed, waits for `/health/live` and `/health/ready`, and runs the backend release check.
 
-## 🌱 Why This Project Exists
-
-Arena is not trying to answer "how do we make a fancier betting page." It is trying to answer a more difficult set of system questions:
-
-- If outcomes come from real respondent answers, how do we avoid leaking directional signal before resolution?
-- If a user can be both a respondent and a verifier trading around the outcome, how do we preserve information boundaries?
-- If the product needs to become visible and testable early, how do we let the frontend shape the product with mocks first and then progressively replace them with real backend and chain capability?
-- If the chain is only a good fit for custody and settlement, how do we avoid forcing the entire adjudication-production process on-chain?
-
-Arena therefore uses a dual-layer model:
-
-- `Adjudication layer`
-  - Handles propositions, dispatch, responses, review, effective sample counting, freeze / reveal, and official result generation.
-- `Validation layer`
-  - Handles markets, positions, native-asset stake, official-result-driven settlement, and claim / refund.
-
-These are not two separate products. They are different responsibility surfaces in the same user narrative.
-
-## 🔄 Minimum Platform Loop
-
-The current MVP system loop can be summarized as:
-
-`candidate proposition -> proposition publish -> validation market create/open -> respondent adjudication -> public progress surface -> freeze / reveal -> official result -> chain settlement -> user claim / refund`
-
-The boundaries are intentionally split:
-
-- The adjudication layer does not expose directional intermediate state to the validation layer.
-- The validation layer does not feed market direction, pricing bias, or bet distribution back into the adjudication layer.
-- Before resolution, only time progress, effective-sample progress, and public state are exposed.
-- The contract does not recompute who won. It consumes an off-chain official result and executes a fixed settlement rule.
-
-One lifecycle detail is worth calling out explicitly:
-
-- Once a proposition enters the publish / live path, the runtime first enqueues validation `create_market` and `open_market`.
-- Only after respondent sample and freeze / reveal conditions are satisfied does the runtime continue with `freeze_market` and `resolve_market`.
-
-## ✨ Core Design
-
-### 1. Dual-layer product structure
-
-Arena is not a single-layer prediction market. It separates consensus production from the validation capital layer around the outcome:
-
-- `Proposition`
-  - Created, scheduled, published, frozen, revealed, and settled.
-- `Market`
-  - Bound one-to-one to a proposition and transitions through live / frozen / settled / cancelled states.
-- `Bet / Position`
-  - One user, one market, one position, tracking stake and final outcome around a single binary question.
-
-### 2. Public progress without direction leakage
-
-The repository already has explicit separation across public progress, validation surface, and adjudication surface.
-
-That means:
-
-- The frontend can show how much effective sample is still needed and how long remains before reveal.
-- The frontend cannot show which side is currently leading before reveal.
-- Backend state machines, view models, and surface mappers are organized around that boundary.
-
-### 3. Mock-first seams that can be replaced with real capability
-
-Arena intentionally lets the frontend establish product shape first, then swap adapters over to real capability.
-
-The frontend already contains:
-
-- a seeded public/discovery demo read model
-- a public mock adapter for validation markets
-- an authenticated demo session
-- demo fallback behavior when real API requests fail
-
-That is not throwaway fake data. It is a deliberate product-contract layer that lets B-track stabilize interaction quality before A-track replaces internals with real runtime paths.
-
-### 4. Validation-chain only carries the minimum credible settlement scope
-
-The current validation-chain scope is intentionally narrow:
-
-- `consensus`
-- `binary`
-- `non_rolling`
-- `final`
-
-In other words:
-
-- single question
-- binary choice
-- non-rolling
-- one-shot final settlement
-
-The README does not claim survey, hybrid, rolling, AMM, order book, or multi-asset betting as already implemented capability.
-
-## ✨ What Is Already Landed
-
-The items below are backed by actual code, tests, or runtime boundaries in the repository. They are not just roadmap statements.
-
-### Frontend product shell
-
-- `/zh` already combines discovery and validation-market feeds.
-- `/zh/markets` and `/zh/event/:marketId` already provide ranking and detail experiences.
-- `/zh/challenges` and `/zh/drafts` are already wired to real backend draft / submit APIs.
-- `/zh/adjudication` already reads and submits respondent tasks.
-- `/zh/results`, `/zh/watchlist`, and `/zh/activity` already contain account-shell logic with real/demo switching behavior.
-- The demo session supports typing `demo` directly to enter a seeded full-session experience.
-
-### Shared domain and application layer
-
-- `packages/shared` already defines Arena enums, DTOs, surface contracts, policy, reward, reputation, tags, adjudication, and validation-settlement semantics.
-- `apps/api` already contains proposition, market, bet, reward-ledger, response-review, watchlist, account-export, reputation, and tag services.
-- Prisma migrations already cover the Arena core schema, state-machine refinement, reward ledger, quality / reputation, internal ops, and validation-chain foundation.
-- The API already exposes Swagger docs, request tracing, RBAC, health endpoints, Redis queue plumbing, and internal monitoring surfaces.
-
-### Validation-chain
-
-- `contracts/validation/ArenaValidationMarket.sol` already carries the validation-market protocol path.
-- `scripts/deploy-validation-market.cjs` already supports deployment and role assignment for admin / operator / oracle / pauser.
-- The API runtime already integrates the `create_market`, `open_market`, `freeze_market`, and `resolve_market` command queue.
-- Sync, projector, monitoring, cursor, and event-ledger paths already have implementation and test coverage.
-- Minimum cancel / refund / pauser paths already have runbooks and tests.
-
-## 🏗️ Technical Architecture
+### Technical Shape
 
 ```text
-apps/web
-  -> discovery / public progress / validation detail / challenge submission / respondent shell
-  -> @arena/shared
-
-apps/api
-  -> proposition runtime
-  -> adjudication services
-  -> validation services
-  -> Prisma / Redis / JWT / internal ops
-  -> @arena/shared
-
-contracts/validation
-  -> ArenaValidationMarket
-
-runtime flow
-  -> proposition publish
-  -> validation command queue
-  -> chain events
-  -> sync worker
-  -> DB projection
-  -> frontend surfaces
+apps/web      -> market presentation, demo session, wallet UX
+apps/api      -> proposition, response, result, validation services
+packages      -> shared domain and DTOs
+contracts     -> validation market contract
+scripts       -> local startup, deploy, and check scripts
 ```
+
+Main stack:
 
 - Frontend: `React 18`, `Vite 6`, `TypeScript`, `React Router 7`, `Tailwind CSS`
 - Backend: `NestJS 11`, `Prisma`, `BullMQ`, `Redis`, `ethers`
 - Contracts: `Solidity 0.8.20`, `Hardhat`, `OpenZeppelin`
-- Shared domain: `@arena/shared`
 - Database: `PostgreSQL`
 
-## 🔀 Runtime Modes
-
-Arena is more accurately described as layered runtime modes than a single mock or single live mode:
-
-- `anonymous browse`
-  - The frontend tries public APIs first and falls back to seeded demo feeds on failure.
-- `demo session`
-  - Typing `demo` enters a full demo session without real wallet signing while preserving the full product shell.
-- `wallet-authenticated session`
-  - After real wallet login, the frontend accesses real account / draft / adjudication / validation-write APIs.
-- `validation-chain runtime`
-  - Proposition runtime drives chain-side create / open / freeze / resolve through queues, then the sync worker projects state back into the read model.
-
-That means Arena currently serves two development goals at the same time:
-
-- seeing the product shape as quickly as possible
-- running the full proposition -> backend -> chain -> projection integration loop
-
-## ⚙️ Environment Requirements
-
-- `Node.js 18+`
-- `pnpm`
-- `Docker Desktop` with `docker compose`
-- a local `Hardhat` RPC
-
-For full local integration you also need:
-
-- `PostgreSQL`
-- `Redis`
-- a configured `.env`
-- a deployed validation contract
-
-## 🔐 Environment Configuration
-
-1. Copy the environment template:
-
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-
-2. Adjust local values as needed.
-
-### Key variables from root `.env.example`
-
-| Variable | Meaning | Default / Notes |
-| --- | --- | --- |
-| `PORT` | API port | `4000` |
-| `DATABASE_URL` | Prisma / Postgres connection string | Matches local docker compose defaults |
-| `REDIS_URL` | Redis connection string | `redis://127.0.0.1:6379/0` |
-| `JWT_SECRET` | JWT secret | Replace with a real random value |
-| `RPC_URL` | Hardhat / EVM RPC | `http://127.0.0.1:8545` |
-| `CHAIN_ID` | Runtime chain ID | `1337` |
-| `ARENA_CONTRACT_ADDRESS` | Legacy Arena contract address | Must not be reused as the validation address |
-| `ARENA_VALIDATION_CONTRACT_ADDRESS` | Validation-market contract address | Required for full integration |
-| `ARENA_VALIDATION_OPERATOR_PRIVATE_KEY` | Operator signer private key | Used by validation runtime |
-| `ARENA_VALIDATION_ORACLE_PRIVATE_KEY` | Oracle signer private key | Used by validation runtime |
-| `ARENA_VALIDATION_PAUSER_PRIVATE_KEY` | Pauser signer private key | Used by validation runtime |
-| `OPERATOR_WALLET_ADDRESSES` | Operator wallet list | Used by RBAC, comma-separated |
-| `ADMIN_WALLET_ADDRESSES` | Admin wallet list | Used by RBAC, comma-separated |
-| `SYSTEM_WALLET_ADDRESSES` | System wallet list | Used by RBAC, comma-separated |
-
-### Extra note for frontend local integration
-
-The frontend default API base URL lives in [`apps/web/src/features/api/arena-api.ts`](./apps/web/src/features/api/arena-api.ts) and defaults to `http://localhost:3000`. If your local API runs on the default `4000` port, explicitly set:
-
-```powershell
-$env:VITE_API_BASE_URL="http://localhost:4000"
-$env:VITE_CHAIN_ID="1337"
-pnpm web:dev
-```
-
-Otherwise the frontend will send API requests to `3000` and then fall back to demo feeds when they fail.
-
-## 🛠️ Detailed Setup
-
-### Path A: fastest frontend shell
-
-If you only want to run the Arena frontend shell as quickly as possible, without database or chain runtime:
-
-```powershell
-pnpm install
-pnpm web:dev
-```
-
-Then open:
-
-- `http://localhost:5173`
-
-You can:
-
-- browse home, ranking, detail, and category views
-- enter the full seeded demo session by typing `demo`
-- exercise the drafts, challenge-submission, adjudication, results, and watchlist shell flows
-
-This path is best for B-track work, product review, and UI iteration.
-
-### Path B: API + frontend local integration
-
-If you want to run the real API and point the frontend at it locally:
-
-1. Install dependencies
-
-   ```powershell
-   pnpm install
-   Copy-Item .env.example .env
-   ```
-
-2. Start Postgres and Redis
-
-   ```powershell
-   pnpm deps:up
-   ```
-
-3. Compile the root Hardhat artifacts first
-
-   ```powershell
-   pnpm exec hardhat compile
-   ```
-
-   Do not skip this step. API readiness depends on the root Hardhat artifact, and `artifacts/` is not checked into version control.
-
-4. Start a local Hardhat RPC
-
-   ```powershell
-   pnpm exec hardhat node
-   ```
-
-5. Apply Prisma migrations
-
-   ```powershell
-   pnpm api:prisma:migrate
-   ```
-
-6. Start the API
-
-   ```powershell
-   pnpm api:dev
-   ```
-
-7. Start the frontend in another terminal and point it to API port `4000`
-
-   ```powershell
-   $env:VITE_API_BASE_URL="http://localhost:4000"
-   $env:VITE_CHAIN_ID="1337"
-   pnpm web:dev
-   ```
-
-8. Check health and docs
-
-   - `GET http://localhost:4000/health/live`
-   - `GET http://localhost:4000/health/ready`
-   - `GET http://localhost:4000/docs`
-
-### Path C: full validation-chain local integration
-
-If your goal is the full A-track runtime path across proposition / queue / chain / sync / projection:
-
-1. Complete Path B first.
-
-2. Prefer the one-command local setup path when your machine can run Docker/Desktop-compatible services:
-
-   ```powershell
-   pnpm run validation:prepare:local
-   ```
-
-   That wrapper reuses the repo's existing local validation steps in the documented order:
-
-   - `validation:bootstrap:local`
-   - `deps:up`
-   - `hardhat compile`
-   - `hardhat node` when the local RPC is not already reachable
-   - `validation:deploy` when the current local deployment does not pass `validation:chain:check`
-   - `validation:preflight`
-   - `validation:db:deploy`
-   - `validation:db:status`
-
-   If dependency startup still fails, the command falls back to structured runtime diagnostics:
-
-   - if Postgres and Redis are already reachable and only the local RPC is still missing, the wrapper continues and tries to start `hardhat node` automatically
-   - if Postgres or Redis are still unavailable, the wrapper stops and emits the same Docker / Postgres / Redis / RPC remediation guidance as the standalone preflight path
-
-3. When you want the backend itself to be started and checked as part of the same local bring-up contract, use:
-
-   ```powershell
-   pnpm run backend:prepare:local
-   ```
-
-   That wrapper:
-
-   - runs `pnpm run validation:prepare:local`
-   - reuses an already-running local backend when `/health/live` is already reachable
-   - otherwise builds the backend, starts `pnpm run api:start` in the background, and writes logs to `validation-local/backend-api.log`
-   - waits for `GET /health/live` and `GET /health/ready`
-   - runs `pnpm run backend:release:check`
-
-   This is the shortest repo path for local A-track runtime verification before exercising proposition-scoped rehearsal or public proof capture.
-
-4. Choose a validation signer and admin strategy
-
-   The two simplest local options are:
-
-   - Option A
-     - Reuse one funded Hardhat account as `admin + operator + oracle + pauser`.
-     - Put the same private key into:
-       - `ARENA_VALIDATION_OPERATOR_PRIVATE_KEY`
-       - `ARENA_VALIDATION_ORACLE_PRIVATE_KEY`
-       - `ARENA_VALIDATION_PAUSER_PRIVATE_KEY`
-     - Set `ARENA_VALIDATION_ADMIN_ADDRESS` to the address derived from that same key.
-     - In this mode, the constructor already gives all three roles to the admin, so no extra grants are needed.
-   - Option B
-     - Use three separate signers.
-     - In addition to private keys, set these before deployment:
-       - `ARENA_VALIDATION_OPERATOR_ADDRESS`
-       - `ARENA_VALIDATION_ORACLE_ADDRESS`
-       - `ARENA_VALIDATION_PAUSER_ADDRESS`
-     - The deployment script will grant roles to those addresses.
-
-   If you skip this part, `validation:chain:check` will fail because the signers either lack on-chain roles or do not match the configured addresses.
-
-5. Compile contracts
-
-   ```powershell
-   pnpm exec hardhat compile
-   ```
-
-6. Deploy the validation contract
-
-   ```powershell
-   pnpm run validation:deploy --network localhost
-   ```
-
-7. Write the emitted `ARENA_VALIDATION_CONTRACT_ADDRESS` back into `.env`
-
-   Also make sure your chosen signer configuration remains present in `.env`:
-
-   - `ARENA_VALIDATION_OPERATOR_PRIVATE_KEY`
-   - `ARENA_VALIDATION_ORACLE_PRIVATE_KEY`
-   - `ARENA_VALIDATION_PAUSER_PRIVATE_KEY`
-   - `ARENA_VALIDATION_ADMIN_ADDRESS`
-
-   If you are using the separate-address mode, also keep:
-
-   - `ARENA_VALIDATION_OPERATOR_ADDRESS`
-   - `ARENA_VALIDATION_ORACLE_ADDRESS`
-   - `ARENA_VALIDATION_PAUSER_ADDRESS`
-
-8. Run validation preflight checks
-
-   ```powershell
-   pnpm run validation:env:check
-   pnpm run validation:deps:check
-   pnpm run validation:chain:check
-   pnpm run validation:db:deploy
-   pnpm run validation:db:status
-   ```
-
-9. Start the API and run the real proposition -> create/open/freeze/resolve -> sync runtime path.
-
-   If you used `pnpm run backend:prepare:local`, the API should already be running
-   and the repo-side backend release contract should already have passed.
-
-This path is best for A-track work, validation-chain integration, and runtime verification.
-
-## 🧪 Common Commands
-
-| Category | Command | Meaning |
-| --- | --- | --- |
-| Frontend dev | `pnpm web:dev` | Start Vite |
-| Frontend build | `pnpm web:build` | Build the web app |
-| Frontend check | `pnpm web:check` | TypeScript noEmit check |
-| Shared tests | `pnpm shared:test` | Run `@arena/shared` tests |
-| API dev | `pnpm api:dev` | Start NestJS |
-| API build | `pnpm api:build` | Build the API |
-| API typecheck | `pnpm api:typecheck` | Prisma generate + TypeScript check |
-| Dependencies up | `pnpm deps:up` | Start Postgres / Redis |
-| Dependencies down | `pnpm deps:down` | Stop Postgres / Redis |
-| Prisma migrate | `pnpm api:prisma:migrate` | Apply local migrations |
-| Validation local prepare | `pnpm validation:prepare:local` | Bootstrap local env, bring up deps/RPC, deploy when needed, and run full local preflight |
-| Backend local prepare | `pnpm backend:prepare:local` | Prepare validation local runtime, start the backend when needed, wait for readiness, and run the backend release contract |
-| Validation preflight | `pnpm validation:preflight` | Combined env / deps / chain checks |
-| Validation deploy | `pnpm validation:deploy --network localhost` | Deploy the validation contract |
-| Validation test | `pnpm validation:test` | Run validation-chain tests |
-| CI-aligned checks | `pnpm ci:check` | Web + shared + API baseline checks |
-
-## ✅ Validation And Regression
-
-The recommended local verification order is:
-
-### Frontend / workspace baseline
+### Common Commands
+
+| Category | Command |
+| --- | --- |
+| Frontend dev | `pnpm web:dev` |
+| Frontend build | `pnpm web:build` |
+| Frontend check | `pnpm web:check` |
+| API dev | `pnpm api:dev` |
+| API build | `pnpm api:build` |
+| API typecheck | `pnpm api:typecheck` |
+| Dependencies up | `pnpm deps:up` |
+| Local backend prepare | `pnpm backend:prepare:local` |
+| Local validation prepare | `pnpm validation:prepare:local` |
+| Validation test | `pnpm validation:test` |
+| CI-aligned check | `pnpm ci:check` |
+
+### Validation Baseline
+
+This is a README narrative update, so code tests are not required. When code baselines are needed, use:
 
 ```powershell
 pnpm run check
@@ -585,7 +214,7 @@ pnpm run api:typecheck
 pnpm run api:build
 ```
 
-### Validation-chain baseline
+Validation-chain baseline:
 
 ```powershell
 pnpm run validation:env:check
@@ -594,86 +223,54 @@ pnpm run validation:chain:check
 pnpm run validation:test
 ```
 
-### Health / docs
-
-- `GET /health/live`
-- `GET /health/ready`
-- `GET /docs`
-
-## 🗂️ Repository Structure
+### Repository Structure
 
 ```text
 Arena/
 ├─ apps/
-│  ├─ web/                    # React + Vite Chinese-first product shell
-│  └─ api/                    # NestJS API, Prisma, queues, validation runtime
+│  ├─ web/
+│  └─ api/
 ├─ packages/
-│  └─ shared/                 # Arena domain enums, DTOs, surfaces, engines
+│  └─ shared/
 ├─ contracts/
-│  ├─ validation/             # ArenaValidationMarket contract
-│  └─ Arena.sol               # legacy Arena / PK contract path
+│  ├─ validation/
+│  └─ Arena.sol
 ├─ docs/
 │  ├─ PRODUCT_SCOPE.md
-│  └─ contracts/              # phase specs, runbooks, runtime integration docs
-├─ scripts/                   # deploy / env-check / validation helper scripts
-├─ test/                      # root Hardhat / contract tests
-├─ docker-compose.yml         # Postgres + Redis
+│  └─ contracts/
+├─ scripts/
+├─ test/
+├─ docker-compose.yml
 └─ README_EN.md
 ```
 
-By responsibility:
+## Current State
 
-- `apps/web`
-  - Product presentation layer, mock/real adapters, demo session, wallet UX.
-- `apps/api`
-  - Proposition runtime, respondent / validation services, RBAC, monitoring, queue, sync.
-- `packages/shared`
-  - Shared semantics across frontend and backend; currently the most stable Arena product contract.
-- `contracts/validation`
-  - The current validation-chain protocol mainline.
-- `docs/contracts`
-  - Current validation-chain phase documents, runbooks, and runtime integration notes.
-
-## 📌 Current State
-
-Arena is past the stage of being just an idea or a page mock, but it is not pretending to be a complete production system yet.
+Arena is past the idea-or-page-mock stage, but it is not claiming to be a complete production system yet.
 
 What can be claimed clearly today:
 
-- a browsable, demoable product shell with replaceable mock/real seams
-- a runnable NestJS + Prisma + Redis + shared-domain baseline
-- application runtime across proposition / adjudication / validation
-- validation-market contracts, deployment scripts, sync, projection, monitoring, and runbooks
+- a browsable, demoable consensus prediction-market product shell with replaceable mock / real seams
+- runnable application services and local data dependencies
+- application paths across proposition / result production / validation
+- validation-market contract, deploy scripts, sync, projection, monitoring, and runbooks
 
 What it explicitly does not claim:
 
 - survey / hybrid / rolling are already complete
+- complex AMMs, order books, or multi-asset markets are complete
 - the frontend is already prepared for every future trading model
 - the old legacy Arena contract is still the core protocol path
 - production-grade rollback / observability / operator platform are fully complete
 
-## 📚 Further Reading
-
-If you want to go deeper, this is a good reading order:
-
-### Project understanding
+## Further Reading
 
 - [docs/PRODUCT_SCOPE.md](./docs/PRODUCT_SCOPE.md)
 - [AGENTS.md](./AGENTS.md)
-
-### Validation-chain spec and integration
-
 - [docs/contracts/arena-phase1-spec.md](./docs/contracts/arena-phase1-spec.md)
 - [docs/contracts/arena-phase3-backend-integration.md](./docs/contracts/arena-phase3-backend-integration.md)
-- [docs/contracts/arena-phase4-foundation.md](./docs/contracts/arena-phase4-foundation.md)
-- [docs/contracts/arena-phase5-runtime-closure.md](./docs/contracts/arena-phase5-runtime-closure.md)
-- [docs/contracts/arena-phase6-runtime-integration.md](./docs/contracts/arena-phase6-runtime-integration.md)
-
-### Runbooks / troubleshooting
-
 - [docs/contracts/arena-validation-chain-runbook.md](./docs/contracts/arena-validation-chain-runbook.md)
-- [docs/contracts/arena-validation-blocker-clearance.md](./docs/contracts/arena-validation-blocker-clearance.md)
 
-## 📄 License
+## License
 
 The repository does not currently declare a top-level open-source license. If you intend to publish it openly, add a `LICENSE` file first and then lock the license statement into the README and badges.

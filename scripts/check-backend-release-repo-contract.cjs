@@ -139,6 +139,18 @@ const REQUIRED_RULES = [
         pattern: /COPY scripts\/sync-prisma-runtime-artifacts\.cjs scripts\/sync-prisma-runtime-artifacts\.cjs/u,
       },
       {
+        description: "contract artifacts build stage",
+        pattern: /FROM base AS contracts-build/u,
+      },
+      {
+        description: "contract sources copy into build stage",
+        pattern: /COPY contracts contracts/u,
+      },
+      {
+        description: "contract artifact compile step",
+        pattern: /pnpm exec hardhat compile/u,
+      },
+      {
         description: "runtime pnpm metadata copy from production dependency stage",
         pattern: /COPY --from=prod-deps \/app\/node_modules\/\.modules\.yaml \/app\/node_modules\/\.modules\.yaml/u,
       },
@@ -160,7 +172,7 @@ const REQUIRED_RULES = [
       },
       {
         description: "runtime contract artifacts copy",
-        pattern: /COPY artifacts \/app\/artifacts/u,
+        pattern: /COPY --from=contracts-build \/app\/artifacts \/app\/artifacts/u,
       },
       {
         description: "runtime shared package manifest copy",

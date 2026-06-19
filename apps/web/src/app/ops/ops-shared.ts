@@ -17,6 +17,15 @@ export type Feedback = {
 export type ActionPayload = {
   note: string
   reason: string
+  fields?: Record<string, string>
+}
+
+export type PendingActionField = {
+  key: string
+  label: string
+  placeholder?: string
+  defaultValue?: string
+  required?: boolean
 }
 
 export type PendingAction = {
@@ -29,6 +38,7 @@ export type PendingAction = {
   reasonLabel?: string
   reasonPlaceholder?: string
   reasonDefaultValue?: string
+  extraFields?: PendingActionField[]
   successMessage: string
   run: (payload: ActionPayload) => Promise<unknown>
 }

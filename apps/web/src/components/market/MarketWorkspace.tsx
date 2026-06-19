@@ -12,6 +12,7 @@ export function MarketWorkspace({
   title = '全部命题',
   showMoreLabel = '查看热门排行',
   showMoreHref = '/zh/markets',
+  emptyLabel = '当前条件下暂无命题，换个分类或稍后再来看看。',
   footer,
 }: {
   compact?: boolean
@@ -20,6 +21,7 @@ export function MarketWorkspace({
   title?: string
   showMoreLabel?: string | null
   showMoreHref?: string
+  emptyLabel?: string | null
   footer?: ReactNode
 }) {
   return (
@@ -38,11 +40,17 @@ export function MarketWorkspace({
 
       {showFilterStrip ? <FilterStrip /> : null}
 
-      <div className="market-grid">
-        {markets.map((market) => (
-          <MarketCardView market={market} key={market.id} />
-        ))}
-      </div>
+      {markets.length > 0 ? (
+        <div className="market-grid">
+          {markets.map((market) => (
+            <MarketCardView market={market} key={market.renderKey ?? market.id} />
+          ))}
+        </div>
+      ) : emptyLabel ? (
+        <div className="market-grid-empty" role="status">
+          <span>{emptyLabel}</span>
+        </div>
+      ) : null}
 
       {showMoreLabel ? (
         <Link className="show-more" to={showMoreHref}>

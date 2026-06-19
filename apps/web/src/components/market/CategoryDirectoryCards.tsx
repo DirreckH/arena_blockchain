@@ -3,6 +3,7 @@ import type { PublicValidationMarketCard } from '../../features/validation/valid
 import { ProgressMeter } from '../shared/ProgressMeter'
 
 const marketHref = (marketId: string) => `/zh/event/${marketId}`
+const resolveMarketHref = (market: PublicValidationMarketCard) => market.previewHref ?? marketHref(market.id)
 
 const TIME_PROGRESS_LABEL = '\u65f6\u95f4\u8fdb\u5ea6'
 const EFFECTIVE_SAMPLE_LABEL = '\u6709\u6548\u6837\u672c'
@@ -14,7 +15,7 @@ const effectiveSampleLabel = (market: PublicValidationMarketCard) =>
   `${market.progress.effectiveSampleCount} / ${market.progress.minEffectiveSample}`
 
 export function CategoryFeaturedMarketCard({ market }: { market: PublicValidationMarketCard }) {
-  const href = marketHref(market.id)
+  const href = resolveMarketHref(market)
   const primaryOptions = market.options.slice(0, 2)
 
   return (
@@ -59,7 +60,7 @@ export function CategoryFeaturedMarketCard({ market }: { market: PublicValidatio
 }
 
 export function CategoryCompactMarketCard({ market }: { market: PublicValidationMarketCard }) {
-  const href = marketHref(market.id)
+  const href = resolveMarketHref(market)
   const compactOptions = market.options.slice(0, 2)
   const reveal = revealLabel(market)
   const effectiveSample = effectiveSampleLabel(market)
@@ -78,7 +79,7 @@ export function CategoryCompactMarketCard({ market }: { market: PublicValidation
         </div>
       </div>
 
-      <div className="category-compact-metrics" aria-label="Market summary">
+      <div className="category-compact-metrics" aria-label="命题概要">
         <div className="category-compact-metric">
           <ProgressMeter label={TIME_PROGRESS_LABEL} detail={reveal} value={market.progress.timeProgressPercent} />
         </div>
@@ -91,7 +92,7 @@ export function CategoryCompactMarketCard({ market }: { market: PublicValidation
         </div>
       </div>
 
-      <div className="category-compact-options" role="list" aria-label="Market options">
+      <div className="category-compact-options" role="list" aria-label="命题选项">
         {compactOptions.map((option) => (
           <Link
             key={option.id}

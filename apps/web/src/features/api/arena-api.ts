@@ -67,6 +67,11 @@ import { toPublicValidationMarket } from '../validation/validation-market-adapte
 import type { PublicValidationMarketCard } from '../validation/validation-market.types'
 import type {
   BackendRuntimeContractViewModel,
+  InternalDiscoveryCategoryConfigInput,
+  InternalDiscoveryCategoryConfigSummaryViewModel,
+  InternalDiscoveryCategoryConfigViewModel,
+  InternalDiscoveryGlobalConfigInput,
+  InternalDiscoveryGlobalConfigViewModel,
   InternalAuditEventListPageViewModel,
   InternalPropositionListPageViewModel,
   InternalResponseReviewQueuePageViewModel,
@@ -216,7 +221,7 @@ export type ArchiveDraftResult = {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   token?: string | null
 }
@@ -367,6 +372,12 @@ export const arenaApi = {
       .catch(() => demoBackend.getDiscoveryHome())
   },
   getDiscoveryHomeFeed() {
+    if (demoBackend.hasDiscoveryConfigOverrides()) {
+      return Promise.resolve({
+        data: demoBackend.getDiscoveryHome(),
+        sourceMode: 'demo' as const,
+      })
+    }
     return requestWithDemoFallback(
       () => requestJson<PublicDiscoverPageViewModel>('/arena/public/discovery/home'),
       () => demoBackend.getDiscoveryHome(),
@@ -377,6 +388,12 @@ export const arenaApi = {
       .catch(() => demoBackend.getDiscoveryRanking(kind))
   },
   getDiscoveryRankingFeed(kind: 'hot' | 'breaking') {
+    if (demoBackend.hasDiscoveryConfigOverrides()) {
+      return Promise.resolve({
+        data: demoBackend.getDiscoveryRanking(kind),
+        sourceMode: 'demo' as const,
+      })
+    }
     return requestWithDemoFallback(
       () => requestJson<PublicDiscoveryRankingViewModel>(`/arena/public/discovery/rankings/${kind}`),
       () => demoBackend.getDiscoveryRanking(kind),
@@ -417,6 +434,12 @@ export const arenaApi = {
       .catch(() => demoBackend.getCategoryDirectoryIndex())
   },
   getCategoryDirectoryIndexFeed() {
+    if (demoBackend.hasDiscoveryConfigOverrides()) {
+      return Promise.resolve({
+        data: demoBackend.getCategoryDirectoryIndex(),
+        sourceMode: 'demo' as const,
+      })
+    }
     return requestWithDemoFallback(
       () => requestJson<PublicCategoryDirectoryIndexViewModel>('/arena/public/discovery/categories'),
       () => demoBackend.getCategoryDirectoryIndex(),
@@ -427,6 +450,12 @@ export const arenaApi = {
       .catch(() => demoBackend.getCategoryDirectory(slug))
   },
   getCategoryDirectoryFeed(slug: string) {
+    if (demoBackend.hasDiscoveryConfigOverrides()) {
+      return Promise.resolve({
+        data: demoBackend.getCategoryDirectory(slug),
+        sourceMode: 'demo' as const,
+      })
+    }
     return requestWithDemoFallback(
       () => requestJson<PublicCategoryDirectoryViewModel | null>(`/arena/public/discovery/categories/${slug}`),
       () => demoBackend.getCategoryDirectory(slug),
@@ -1221,6 +1250,64 @@ export const arenaApi = {
   // mutable fixture backend so the ops workspace remains verifiable even when
   // no live operator API is available on localhost. ---
 
+  getOpsDiscoveryGlobalConfig(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoBackend.getOpsDiscoveryGlobalConfig(),
+      () => requestJson<InternalDiscoveryGlobalConfigViewModel>(
+        '/arena/internal/discovery/config/global',
+        { token },
+      ),
+    )
+  },
+  updateOpsDiscoveryGlobalConfig(
+    body: InternalDiscoveryGlobalConfigInput,
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoBackend.updateOpsDiscoveryGlobalConfig(body),
+      () => requestJson<InternalDiscoveryGlobalConfigViewModel>(
+        '/arena/internal/discovery/config/global',
+        { method: 'PUT', body, token },
+      ),
+    )
+  },
+  getOpsDiscoveryCategoryConfigs(token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoBackend.getOpsDiscoveryCategoryConfigs(),
+      () => requestJson<InternalDiscoveryCategoryConfigSummaryViewModel[]>(
+        '/arena/internal/discovery/config/categories',
+        { token },
+      ),
+    )
+  },
+  getOpsDiscoveryCategoryConfig(slug: string, token: string) {
+    return withDemoOperatorToken(
+      token,
+      () => demoBackend.getOpsDiscoveryCategoryConfig(slug),
+      () => requestJson<InternalDiscoveryCategoryConfigViewModel>(
+        `/arena/internal/discovery/config/categories/${slug}`,
+        { token },
+      ),
+    )
+  },
+  updateOpsDiscoveryCategoryConfig(
+    slug: string,
+    body: InternalDiscoveryCategoryConfigInput,
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoBackend.updateOpsDiscoveryCategoryConfig(slug, body),
+      () => requestJson<InternalDiscoveryCategoryConfigViewModel>(
+        `/arena/internal/discovery/config/categories/${slug}`,
+        { method: 'PUT', body, token },
+      ),
+    )
+  },
+
   getOpsReviewQueue(
     token: string,
     filters?: OpsPropositionFilters,
@@ -1731,6 +1818,93 @@ export const arenaApi = {
       () => demoOpsBackend.retriggerOpsRewardResolution(ledgerId, body),
       () => requestJson<InternalRewardAuditDetailViewModel>(
         `/arena/internal/rewards/${ledgerId}/retrigger-review-resolution`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  approveOpsRewardPayout(
+    ledgerId: string,
+    body: { approvedAt: string; reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.approveOpsRewardPayout(ledgerId, body),
+      () => requestJson<InternalRewardAuditDetailViewModel>(
+        `/arena/internal/rewards/${ledgerId}/approve-payout`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  startOpsRewardPayoutExecution(
+    ledgerId: string,
+    body: { startedAt: string; reason: string; note?: string },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.startOpsRewardPayoutExecution(ledgerId, body),
+      () => requestJson<InternalRewardAuditDetailViewModel>(
+        `/arena/internal/rewards/${ledgerId}/start-payout-execution`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  completeOpsRewardPayout(
+    ledgerId: string,
+    body: {
+      completedAt: string
+      reason: string
+      note?: string
+      executionTxHash?: string
+      externalReference?: string
+    },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.completeOpsRewardPayout(ledgerId, body),
+      () => requestJson<InternalRewardAuditDetailViewModel>(
+        `/arena/internal/rewards/${ledgerId}/complete-payout`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  confirmOpsRewardPayoutExecution(
+    ledgerId: string,
+    body: {
+      confirmedAt: string
+      reason: string
+      note?: string
+      externalReference?: string
+    },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.confirmOpsRewardPayoutExecution(ledgerId, body),
+      () => requestJson<InternalRewardAuditDetailViewModel>(
+        `/arena/internal/rewards/${ledgerId}/confirm-payout-execution`,
+        { method: 'POST', body, token },
+      ),
+    )
+  },
+  failOpsRewardPayout(
+    ledgerId: string,
+    body: {
+      failedAt: string
+      reason: string
+      note?: string
+      errorCode: string
+      errorMessage: string
+    },
+    token: string,
+  ) {
+    return withDemoOperatorToken(
+      token,
+      () => demoOpsBackend.failOpsRewardPayout(ledgerId, body),
+      () => requestJson<InternalRewardAuditDetailViewModel>(
+        `/arena/internal/rewards/${ledgerId}/fail-payout`,
         { method: 'POST', body, token },
       ),
     )

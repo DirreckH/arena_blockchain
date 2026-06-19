@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { CircleAlert } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useValidationMarketData } from '../../features/validation/validation-market-data'
 import type { PublicValidationMarketCard } from '../../features/validation/validation-market.types'
@@ -26,7 +27,7 @@ function isValidStakeAmount(value: string) {
 export function MarketDetailPage() {
   const { marketId } = useParams()
   const [searchParams] = useSearchParams()
-  const { marketDetails, rawMarkets, isLoading, sourceMode, latestBetExecution, placeBet } = useValidationMarketData()
+  const { marketDetails, rawMarkets, isLoading, sourceMode, errorMessage, latestBetExecution, placeBet } = useValidationMarketData()
   const { isAuthenticated, sessionMode, configuredChainId } = useAuthSession()
   const { availability, networkStatus, currentChainId } = useWalletEnvironment()
   const market = marketId ? marketDetails.get(marketId) : undefined
@@ -123,9 +124,7 @@ export function MarketDetailPage() {
         optionIndex: hasSelectedOption ? selectedOptionIndex as 0 | 1 : undefined,
       })
       setCommentDraft('')
-      setDiscussionFeedback(sessionMode === 'demo'
-        ? '演示讨论已更新'
-        : '评论已发布到结算后的真实讨论区')
+      setDiscussionFeedback('评论已发布到结算后的讨论区')
     } catch (error) {
       setDiscussionFeedback(error instanceof Error ? error.message : '讨论提交失败，请稍后重试')
     } finally {
@@ -197,9 +196,7 @@ export function MarketDetailPage() {
         stakeAmount: normalizedStakeAmount,
       })
       setStakeAmount('')
-      setBetFeedback(sessionMode === 'demo'
-        ? `演示持仓已建立：${selectedOptionLabel}`
-        : `链上下注已提交，Arena 已记录持仓：${selectedOptionLabel}`)
+      setBetFeedback(`下注已提交，Arena 已记录持仓：${selectedOptionLabel}`)
     } catch (error) {
       setBetFeedback(error instanceof Error ? error.message : '下注失败，请稍后重试')
     } finally {
@@ -218,6 +215,23 @@ export function MarketDetailPage() {
   }
 
   if (!market) {
+    if (errorMessage) {
+      return (
+        <section className="route-page detail-route">
+          <DataSourceBadge mode={sessionMode === 'demo' ? 'demo' : sourceMode} />
+          <section className="account-menu-panel" aria-label="命题加载失败">
+            <div className="account-menu-panel-head">
+              <div>
+                <h2>命题加载失败</h2>
+                <span>{errorMessage}</span>
+              </div>
+              <CircleAlert size={18} aria-hidden="true" />
+            </div>
+          </section>
+        </section>
+      )
+    }
+
     return <NotFoundPage />
   }
 

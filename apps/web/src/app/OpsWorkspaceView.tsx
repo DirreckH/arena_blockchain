@@ -38,6 +38,10 @@ import { opsCopy } from '../features/arena/ops-copy'
 import { useAuthSession } from '../features/auth/auth-session'
 import { readPersistedOpsActionReceipts, useOpsActionDialog } from './ops/ops-action-dialog'
 import { OpsAuditPage as StandaloneOpsAuditPage } from './ops/OpsAuditPage'
+import {
+  OpsDiscoveryCategoryConfigPage as StandaloneOpsDiscoveryCategoryConfigPage,
+  OpsDiscoveryConfigPage as StandaloneOpsDiscoveryConfigPage,
+} from './ops/OpsDiscoveryConfigPage'
 import { OpsHealthPage as StandaloneOpsHealthPage } from './ops/OpsHealthPage'
 import { OpsPropositionDetailPage as StandaloneOpsPropositionDetailPage } from './ops/OpsPropositionDetailPage'
 import { OpsPropositionsPage as StandaloneOpsPropositionsPage } from './ops/OpsPropositionsPage'
@@ -145,6 +149,8 @@ type OpsRoute =
   | { kind: 'audit' }
   | { kind: 'health' }
   | { kind: 'takeover' }
+  | { kind: 'discovery-config' }
+  | { kind: 'discovery-config-detail'; slug: string }
   | { kind: 'not-found' }
 
 const OPS_NAV_ITEMS = [
@@ -155,6 +161,7 @@ const OPS_NAV_ITEMS = [
   { href: '/zh/ops/audit', label: opsCopy.nav.audit },
   { href: '/zh/ops/health', label: opsCopy.nav.health },
   { href: '/zh/ops/takeover', label: opsCopy.nav.takeover },
+  { href: '/zh/ops/discovery-config', label: '分类配置' },
 ] as const
 
 export function OpsWorkspaceView({ token }: { token: string }) {
@@ -222,6 +229,10 @@ export function OpsWorkspaceView({ token }: { token: string }) {
       {route.kind === 'audit' ? <OpsAuditPage token={token} /> : null}
       {route.kind === 'health' ? <OpsHealthPage token={token} /> : null}
       {route.kind === 'takeover' ? <OpsTakeoverPage token={token} /> : null}
+      {route.kind === 'discovery-config' ? <StandaloneOpsDiscoveryConfigPage token={token} /> : null}
+      {route.kind === 'discovery-config-detail' ? (
+        <StandaloneOpsDiscoveryCategoryConfigPage slug={route.slug} token={token} />
+      ) : null}
       {route.kind === 'not-found' ? (
         <section className="detail-panel">
           <h2>{opsCopy.shell.notFoundTitle}</h2>
@@ -611,6 +622,14 @@ function buildBreadcrumbs(route: OpsRoute): Array<{ label: string; href?: string
       return [{ label: opsCopy.crumbs.ops, href: '/zh/ops' }, { label: opsCopy.crumbs.health }]
     case 'takeover':
       return [{ label: opsCopy.crumbs.ops, href: '/zh/ops' }, { label: opsCopy.crumbs.takeover }]
+    case 'discovery-config':
+      return [{ label: opsCopy.crumbs.ops, href: '/zh/ops' }, { label: '分类配置' }]
+    case 'discovery-config-detail':
+      return [
+        { label: opsCopy.crumbs.ops, href: '/zh/ops' },
+        { label: '分类配置', href: '/zh/ops/discovery-config' },
+        { label: route.slug },
+      ]
     default:
       return [{ label: opsCopy.crumbs.ops, href: '/zh/ops' }, { label: opsCopy.crumbs.notFound }]
   }
@@ -628,6 +647,11 @@ function parseOpsRoute(pathname: string): OpsRoute {
   if (pathname === '/zh/ops/audit') return { kind: 'audit' }
   if (pathname === '/zh/ops/health') return { kind: 'health' }
   if (pathname === '/zh/ops/takeover') return { kind: 'takeover' }
+  if (pathname === '/zh/ops/discovery-config') return { kind: 'discovery-config' }
+  if (pathname.startsWith('/zh/ops/discovery-config/')) {
+    const slug = pathname.slice('/zh/ops/discovery-config/'.length)
+    return slug ? { kind: 'discovery-config-detail', slug } : { kind: 'not-found' }
+  }
   if (pathname.startsWith('/zh/ops/propositions/')) {
     const propositionId = pathname.slice('/zh/ops/propositions/'.length)
     return propositionId ? { kind: 'proposition-detail', propositionId } : { kind: 'not-found' }

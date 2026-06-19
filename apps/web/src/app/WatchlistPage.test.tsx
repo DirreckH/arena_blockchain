@@ -73,7 +73,6 @@ describe('watchlist page', () => {
 
     mockedUseWatchlistData.mockReturnValue({
       watchlist: {
-        userId: 'user-live-1',
         totalCount: 0,
         items: [],
       },
@@ -90,7 +89,6 @@ describe('watchlist page', () => {
   it('keeps account-saved watchlist items visible even when the public market feed no longer returns their cards', () => {
     mockedUseWatchlistData.mockReturnValue({
       watchlist: {
-        userId: 'user-live-1',
         totalCount: 1,
         items: [
           {

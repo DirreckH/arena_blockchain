@@ -12,6 +12,7 @@ import {
 
 const SPARKLINE_WIDTH = 132
 const SPARKLINE_HEIGHT = 46
+const MAX_VISIBLE_RANKING_ITEMS = 12
 
 const clampSparklinePoint = (value: number) => Math.max(0, Math.min(100, value))
 
@@ -55,6 +56,21 @@ function matchesQuery(item: RankedMarketPageItem, normalizedQuery: string) {
   return item.title.toLowerCase().includes(normalizedQuery)
 }
 
+function getRankedItemsForCategory(
+  config: RankedMarketPageConfig,
+  categoryId: RankedMarketFilterId,
+) {
+  if (categoryId === 'all') {
+    return config.items
+  }
+
+  const prioritizedItems = filterRankedMarketItems(config, categoryId)
+  const prioritizedIds = new Set(prioritizedItems.map((item) => item.id))
+  const fallbackItems = config.items.filter((item) => !prioritizedIds.has(item.id))
+
+  return [...prioritizedItems, ...fallbackItems]
+}
+
 interface MarketRankingPageProps {
   config: RankedMarketPageConfig
   showSearch?: boolean
@@ -75,14 +91,13 @@ export function MarketRankingPage({
   )
   const [query, setQuery] = useState('')
   const visibleItems = useMemo(() => {
-    const byCategory = filterRankedMarketItems(config, activeCategoryId)
     const normalizedQuery = query.trim().toLowerCase()
 
     if (!showSearch || normalizedQuery.length === 0) {
-      return byCategory
+      return getRankedItemsForCategory(config, activeCategoryId).slice(0, MAX_VISIBLE_RANKING_ITEMS)
     }
 
-    return byCategory.filter((item) => matchesQuery(item, normalizedQuery))
+    return filterRankedMarketItems(config, activeCategoryId).filter((item) => matchesQuery(item, normalizedQuery))
   }, [config, activeCategoryId, query, showSearch])
 
   return (

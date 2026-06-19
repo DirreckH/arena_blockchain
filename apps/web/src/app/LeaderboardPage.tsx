@@ -10,7 +10,6 @@ import { useAuthSession } from '../features/auth/auth-session'
 
 type RespondentLeaderboardRow = {
   rank: number
-  userId: string
   handle: string
   walletShort: string
   responseRatePercent: number
@@ -55,7 +54,6 @@ function toCategoryLeaderboard(
     description: category.description,
     rows: category.rows.map((row, index) => ({
       rank: index + 1,
-      userId: row.userId,
       handle: row.handle,
       walletShort: row.walletShort,
       responseRatePercent: row.responseRatePercent,
@@ -203,7 +201,7 @@ export function LeaderboardPage() {
                 </thead>
                 <tbody>
                   {activeCategory.rows.map((row) => (
-                    <tr key={`${activeCategory.id}-${row.userId}`}>
+                    <tr key={`${activeCategory.id}-${row.handle}-${row.walletShort}`}>
                       <th scope="row">
                         <span className={`leaderboard-rank rank-${Math.min(row.rank, 4)}`}>
                           {rankBadgeIcon(row.rank)}
@@ -246,6 +244,12 @@ export function LeaderboardPage() {
               <span>排行计算窗口：最近 30 天</span>
               <Link to="/zh/accuracy">了解回答率与质检规则</Link>
             </footer>
+          </article>
+        ) : !discoveryErrorMessage ? (
+          <article className="leaderboard-table-card">
+            <div className="reputation-empty">
+              <span>暂时还没有可展示的回答率排行数据，命题进入公开结算后会逐步生成。</span>
+            </div>
           </article>
         ) : null}
       </section>

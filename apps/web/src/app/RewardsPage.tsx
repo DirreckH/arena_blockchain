@@ -24,6 +24,7 @@ import {
   summarizeReputationLevel,
   summarizeTags,
   summarizeRewardStatus,
+  summarizePayoutStatus,
 } from '../features/arena/arena-ui-mappers'
 import { useArenaAccountData } from '../features/arena/account-data'
 
@@ -95,6 +96,14 @@ const rewardFaqs: RewardFaq[] = [
 
 function formatAmount(amount: string) {
   return `${amount} USDC`
+}
+
+function shortenAddress(address: string) {
+  if (address.length <= 14) {
+    return address
+  }
+
+  return `${address.slice(0, 8)}…${address.slice(-6)}`
 }
 
 function summarizeReviewStatus(reviewStatus: ResponseReviewStatus | null) {
@@ -233,6 +242,41 @@ function RewardSummaryPanel({
   )
 }
 
+function RewardPayoutRow({ reward }: { reward: RespondentRewardLedgerViewModel }) {
+  if (reward.status !== 'finalized' && !reward.payoutStatus) {
+    return null
+  }
+
+  const payout = summarizePayoutStatus(reward.payoutStatus)
+  const payoutAmount = reward.payoutAmount ?? reward.finalAmount
+  const assetSymbol = reward.payoutAssetSymbol ?? 'USDC'
+
+  return (
+    <div className={`rewards-payout-row tone-${payout.tone}`} aria-label="奖励发放状态">
+      <div className="rewards-payout-head">
+        <span className={`rewards-payout-badge tone-${payout.tone}`}>{payout.label}</span>
+        {payoutAmount ? (
+          <span className="rewards-payout-amount">
+            {payoutAmount} {assetSymbol}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="rewards-payout-meta">
+        {reward.payoutDestinationAddress ? (
+          <span>到账地址: {shortenAddress(reward.payoutDestinationAddress)}</span>
+        ) : null}
+        {reward.payoutRequestedAt ? <span>发起时间: {formatRelativeTime(reward.payoutRequestedAt)}</span> : null}
+        {reward.payoutCompletedAt ? <span>到账时间: {formatRelativeTime(reward.payoutCompletedAt)}</span> : null}
+      </div>
+
+      {reward.payoutStatus === 'failed' && reward.payoutFailureReason ? (
+        <p className="rewards-payout-failure">失败原因: {reward.payoutFailureReason}</p>
+      ) : null}
+    </div>
+  )
+}
+
 function RewardLedgerPanel({ rewards }: { rewards: RespondentRewardLedgerViewModel[] }) {
   const currentRewards = rewards.filter((reward) => reward.isCurrent)
   const visibleRewards = [...currentRewards].sort(
@@ -278,6 +322,8 @@ function RewardLedgerPanel({ rewards }: { rewards: RespondentRewardLedgerViewMod
                 <span>记录时间: {formatRelativeTime(reward.createdAt)}</span>
                 {reward.finalizedAt ? <span>结算完成: {formatRelativeTime(reward.finalizedAt)}</span> : null}
               </div>
+
+              <RewardPayoutRow reward={reward} />
             </article>
           ))}
         </div>

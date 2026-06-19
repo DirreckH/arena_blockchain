@@ -18,7 +18,6 @@ function buildHealth(
     lastFailedRunAt: null,
     latestRun: {
       runId: 'delivery-run-demo-latest',
-      userId: 'demo-user',
       comparisonSetId: 'comparison-set-demo-core',
       policyId: 'delivery-policy-demo-daily',
       status: 'completed',
@@ -85,10 +84,10 @@ describe('submissions delivery agreement formatters', () => {
 
     expect(
       formatDeliveryLatestExportAgreementDetail(focusedHealth, selectedHealth),
-    ).toContain('Health panel has retained export comparison-export-demo-core, but the focused summary has not refreshed yet')
+    ).toContain('健康面板已有保留导出 comparison-export-demo-core，但聚焦摘要尚未刷新到该记录')
     expect(
       formatDeliveryLatestExportAgreementDetail(focusedHealth, selectedHealth),
-    ).toContain('this health panel is fresher than the focused summary snapshot from')
+    ).toContain('当前健康面板比')
   })
 
   it('explains when the open health panel is fresher than the row-level export evidence', () => {
@@ -118,10 +117,10 @@ describe('submissions delivery agreement formatters', () => {
 
     expect(
       formatDeliveryRowExportAgreementDetail(rowHealth, selectedHealth),
-    ).toContain('The open health panel has retained export comparison-export-demo-core, but this row has not refreshed yet')
+    ).toContain('已打开的健康面板已有保留导出 comparison-export-demo-core，但当前这一行尚未刷新到该记录')
     expect(
       formatDeliveryRowExportAgreementDetail(rowHealth, selectedHealth),
-    ).toContain('this open health panel is fresher than the row snapshot from')
+    ).toContain('已打开的健康面板比')
   })
 
   it('distinguishes shared historical export references from currently retained export availability', () => {
@@ -140,9 +139,9 @@ describe('submissions delivery agreement formatters', () => {
 
     expect(
       formatDeliveryLatestExportAgreementDetail(focusedHealth, selectedHealth),
-    ).toContain('both reference export comparison-export-demo-core, but it is no longer retained')
+    ).toContain('聚焦摘要与健康面板都引用了导出 comparison-export-demo-core，但该导出已不再保留')
     expect(
       formatDeliveryRowExportAgreementDetail(focusedHealth, selectedHealth),
-    ).toContain('both reference export comparison-export-demo-core, but it is no longer retained')
+    ).toContain('当前这一行与已打开的健康面板都引用了导出 comparison-export-demo-core，但该导出已不再保留')
   })
 })

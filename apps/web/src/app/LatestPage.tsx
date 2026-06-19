@@ -9,6 +9,7 @@ import { useValidationMarketData } from '../features/validation/validation-marke
 import { useAuthSession } from '../features/auth/auth-session'
 
 const LATEST_TOPIC_PAGE_SIZE = 4
+const ALL_LATEST_TOPICS_ID = 'all-latest-topics'
 
 export function LatestPage() {
   const { latestTopics, sourceMode, isLoading, errorMessage } = useDiscoveryData()
@@ -30,7 +31,9 @@ export function LatestPage() {
     }
   }, [activeTopicId, topicItems])
 
-  const activeTopic = topicItems.find((topic) => topic.id === activeTopicId) ?? topicItems[0]
+  const activeTopic = activeTopicId === ALL_LATEST_TOPICS_ID
+    ? undefined
+    : (topicItems.find((topic) => topic.id === activeTopicId) ?? topicItems[0])
   const allTopicMarkets = useMemo(() => {
     const baseMarkets = !activeTopic
       ? Array.from(marketMap.values())
@@ -122,7 +125,19 @@ export function LatestPage() {
         </section>
       ) : null}
 
-      <div className="latest-topic-bar" aria-label="Latest topics">
+      <div className="latest-topic-bar" aria-label="最新话题">
+        <button
+          type="button"
+          className={activeTopicId === ALL_LATEST_TOPICS_ID ? 'latest-topic-all active' : 'latest-topic-all'}
+          aria-label="查看全部最新话题"
+          onClick={() => {
+            setActiveTopicId(ALL_LATEST_TOPICS_ID)
+            setActivePage(0)
+          }}
+        >
+          全部
+        </button>
+
         <button
           type="button"
           className="latest-topic-arrow"
@@ -164,7 +179,7 @@ export function LatestPage() {
         compact
         markets={markets}
         showFilterStrip={false}
-        title={`${activeTopic?.label ?? '最新'} 话题卡片`}
+        title={`${activeTopicId === ALL_LATEST_TOPICS_ID ? '全部' : (activeTopic?.label ?? '最新')} 话题卡片`}
         showMoreLabel={null}
         footer={pagination}
       />

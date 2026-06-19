@@ -18,7 +18,7 @@ export function MobileTabBar() {
   const isMenuOpen = isQuickMenuOpen && activeQuickMenuTrigger === 'mobile-tab'
 
   return (
-    <nav className="mobile-tabbar" aria-label="Mobile navigation">
+    <nav className="mobile-tabbar" aria-label="移动端导航">
       <NavLink to="/zh" end>
         <Home size={20} />
         <span>首页</span>

@@ -51,6 +51,14 @@ function buildRewards(): RespondentRewardLedgerViewModel[] {
       reversedAt: null,
       ledgerVersion: 1,
       isCurrent: true,
+      payoutStatus: 'completed',
+      payoutMethod: 'wallet_transfer',
+      payoutAmount: '42.00',
+      payoutAssetSymbol: 'USDC',
+      payoutDestinationAddress: '0xRewardLive000000000000000000000000000001',
+      payoutRequestedAt: '2026-05-21T08:00:00.000Z',
+      payoutCompletedAt: '2026-05-21T09:00:00.000Z',
+      payoutFailureReason: null,
     },
     {
       ledgerId: 'reward-live-2',
@@ -69,13 +77,20 @@ function buildRewards(): RespondentRewardLedgerViewModel[] {
       reversedAt: null,
       ledgerVersion: 1,
       isCurrent: true,
+      payoutStatus: null,
+      payoutMethod: null,
+      payoutAmount: null,
+      payoutAssetSymbol: null,
+      payoutDestinationAddress: null,
+      payoutRequestedAt: null,
+      payoutCompletedAt: null,
+      payoutFailureReason: null,
     },
   ]
 }
 
 function buildReputation(): RespondentReputationSummaryViewModel {
   return {
-    userId: 'live-user-1',
     reputationScore: 88,
     reputationLevel: 'trusted',
     metrics: {
@@ -93,7 +108,6 @@ function buildReputation(): RespondentReputationSummaryViewModel {
 
 function buildTags(): RespondentTagSummaryViewModel {
   return {
-    userId: 'live-user-1',
     tags: [
       {
         tagKey: 'high_signal_reviewer',
@@ -113,7 +127,6 @@ function buildTags(): RespondentTagSummaryViewModel {
 
 function buildOverview(): RespondentAccountOverviewViewModel {
   return {
-    userId: 'live-user-1',
     rewards: buildRewards(),
     rewardSummary: {
       currentCount: 2,
@@ -123,9 +136,7 @@ function buildOverview(): RespondentAccountOverviewViewModel {
     reputation: buildReputation(),
     tags: buildTags(),
     resultOverview: {
-      userId: 'live-user-1',
       settledResults: {
-        userId: 'live-user-1',
         totals: {
           settledCount: 3,
           resolvedCount: 3,
@@ -301,6 +312,10 @@ describe('rewards page', () => {
     expect(screen.getByText('high_signal_reviewer')).toBeInTheDocument()
     expect(screen.getByText('真实市场奖励一')).toBeInTheDocument()
     expect(screen.getByText('真实市场奖励二')).toBeInTheDocument()
+    expect(screen.getByText('已到账')).toBeInTheDocument()
+    expect(
+      screen.getByText((content) => content.includes('到账地址') && content.includes('0xReward')),
+    ).toBeInTheDocument()
   })
 
   it('keeps the authenticated demo path honest without showing a degraded source badge', () => {

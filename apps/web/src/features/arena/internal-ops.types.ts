@@ -55,6 +55,16 @@ export type RewardLedgerStatus =
 
 export type RewardLedgerSourceType = 'response'
 
+export type RewardPayoutStatus =
+  | 'requested'
+  | 'approved'
+  | 'executing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type RewardPayoutMethod = 'wallet_transfer'
+
 export type ValidationChainMarketStatus =
   | 'pre_live'
   | 'live'
@@ -710,6 +720,8 @@ export interface ValidationChainRuntimeReadinessDependencyViewModel {
     | 'validation_operator_signer'
     | 'validation_oracle_signer'
     | 'validation_pauser_signer'
+    | 'reward_payout_token'
+    | 'reward_payout_operator_signer'
   status: 'up' | 'down'
   details?: string
 }
@@ -830,6 +842,21 @@ export interface InternalRewardAuditListItemViewModel {
   finalizedAt: string | null
   voidedAt: string | null
   reversedAt: string | null
+  payoutId: string | null
+  payoutStatus: RewardPayoutStatus | null
+  payoutMethod: RewardPayoutMethod | null
+  payoutAmount: string | null
+  payoutAssetSymbol: string | null
+  payoutDestinationAddress: string | null
+  payoutRequestedAt: string | null
+  payoutApprovedAt: string | null
+  payoutCompletedAt: string | null
+  payoutFailedAt: string | null
+  payoutCancelledAt: string | null
+  payoutExecutionTxHash: string | null
+  payoutRetryCount: number
+  payoutLastErrorCode: string | null
+  payoutLastErrorMessage: string | null
 }
 
 export interface InternalRewardAuditDetailViewModel {
@@ -852,6 +879,26 @@ export interface InternalRewardAuditDetailViewModel {
     reasonCodes: string[]
     reviewedByUserId: string | null
     reviewedAt: string | null
+  } | null
+  payout: {
+    payoutId: string
+    status: RewardPayoutStatus
+    method: RewardPayoutMethod
+    amount: string
+    assetSymbol: string
+    destinationAddress: string
+    requestedAt: string
+    approvedAt: string | null
+    approvedByUserId: string | null
+    executionStartedAt: string | null
+    completedAt: string | null
+    failedAt: string | null
+    cancelledAt: string | null
+    executionTxHash: string | null
+    externalReference: string | null
+    retryCount: number
+    lastErrorCode: string | null
+    lastErrorMessage: string | null
   } | null
   chain: InternalRewardAuditListItemViewModel[]
   auditEvents: InternalAuditEventViewModel[]
@@ -1030,3 +1077,134 @@ export type OpsValidationChainPropositionCommand =
   | 'open-market'
   | 'freeze-market'
   | 'resolve-market'
+
+export type InternalDiscoveryRankingCategoryLabelMap = Record<
+  'all' | 'general' | 'politics' | 'sports' | 'tech' | 'research' | 'culture',
+  string
+>
+
+export type InternalDiscoveryCategoryPageState = 'visible' | 'hidden' | 'deleted'
+
+export type InternalDiscoveryCategoryKind = 'system' | 'custom'
+
+export interface InternalDiscoveryGlobalCategoryConfigViewModel {
+  slug: string
+  pathname: string
+  label: string
+  title: string
+  directoryLabel: string
+  description: string
+  displayOrder: number
+  pageState: InternalDiscoveryCategoryPageState
+  kind: InternalDiscoveryCategoryKind
+  marketIdWhitelist: string[]
+  invalidMarketIds: string[]
+}
+
+export interface InternalDiscoveryGlobalCategoryConfigInput {
+  slug: string
+  pathname?: string
+  label?: string
+  title?: string
+  directoryLabel?: string
+  description?: string
+  displayOrder?: number
+  pageState?: InternalDiscoveryCategoryPageState
+  kind?: InternalDiscoveryCategoryKind
+  marketIdWhitelist?: string[]
+}
+
+export type InternalDiscoverySecondaryCapsulePageState = 'visible' | 'hidden' | 'deleted'
+
+export type InternalDiscoverySecondaryCapsuleKind = 'system' | 'custom'
+
+export type InternalDiscoverySecondaryCapsuleBaseRankingId =
+  | 'all'
+  | 'general'
+  | 'politics'
+  | 'sports'
+  | 'tech'
+  | 'research'
+  | 'culture'
+
+export interface InternalDiscoverySecondaryCapsuleViewModel {
+  id: string
+  label: string
+  displayOrder: number
+  pageState: InternalDiscoverySecondaryCapsulePageState
+  kind: InternalDiscoverySecondaryCapsuleKind
+  baseRankingId: InternalDiscoverySecondaryCapsuleBaseRankingId | null
+  marketIdWhitelist: string[]
+  invalidMarketIds: string[]
+}
+
+export interface InternalDiscoverySecondaryCapsuleInput {
+  id: string
+  label?: string
+  displayOrder?: number
+  pageState?: InternalDiscoverySecondaryCapsulePageState
+  kind?: InternalDiscoverySecondaryCapsuleKind
+  baseRankingId?: InternalDiscoverySecondaryCapsuleBaseRankingId | null
+  marketIdWhitelist?: string[]
+}
+
+export interface InternalDiscoveryGlobalConfigViewModel {
+  categories: InternalDiscoveryGlobalCategoryConfigViewModel[]
+  rankingCategoryLabels: InternalDiscoveryRankingCategoryLabelMap
+  secondaryCapsules: InternalDiscoverySecondaryCapsuleViewModel[]
+}
+
+export interface InternalDiscoveryGlobalConfigInput {
+  categories: InternalDiscoveryGlobalCategoryConfigInput[]
+  rankingCategoryLabels: Partial<InternalDiscoveryRankingCategoryLabelMap>
+  secondaryCapsules?: InternalDiscoverySecondaryCapsuleInput[]
+}
+
+export interface InternalDiscoveryCategoryConfigSummaryViewModel {
+  slug: string
+  pathname: string
+  label: string
+  title: string
+  directoryLabel: string
+  description: string
+  sidebarItemCount: number
+  configured: boolean
+  pageState: InternalDiscoveryCategoryPageState
+  kind: InternalDiscoveryCategoryKind
+}
+
+export interface InternalDiscoverySidebarItemViewModel {
+  id: string
+  label: string
+  linkedMarketIds: string[]
+  resolvedLinkedMarketCount: number
+  invalidLinkedMarketIds: string[]
+}
+
+export interface InternalDiscoverySidebarItemInput {
+  id: string
+  label: string
+  linkedMarketIds: string[]
+}
+
+export interface InternalDiscoveryCategoryConfigViewModel {
+  slug: string
+  pathname: string
+  label: string
+  title: string
+  directoryLabel: string
+  description: string
+  configured: boolean
+  pageState: InternalDiscoveryCategoryPageState
+  kind: InternalDiscoveryCategoryKind
+  availableMarkets: Array<{
+    marketId: string
+    title: string
+  }>
+  sidebarItems: InternalDiscoverySidebarItemViewModel[]
+  warnings: string[]
+}
+
+export interface InternalDiscoveryCategoryConfigInput {
+  sidebarItems: InternalDiscoverySidebarItemInput[]
+}

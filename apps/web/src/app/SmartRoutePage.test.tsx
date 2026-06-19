@@ -32,7 +32,7 @@ describe('smart route page routes', () => {
       expect(screen.getByTestId('current-path')).toHaveTextContent('/zh')
     })
 
-    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
   })
 
   it('renders requester submissions page on /zh/submissions', async () => {

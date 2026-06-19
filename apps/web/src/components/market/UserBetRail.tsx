@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import { filterUserOpenMarkets, filterUserSettledMarkets } from '../../features/arena/arena-ui-mappers'
 import { useValidationMarketData } from '../../features/validation/validation-market-data'
 
+const USER_BET_PREVIEW_LIMIT = 5
+
 type UserBetItem = {
   href: string
   title: string
@@ -59,17 +61,21 @@ export function UserBetRail() {
     [rawMarkets],
   )
   const currentItems = activeTab === 'open' ? openItems : settledItems
+  const visibleItems = useMemo(
+    () => currentItems.slice(0, USER_BET_PREVIEW_LIMIT),
+    [currentItems],
+  )
 
   return (
     <aside className="right-rail user-bet-rail" aria-label="已下注命题">
       <section className="rail-section user-bet-panel">
-        <Link to="/zh/activity" className="rail-heading">
+        <Link to="/zh/results?tab=wagers" className="rail-heading">
           已下注命题
           <ChevronRight size={18} />
         </Link>
 
         <div className="bet-list" aria-label={activeTab === 'open' ? '未开奖命题' : '已开奖命题'}>
-          {currentItems.length > 0 ? currentItems.map((item) => (
+          {visibleItems.length > 0 ? visibleItems.map((item) => (
             <BetRow item={item} key={item.href} />
           )) : (
             <div className="bet-row">

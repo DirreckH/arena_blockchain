@@ -26,6 +26,19 @@ vi.mock('../features/validation/validation-market-data', async () => {
   }
 })
 
+vi.mock('../components/shared/RulesIntroContext', async () => {
+  const actual = await vi.importActual('../components/shared/RulesIntroContext')
+
+  return {
+    ...actual,
+    useRulesIntro: vi.fn(() => ({
+      openRulesIntro: vi.fn(),
+      openAuthModal: vi.fn(),
+      isAuthenticated: true,
+    })),
+  }
+})
+
 vi.mock('../features/api/arena-api', async () => {
   const actual = await vi.importActual<typeof import('../features/api/arena-api')>('../features/api/arena-api')
 

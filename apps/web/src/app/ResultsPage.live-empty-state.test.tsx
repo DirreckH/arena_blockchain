@@ -27,9 +27,7 @@ const mockedUseResultOverviewData = vi.mocked(useResultOverviewData)
 
 function buildEmptyLiveOverview(): RespondentResultOverviewViewModel {
   return {
-    userId: 'live_user_1',
     settledResults: {
-      userId: 'live_user_1',
       totals: {
         settledCount: 0,
         resolvedCount: 0,

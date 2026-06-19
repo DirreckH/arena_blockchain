@@ -5,9 +5,25 @@ import type {
   RespondentRewardLedgerViewModel,
   RespondentTagSummaryViewModel,
   RewardLedgerStatus,
+  RewardPayoutStatus,
   ValidationMarketViewModel,
 } from '@arena/shared'
 import type { PropositionDraftRecord } from '../api/arena-api'
+
+const SAMPLE_CONSTRAINT_LABELS: Record<string, string> = {
+  experienced_user: '资深答题人',
+  wallet_signed: '已绑定钱包',
+  high_completion: '高完成率',
+  high_quality: '高质量',
+  low_anomaly: '低异常率',
+  stable_responder: '稳定答题人',
+  risky_responder: '高风险样本',
+  interested_in_sports: '体育兴趣',
+  interested_in_ai: 'AI 兴趣',
+  interested_in_brand_research: '品牌调研兴趣',
+  interested_in_politics: '公共政策兴趣',
+  interested_in_entertainment: '娱乐兴趣',
+}
 
 export function formatRelativeTime(isoTimestamp: string) {
   const timestamp = new Date(isoTimestamp).getTime()
@@ -73,13 +89,11 @@ export function computeDraftCompletion(draft: PropositionDraftRecord) {
 }
 
 export function buildDraftTags(draft: PropositionDraftRecord) {
-  const tags = draft.sampleConstraints.slice(0, 3)
+  return [...draft.sampleConstraints]
+}
 
-  if (tags.length > 0) {
-    return tags
-  }
-
-  return [formatCategoryLabel(draft.category)]
+export function formatSampleConstraintLabel(value: string) {
+  return SAMPLE_CONSTRAINT_LABELS[value] ?? value
 }
 
 export function buildDraftReferenceLink() {
@@ -98,6 +112,30 @@ export function summarizeRewardStatus(status: RewardLedgerStatus | null) {
       return '已冲销'
     default:
       return '未开始'
+  }
+}
+
+export type PayoutStatusTone = 'positive' | 'progress' | 'negative' | 'neutral'
+
+export function summarizePayoutStatus(status: RewardPayoutStatus | null): {
+  label: string
+  tone: PayoutStatusTone
+} {
+  switch (status) {
+    case 'requested':
+      return { label: '已申请发放', tone: 'progress' }
+    case 'approved':
+      return { label: '已审核待执行', tone: 'progress' }
+    case 'executing':
+      return { label: '发放执行中', tone: 'progress' }
+    case 'completed':
+      return { label: '已到账', tone: 'positive' }
+    case 'failed':
+      return { label: '发放失败', tone: 'negative' }
+    case 'cancelled':
+      return { label: '发放已取消', tone: 'neutral' }
+    default:
+      return { label: '尚未发起发放', tone: 'neutral' }
   }
 }
 

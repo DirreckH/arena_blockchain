@@ -58,7 +58,7 @@ describe('submissions page', () => {
 
     const { container } = renderApp(['/zh/submissions'])
 
-    expect(await screen.findByText('Requester flow error')).toBeInTheDocument()
+    expect(await screen.findByText('已提交命题加载错误')).toBeInTheDocument()
     expect(screen.getByText('Requester submissions unavailable')).toBeInTheDocument()
     expect(container.querySelector('.data-source-badge.unavailable')).not.toBeNull()
   })
@@ -79,6 +79,29 @@ describe('submissions page', () => {
     expect(await screen.findByTestId('submission-empty-state')).toBeInTheDocument()
   })
 
+  it('renders readable sample-constraint labels and an explicit empty state for submissions', async () => {
+    demoBackend.updateDraft('draft-demo-consensus-window', {
+      sampleConstraints: ['experienced_user', 'interested_in_ai'],
+    })
+
+    renderApp(['/zh/submissions'])
+
+    const populatedCard = await screen.findByTestId('submission-card-draft-demo-consensus-window')
+    expect(within(populatedCard).getByText('资深答题人')).toBeInTheDocument()
+    expect(within(populatedCard).getByText('AI 兴趣')).toBeInTheDocument()
+    expect(within(populatedCard).queryByText('experienced_user')).not.toBeInTheDocument()
+
+    demoBackend.updateDraft('draft-demo-consensus-window', {
+      sampleConstraints: [],
+    })
+
+    renderApp(['/zh/submissions'])
+
+    expect(
+      await screen.findByTestId('submission-sample-constraints-empty-draft-demo-consensus-window'),
+    ).toHaveTextContent('暂无样本约束')
+  })
+
   it('expands a submission into requester detail data', async () => {
     const user = userEvent.setup()
     renderApp(['/zh/submissions'])
@@ -92,20 +115,20 @@ describe('submissions page', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByTestId('submission-status-draft-demo-consensus-window'),
-    ).toHaveTextContent('Submitted')
+    ).toHaveTextContent('已提交')
     expect(
       screen.getByTestId('proposition-status-draft-demo-consensus-window'),
-    ).toHaveTextContent('Draft')
+    ).toHaveTextContent('草稿')
     expect(
       screen.getByTestId('sample-progress-draft-demo-consensus-window'),
     ).toHaveTextContent('0 / 6')
-    expect(screen.getByText('Budget ledger')).toBeInTheDocument()
+    expect(screen.getByText('预算台账')).toBeInTheDocument()
     expect(
       screen.getByTestId('submission-budget-summary-draft-demo-consensus-window'),
-    ).toHaveTextContent('Remaining')
+    ).toHaveTextContent('剩余')
     expect(
       screen.getByTestId('submission-budget-ledger-draft-demo-consensus-window'),
-    ).toHaveTextContent('No requester-visible budget entries yet')
+    ).toHaveTextContent('暂未生成可展示给发起方的预算记录。')
   })
 
   it('creates requester export snapshots from the submissions flow', async () => {
@@ -185,8 +208,8 @@ describe('submissions page', () => {
 
     expect(await screen.findByTestId('requester-export-detail-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-export-detail-report-count')).toHaveTextContent('1')
-    expect(screen.getByText('Settled only preset scoped to settled.')).toBeInTheDocument()
-    expect(screen.getByText('Preset-backed')).toBeInTheDocument()
+    expect(screen.getByText('Settled only 预设，范围：settled。')).toBeInTheDocument()
+    expect(screen.getByText('预设生成')).toBeInTheDocument()
   })
 
   it('opens requester comparison set analytics and export artifacts from the submissions flow', async () => {
@@ -219,7 +242,7 @@ describe('submissions page', () => {
     expect(screen.getByTestId('requester-comparison-export-history-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-export-history-count')).toHaveTextContent('2')
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Manual snapshot',
+      '手动快照',
     )
   })
 
@@ -235,7 +258,7 @@ describe('submissions page', () => {
 
     const manualHistoryRow = screen
       .getAllByTestId('requester-comparison-export-history-item')
-      .find((row) => row.textContent?.includes('Manual snapshot'))
+      .find((row) => row.textContent?.includes('手动快照'))
     expect(manualHistoryRow).toBeDefined()
 
     await user.click(
@@ -246,7 +269,7 @@ describe('submissions page', () => {
 
     expect(await screen.findByTestId('requester-comparison-export-detail-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Manual snapshot',
+      '手动快照',
     )
 
     await user.click(
@@ -302,7 +325,7 @@ describe('submissions page', () => {
       'Daily settled delivery',
     )
     expect(screen.getByTestId('requester-comparison-delivery-policy-item')).toHaveTextContent(
-      'Enabled',
+      '已启用',
     )
 
     await user.click(screen.getByTestId('requester-comparison-delivery-health-open'))
@@ -311,11 +334,11 @@ describe('submissions page', () => {
       await screen.findByTestId('requester-comparison-delivery-health-panel'),
     ).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-health-status')).toHaveTextContent(
-      'Scheduled',
+      '已排期',
     )
     expect(
       screen.getByTestId('requester-comparison-delivery-health-transport'),
-    ).toHaveTextContent('Ready')
+    ).toHaveTextContent('就绪')
     expect(
       screen.getByTestId('requester-comparison-delivery-health-credential-count'),
     ).toHaveTextContent('1')
@@ -333,7 +356,7 @@ describe('submissions page', () => {
 
     expect(
       await screen.findByTestId('requester-comparison-delivery-credential-status'),
-    ).toHaveTextContent('Ready binding')
+    ).toHaveTextContent('绑定正常')
     expect(
       screen.getByTestId('requester-comparison-delivery-credential-detail'),
     ).toHaveTextContent('ARENA_REQUESTER_WEBHOOK_BEARER')
@@ -346,22 +369,22 @@ describe('submissions page', () => {
 
     await user.click(screen.getByTestId('requester-comparison-delivery-clear-credential'))
 
-    expect(screen.getByLabelText('Credential key')).toHaveValue('')
+    expect(screen.getByLabelText('凭据 Key')).toHaveValue('')
     expect(
       screen.getByTestId('requester-comparison-delivery-credential-status'),
-    ).toHaveTextContent('No credential')
+    ).toHaveTextContent('无凭据')
 
     await user.selectOptions(
       screen.getByTestId('requester-comparison-delivery-credential-binding-select'),
       'ARENA_REQUESTER_WEBHOOK_BEARER',
     )
 
-    expect(screen.getByLabelText('Credential key')).toHaveValue(
+    expect(screen.getByLabelText('凭据 Key')).toHaveValue(
       'ARENA_REQUESTER_WEBHOOK_BEARER',
     )
     expect(
       screen.getByTestId('requester-comparison-delivery-credential-status'),
-    ).toHaveTextContent('Ready binding')
+    ).toHaveTextContent('绑定正常')
   })
 
   it('surfaces row-side retained-export evidence before a health panel is opened', async () => {
@@ -379,19 +402,19 @@ describe('submissions page', () => {
         within(row as HTMLElement).getByTestId(
           'requester-comparison-delivery-policy-latest-run-detail',
         ),
-      ).toHaveTextContent('Retained export comparison-export-demo-core')
+      ).toHaveTextContent('保留导出 comparison-export-demo-core')
       return row as HTMLElement
     })
 
     expect(
       within(dailyRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('This row currently references retained export comparison-export-demo-core')
+    ).toHaveTextContent('当前这一行引用的是保留导出 comparison-export-demo-core')
     expect(
       within(dailyRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('Snapshot checked')
+    ).toHaveTextContent('快照检查于')
     expect(
       within(dailyRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('Open this policy health panel')
+    ).toHaveTextContent('打开该策略的健康面板')
   })
 
   it('opens the latest retained comparison export from the delivery health panel', async () => {
@@ -412,7 +435,7 @@ describe('submissions page', () => {
       'arena-requester-comparison-demo-user-',
     )
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Policy manual run',
+      '策略手动执行',
     )
   })
 
@@ -427,16 +450,16 @@ describe('submissions page', () => {
       await screen.findByTestId('requester-comparison-delivery-health-panel'),
     ).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      'Focused summary matches this retained export: comparison-export-demo-core',
+      '聚焦摘要与当前保留导出一致：comparison-export-demo-core',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-health-detail')).toHaveTextContent(
-      'Snapshot checked',
+      '快照检查于',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-transport-detail')).toHaveTextContent(
       'ARENA_REQUESTER_WEBHOOK_BEARER',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      'Health snapshot checked',
+      '健康快照检查于',
     )
   })
 
@@ -456,24 +479,24 @@ describe('submissions page', () => {
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-run-panel')).toBeInTheDocument()
       expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-        'Retained export',
+        '保留导出',
       )
       expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).not.toHaveTextContent(
-        'Focused summary matches this retained export: comparison-export-demo-core',
+        '聚焦摘要与当前保留导出一致：comparison-export-demo-core',
       )
     })
 
     const latestRunText =
       screen.getByTestId('requester-comparison-delivery-focus-latest-run').textContent ?? ''
-    const latestExportId = latestRunText.match(/Retained export (\S+)/)?.[1]
+    const latestExportId = latestRunText.match(/保留导出 (\S+)/)?.[1]
 
     expect(latestExportId).toBeTruthy()
     expect(latestExportId).not.toBe('comparison-export-demo-core')
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      `Focused summary references retained export ${latestExportId}, while this health panel references comparison-export-demo-core`,
+      `聚焦摘要引用的是保留导出 ${latestExportId}，而当前健康面板引用的是 comparison-export-demo-core`,
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      'health snapshot',
+      '健康快照',
     )
   })
 
@@ -502,11 +525,11 @@ describe('submissions page', () => {
     expect(
       within(dailyRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
     ).toHaveTextContent(
-      'This row matches the open health panel retained export: comparison-export-demo-core',
+      '当前这一行与已打开健康面板的保留导出一致：comparison-export-demo-core',
     )
     expect(
       within(dailyRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('Health snapshot checked')
+    ).toHaveTextContent('健康快照检查于')
 
     await user.click(within(dailyRow).getByTestId('requester-comparison-delivery-run'))
 
@@ -517,13 +540,13 @@ describe('submissions page', () => {
         within(row as HTMLElement).getByTestId(
           'requester-comparison-delivery-policy-latest-run-detail',
         ),
-      ).toHaveTextContent('Retained export')
+      ).toHaveTextContent('保留导出')
       expect(
         within(row as HTMLElement).getByTestId(
           'requester-comparison-delivery-policy-export-agreement',
         ),
       ).not.toHaveTextContent(
-        'This row matches the open health panel retained export: comparison-export-demo-core',
+        '当前这一行与已打开健康面板的保留导出一致：comparison-export-demo-core',
       )
       return row as HTMLElement
     })
@@ -531,18 +554,18 @@ describe('submissions page', () => {
     const latestRunText =
       within(refreshedDailyRow).getByTestId('requester-comparison-delivery-policy-latest-run-detail')
         .textContent ?? ''
-    const latestExportId = latestRunText.match(/Retained export (\S+)/)?.[1]
+    const latestExportId = latestRunText.match(/保留导出 (\S+)/)?.[1]
 
     expect(latestExportId).toBeTruthy()
     expect(latestExportId).not.toBe('comparison-export-demo-core')
     expect(
       within(refreshedDailyRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
     ).toHaveTextContent(
-      `This row references retained export ${latestExportId}, while the open health panel references comparison-export-demo-core`,
+      `当前这一行引用的是保留导出 ${latestExportId}，而已打开的健康面板引用的是 comparison-export-demo-core`,
     )
     expect(
       within(refreshedDailyRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('open health snapshot')
+    ).toHaveTextContent('健康快照')
   })
 
   it('keeps snapshot timing visible when a preserved empty health panel lags behind refreshed retained-export evidence', async () => {
@@ -574,13 +597,13 @@ describe('submissions page', () => {
 
     expect(
       within(createdRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('This row has no retained export evidence yet')
+    ).toHaveTextContent('当前这一行暂无保留导出记录')
     expect(
       within(createdRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('Snapshot checked')
+    ).toHaveTextContent('快照检查于')
     expect(
       within(createdRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('Open this policy health panel to compare retained-export evidence.')
+    ).toHaveTextContent('打开该策略的健康面板可对比保留导出记录。')
 
     await user.click(within(createdRow).getByTestId('requester-comparison-delivery-health-open'))
 
@@ -588,10 +611,10 @@ describe('submissions page', () => {
       await screen.findByTestId('requester-comparison-delivery-health-panel'),
     ).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      'Focused summary and health panel both have no retained export evidence yet',
+      '聚焦摘要与健康面板当前都暂无保留导出记录',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      'Health snapshot checked',
+      '健康快照检查于',
     )
 
     await user.click(within(createdRow).getByTestId('requester-comparison-delivery-run'))
@@ -600,35 +623,35 @@ describe('submissions page', () => {
       const row = findPolicyRow('Fresh export after empty snapshot')
       expect(row).toBeDefined()
       expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-        'Retained export',
+        '保留导出',
       )
       expect(
         within(row as HTMLElement).getByTestId(
           'requester-comparison-delivery-policy-latest-run-detail',
         ),
-      ).toHaveTextContent('Retained export')
+      ).toHaveTextContent('保留导出')
       return row as HTMLElement
     })
 
     const latestRunText =
       screen.getByTestId('requester-comparison-delivery-focus-latest-run').textContent ?? ''
-    const latestExportId = latestRunText.match(/Retained export (\S+)/)?.[1]
+    const latestExportId = latestRunText.match(/保留导出 (\S+)/)?.[1]
 
     expect(latestExportId).toBeTruthy()
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      `Focused summary still references retained export ${latestExportId}, but this health panel has no retained export evidence`,
+      `聚焦摘要仍引用保留导出 ${latestExportId}，但当前健康面板暂无保留导出记录`,
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      'health snapshot',
+      '健康快照',
     )
     expect(
       within(refreshedRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
     ).toHaveTextContent(
-      `This row still references retained export ${latestExportId}, but the open health panel has no retained export evidence`,
+      `当前这一行仍引用保留导出 ${latestExportId}，但已打开的健康面板暂无保留导出记录`,
     )
     expect(
       within(refreshedRow).getByTestId('requester-comparison-delivery-policy-export-agreement'),
-    ).toHaveTextContent('open health snapshot')
+    ).toHaveTextContent('健康快照')
   })
 
   it('runs and pauses or resumes requester comparison set delivery policies from the submissions flow', async () => {
@@ -641,7 +664,7 @@ describe('submissions page', () => {
     expect(await screen.findByTestId('requester-comparison-delivery-health-panel')).toBeInTheDocument()
 
     expect(await screen.findByTestId('requester-comparison-delivery-policy-item')).toHaveTextContent(
-      'Enabled',
+      '已启用',
     )
 
     await user.click(screen.getByTestId('requester-comparison-delivery-run'))
@@ -651,19 +674,19 @@ describe('submissions page', () => {
       'arena-requester-comparison-demo-user-',
     )
     expect(screen.getByTestId('requester-comparison-delivery-run-status')).toHaveTextContent(
-      'Completed',
+      '已完成',
     )
     expect(screen.getByTestId('requester-comparison-delivery-run-provenance')).toHaveTextContent(
-      'Retained export',
+      '保留导出',
     )
     expect(screen.getByTestId('requester-comparison-delivery-run-panel')).toHaveTextContent(
       'HTTP 202',
     )
     expect(screen.getByTestId('requester-comparison-delivery-run-panel')).toHaveTextContent(
-      'Bearer credential ARENA_REQUESTER_WEBHOOK_BEARER',
+      'Bearer 凭据 ARENA_REQUESTER_WEBHOOK_BEARER',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Manual run completed',
+      '手动运行 · 已完成',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-open-export')).toBeEnabled()
     expect(screen.getByTestId('requester-comparison-delivery-focus-open-export')).toBeEnabled()
@@ -672,7 +695,7 @@ describe('submissions page', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-policy-item')).toHaveTextContent(
-        'Paused',
+        '已暂停',
       )
     })
 
@@ -680,7 +703,7 @@ describe('submissions page', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-policy-item')).toHaveTextContent(
-        'Enabled',
+        '已启用',
       )
     })
   })
@@ -694,25 +717,25 @@ describe('submissions page', () => {
 
     expect(await screen.findByTestId('requester-comparison-delivery-runs-panel')).toBeInTheDocument()
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-      'Failed',
+      '已失败',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
       'transport credential missing',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-      'Retained export',
+      '保留导出',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[1]).toHaveTextContent(
-      'Manual delivery',
+      '手动投递',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[1]).toHaveTextContent(
       'HTTP 202',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[1]).toHaveTextContent(
-      'No downstream authentication',
+      '暂无下游鉴权',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[1]).toHaveTextContent(
-      'Retained export comparison-export-demo-core',
+      '保留导出 comparison-export-demo-core',
     )
   })
 
@@ -725,30 +748,30 @@ describe('submissions page', () => {
 
     expect(await screen.findByTestId('requester-comparison-delivery-runs-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-run-history-summary')).toHaveTextContent(
-      'All retained delivery runs · 2 stored runs',
+      '全部保留投递记录 · 共 2 条已保存记录',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-      'Failed',
+      '已失败',
     )
 
     await user.click(screen.getByTestId('requester-comparison-delivery-run'))
 
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-run-history-summary')).toHaveTextContent(
-        'All retained delivery runs · 3 stored runs',
+        '全部保留投递记录 · 共 3 条已保存记录',
       )
       expect(screen.getAllByTestId('requester-comparison-delivery-run-item')).toHaveLength(3)
       expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-        'Completed',
+        '已完成',
       )
       expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-        'Manual delivery',
+        '手动投递',
       )
       expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
         'HTTP 202',
       )
       expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-        'Retained export',
+        '保留导出',
       )
     })
   })
@@ -770,7 +793,7 @@ describe('submissions page', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-policy-item')).toHaveTextContent(
-        'Retain 1',
+        '保留 1',
       )
     })
 
@@ -778,7 +801,7 @@ describe('submissions page', () => {
 
     expect(await screen.findByTestId('requester-comparison-export-detail-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Policy manual run',
+      '策略手动执行',
     )
 
     const previousExportFileName =
@@ -827,7 +850,7 @@ describe('submissions page', () => {
       'arena-requester-comparison-demo-user-',
     )
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Policy manual run',
+      '策略手动执行',
     )
   })
 
@@ -848,7 +871,7 @@ describe('submissions page', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-policy-item')).toHaveTextContent(
-        'Retain 1',
+        '保留 1',
       )
     })
 
@@ -868,14 +891,14 @@ describe('submissions page', () => {
       within(prunedFailedRun as HTMLElement).getByTestId(
         'requester-comparison-delivery-run-open-export',
       ),
-    ).toHaveTextContent('Export pruned')
+    ).toHaveTextContent('导出已被清理')
     expect(
       within(prunedFailedRun as HTMLElement).getByTestId(
         'requester-comparison-delivery-run-retry',
       ),
     ).toBeDisabled()
     expect(prunedFailedRun).toHaveTextContent(
-      'Retained export comparison-export-demo-core is no longer available',
+      '保留导出 comparison-export-demo-core 已不可用',
     )
   })
 
@@ -914,34 +937,34 @@ describe('submissions page', () => {
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-focus-open-export')).toBeDisabled()
       expect(screen.getByTestId('requester-comparison-delivery-focus-open-export')).toHaveTextContent(
-        'Export pruned',
+        '导出已被清理',
       )
       expect(screen.getByTestId('requester-comparison-delivery-health-open-export')).toBeDisabled()
       expect(screen.getByTestId('requester-comparison-delivery-health-open-export')).toHaveTextContent(
-        'Export pruned',
+        '导出已被清理',
       )
       expect(screen.getByTestId('requester-comparison-delivery-retry-open-export')).toBeDisabled()
       expect(screen.getByTestId('requester-comparison-delivery-retry-open-export')).toHaveTextContent(
-        'Export pruned',
+        '导出已被清理',
       )
     })
 
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Retained export comparison-export-demo-core was pruned',
+      '保留导出 comparison-export-demo-core 已被清理',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-export-agreement')).toHaveTextContent(
-      'both reference export comparison-export-demo-core, but it is no longer retained',
+      '都引用了导出 comparison-export-demo-core，但该导出已不再保留',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-provenance')).toHaveTextContent(
-      'Retained export comparison-export-demo-core is no longer available',
+      '保留导出 comparison-export-demo-core 已不可用',
     )
 
     const refreshedRunRows = screen.getAllByTestId('requester-comparison-delivery-run-item')
     expect(refreshedRunRows[0]).toHaveTextContent(
-      'Retained export comparison-export-demo-core is no longer available',
+      '保留导出 comparison-export-demo-core 已不可用',
     )
     expect(refreshedRunRows[0]).toHaveTextContent(
-      'Reused retained export comparison-export-demo-core is no longer available',
+      '复用的保留导出 comparison-export-demo-core 已不可用',
     )
     expect(
       within(refreshedRunRows[0]).getByTestId('requester-comparison-delivery-run-open-export'),
@@ -958,7 +981,7 @@ describe('submissions page', () => {
     expect(await screen.findByTestId('requester-comparison-delivery-runs-panel')).toBeInTheDocument()
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')).toHaveLength(2)
     expect(screen.getByTestId('requester-comparison-delivery-run-history-summary')).toHaveTextContent(
-      'All retained delivery runs · 2 stored runs',
+      '全部保留投递记录 · 共 2 条已保存记录',
     )
 
     await user.selectOptions(
@@ -971,7 +994,7 @@ describe('submissions page', () => {
     })
 
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-      'Completed',
+      '已完成',
     )
 
     await user.selectOptions(
@@ -993,7 +1016,7 @@ describe('submissions page', () => {
     })
 
     expect(screen.getByTestId('requester-comparison-delivery-run-history-summary')).toHaveTextContent(
-      'Manual only · Showing 1 of 2 stored runs',
+      '触发：手动 · 显示 1 / 2 条已保存记录',
     )
 
     await user.selectOptions(
@@ -1006,7 +1029,7 @@ describe('submissions page', () => {
     })
 
     expect(screen.getByTestId('requester-comparison-delivery-run-history-summary')).toHaveTextContent(
-      'Manual only · Replay runs only · Showing 0 of 2 stored runs',
+      '触发：手动 · 仅重试运行 · 显示 0 / 2 条已保存记录',
     )
 
     await user.selectOptions(
@@ -1027,7 +1050,7 @@ describe('submissions page', () => {
     })
 
     expect(screen.getByTestId('requester-comparison-delivery-run-history-summary')).toHaveTextContent(
-      'All retained delivery runs · Showing 1 of 2 stored runs',
+      '全部保留投递记录 · 显示 1 / 2 条已保存记录',
     )
   })
 
@@ -1044,45 +1067,45 @@ describe('submissions page', () => {
 
     expect(await screen.findByTestId('requester-comparison-delivery-retry-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-retry-status')).toHaveTextContent(
-      'Completed',
+      '已完成',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-file-name')).toHaveTextContent(
       'arena-requester-comparison-demo-user-',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-provenance')).toHaveTextContent(
-      'Retried failed run delivery-run-demo-failed',
+      '重试失败运行 delivery-run-demo-failed',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-panel')).toHaveTextContent(
-      'Reused retained export',
+      '复用保留导出',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-panel')).toHaveTextContent(
       'HTTP 202',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-panel')).toHaveTextContent(
-      'Bearer credential ARENA_REQUESTER_WEBHOOK_BEARER',
+      'Bearer 凭据 ARENA_REQUESTER_WEBHOOK_BEARER',
     )
     await waitFor(() => {
       expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-        'Retried failed run delivery-run-demo-failed',
+        '重试失败运行 delivery-run-demo-failed',
       )
       expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-        'Reused retained export comparison-export-demo-core',
+        '复用保留导出 comparison-export-demo-core',
       )
     })
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Retried failed run delivery-run-demo-failed',
+      '重试失败运行 delivery-run-demo-failed',
     )
     expect(
       screen
         .getAllByTestId('requester-comparison-delivery-policy-item')[0]
         ?.querySelector('[data-testid=\"requester-comparison-delivery-policy-latest-run-detail\"]'),
-    ).toHaveTextContent('Retried failed run delivery-run-demo-failed')
+    ).toHaveTextContent('重试失败运行 delivery-run-demo-failed')
 
     await user.click(screen.getByTestId('requester-comparison-delivery-retry-open-export'))
 
     expect(await screen.findByTestId('requester-comparison-export-detail-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Policy manual run',
+      '策略手动执行',
     )
   })
 
@@ -1136,7 +1159,7 @@ describe('submissions page', () => {
     })
 
     expect(screen.getByTestId('requester-comparison-delivery-policy-item')).toHaveTextContent(
-      'Retain 2',
+      '保留 2',
     )
     expect(screen.getByTestId('requester-comparison-delivery-form-retained-count')).toHaveTextContent('2')
   })
@@ -1151,7 +1174,7 @@ describe('submissions page', () => {
       'Daily settled delivery',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-status')).toHaveTextContent(
-      'Enabled',
+      '已启用',
     )
 
     await user.click(screen.getByTestId('requester-comparison-delivery-create-open'))
@@ -1220,28 +1243,28 @@ describe('submissions page', () => {
     await user.click(await screen.findByTestId('requester-comparison-set-open-delivery'))
 
     expect(await screen.findByTestId('requester-comparison-delivery-focus-health-status')).toHaveTextContent(
-      'Scheduled',
+      '已排期',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-run-count')).toHaveTextContent(
       '2',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-run-breakdown')).toHaveTextContent(
-      '1 completed',
+      '1 次已完成',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-run-breakdown')).toHaveTextContent(
-      '1 failed',
+      '1 次失败',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-run-timing')).toHaveTextContent(
-      'Last completed',
+      '最近完成于',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-run-timing')).toHaveTextContent(
-      'Last failed',
+      '最近失败于',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Manual run completed',
+      '手动运行 · 已完成',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Retained export comparison-export-demo-core',
+      '保留导出 comparison-export-demo-core',
     )
 
     await user.click(screen.getByTestId('requester-comparison-delivery-create-open'))
@@ -1285,16 +1308,16 @@ describe('submissions page', () => {
       'Weekly unresolved digest',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-health-status')).toHaveTextContent(
-      'Scheduled',
+      '已排期',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-run-count')).toHaveTextContent(
       '0',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-run-breakdown')).toHaveTextContent(
-      'No delivery runs yet',
+      '暂无投递运行',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Latest run not yet available',
+      '最近运行信息暂未生成',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-open-export')).toBeDisabled()
   })
@@ -1314,15 +1337,15 @@ describe('submissions page', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('requester-comparison-delivery-focus-health-status')).toHaveTextContent(
-        'Due',
+        '待执行',
       )
     })
 
     expect(screen.getByTestId('requester-comparison-delivery-focus-scheduler-detail')).toHaveTextContent(
-      'Overdue by',
+      '已逾期',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-scheduler-detail')).toHaveTextContent(
-      '490m',
+      '490 分',
     )
 
     const dueRow = screen
@@ -1333,17 +1356,17 @@ describe('submissions page', () => {
       within(dueRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-health-summary',
       ),
-    ).toHaveTextContent('Due')
+    ).toHaveTextContent('待执行')
     expect(
       within(dueRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-scheduler-detail',
       ),
-    ).toHaveTextContent('Overdue by')
+    ).toHaveTextContent('已逾期')
     expect(
       within(dueRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-scheduler-detail',
       ),
-    ).toHaveTextContent('490m')
+    ).toHaveTextContent('490 分')
   })
 
   it('opens the latest retained export directly from the focused delivery summary', async () => {
@@ -1359,7 +1382,7 @@ describe('submissions page', () => {
       'arena-requester-comparison-demo-user-',
     )
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Policy manual run',
+      '策略手动执行',
     )
   })
 
@@ -1385,7 +1408,7 @@ describe('submissions page', () => {
       'arena-requester-comparison-demo-user-',
     )
     expect(screen.getByTestId('requester-comparison-export-origin')).toHaveTextContent(
-      'Policy manual run',
+      '策略手动执行',
     )
   })
 
@@ -1403,17 +1426,17 @@ describe('submissions page', () => {
       within(dailyRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-run-summary',
       ),
-    ).toHaveTextContent('Last run Completed')
+    ).toHaveTextContent('最近运行：已完成')
     expect(
       within(dailyRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-latest-run-detail',
       ),
-    ).toHaveTextContent('Manual run completed')
+    ).toHaveTextContent('手动运行 · 已完成')
     expect(
       within(dailyRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-latest-run-detail',
       ),
-    ).toHaveTextContent('Retained export')
+    ).toHaveTextContent('保留导出')
 
     await user.click(screen.getByTestId('requester-comparison-delivery-create-open'))
     await user.clear(screen.getByTestId('requester-comparison-delivery-name-input'))
@@ -1435,7 +1458,7 @@ describe('submissions page', () => {
       within(weeklyRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-run-summary',
       ),
-    ).toHaveTextContent('Not run yet')
+    ).toHaveTextContent('尚未运行')
 
     await user.click(
       within(dailyRow as HTMLElement).getByTestId('requester-comparison-delivery-exports-open'),
@@ -1478,7 +1501,7 @@ describe('submissions page', () => {
         within(dailyRow as HTMLElement).getByTestId(
           'requester-comparison-delivery-policy-health-summary',
         ),
-      ).toHaveTextContent('Scheduled')
+      ).toHaveTextContent('已排期')
     })
 
     const dailyRow = findPolicyRow('Daily settled delivery')
@@ -1487,12 +1510,12 @@ describe('submissions page', () => {
       within(dailyRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-health-detail',
       ),
-    ).toHaveTextContent('2 runs')
+    ).toHaveTextContent('2 次运行')
     expect(
       within(dailyRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-health-detail',
       ),
-    ).toHaveTextContent('Transport ready')
+    ).toHaveTextContent('传输就绪')
 
     await user.click(screen.getByTestId('requester-comparison-delivery-create-open'))
     await user.clear(screen.getByTestId('requester-comparison-delivery-name-input'))
@@ -1509,7 +1532,7 @@ describe('submissions page', () => {
         within(weeklyRow as HTMLElement).getByTestId(
           'requester-comparison-delivery-policy-health-summary',
         ),
-      ).toHaveTextContent('Scheduled')
+      ).toHaveTextContent('已排期')
     })
 
     const weeklyRow = findPolicyRow('Weekly unresolved digest')
@@ -1518,7 +1541,7 @@ describe('submissions page', () => {
       within(weeklyRow as HTMLElement).getByTestId(
         'requester-comparison-delivery-policy-health-detail',
       ),
-    ).toHaveTextContent('No delivery runs yet')
+    ).toHaveTextContent('暂无投递运行')
 
     await user.click(
       within(dailyRow as HTMLElement).getByTestId('requester-comparison-delivery-toggle'),
@@ -1531,7 +1554,7 @@ describe('submissions page', () => {
         within(refreshedDailyRow as HTMLElement).getByTestId(
           'requester-comparison-delivery-policy-health-summary',
         ),
-      ).toHaveTextContent('Disabled')
+      ).toHaveTextContent('已停用')
     })
   }, 15000)
 
@@ -1552,8 +1575,8 @@ describe('submissions page', () => {
       screen.getByTestId('requester-comparison-delivery-target-url-input'),
       'https://ops.arena.test/blocked-delivery',
     )
-    await user.clear(screen.getByLabelText('Credential key'))
-    await user.type(screen.getByLabelText('Credential key'), 'missing_key')
+    await user.clear(screen.getByLabelText('凭据 Key'))
+    await user.type(screen.getByLabelText('凭据 Key'), 'missing_key')
     await user.clear(screen.getByTestId('requester-comparison-delivery-retained-count-input'))
     await user.type(screen.getByTestId('requester-comparison-delivery-retained-count-input'), '2')
     await user.click(screen.getByTestId('requester-comparison-delivery-save'))
@@ -1568,16 +1591,16 @@ describe('submissions page', () => {
 
     expect(
       within(blockedRow).getByTestId('requester-comparison-delivery-policy-health-summary'),
-    ).toHaveTextContent('Scheduled')
+    ).toHaveTextContent('已排期')
     expect(
       within(blockedRow).getByTestId('requester-comparison-delivery-policy-health-detail'),
-    ).toHaveTextContent('No delivery runs yet')
+    ).toHaveTextContent('暂无投递运行')
     expect(
       within(blockedRow).getByTestId('requester-comparison-delivery-policy-health-detail'),
-    ).toHaveTextContent('Transport blocked')
+    ).toHaveTextContent('传输受阻')
 
     await user.click(within(blockedRow).getByTestId('requester-comparison-delivery-run'))
-    expect(await screen.findByText('Requester flow error')).toBeInTheDocument()
+    expect(await screen.findByText('已提交命题加载错误')).toBeInTheDocument()
 
     const refreshedBlockedRow = await waitFor(() => {
       const row = screen
@@ -1591,49 +1614,49 @@ describe('submissions page', () => {
       within(refreshedBlockedRow).getByTestId(
         'requester-comparison-delivery-policy-health-summary',
       ),
-    ).toHaveTextContent('Failing')
+    ).toHaveTextContent('异常中')
     expect(
       within(refreshedBlockedRow).getByTestId(
         'requester-comparison-delivery-policy-run-summary',
       ),
-    ).toHaveTextContent('Last run Failed')
+    ).toHaveTextContent('最近运行：已失败')
     expect(
       within(refreshedBlockedRow).getByTestId(
         'requester-comparison-delivery-policy-failure-streak',
       ),
-    ).toHaveTextContent('1 consecutive failure')
+    ).toHaveTextContent('连续 1 次失败')
     expect(
       within(refreshedBlockedRow).getByTestId(
         'requester-comparison-delivery-policy-last-error',
       ),
-    ).toHaveTextContent('Latest failure: Requester comparison set delivery credential is not configured')
+    ).toHaveTextContent('最近失败：Requester comparison set delivery credential is not configured')
     expect(screen.getByTestId('requester-comparison-delivery-focus-failure-streak')).toHaveTextContent(
-      '1 consecutive failure',
+      '连续 1 次失败',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-health-detail')).toHaveTextContent(
-      'Transport blocked',
+      '传输受阻',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-health-detail')).toHaveTextContent(
-      'Missing credential binding',
+      '缺少凭据绑定',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-last-error')).toHaveTextContent(
-      'Latest failure: Requester comparison set delivery credential is not configured',
+      '最近失败：Requester comparison set delivery credential is not configured',
     )
 
     await user.click(within(refreshedBlockedRow).getByTestId('requester-comparison-delivery-health-open'))
 
     expect(await screen.findByTestId('requester-comparison-delivery-health-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-health-transport')).toHaveTextContent(
-      'Blocked',
+      '受阻',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-transport-detail')).toHaveTextContent(
-      'Missing credential binding',
+      '缺少凭据绑定',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-credential-options')).toHaveTextContent(
       'ARENA_REQUESTER_WEBHOOK_BEARER',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-failure-streak')).toHaveTextContent(
-      '1 consecutive failure',
+      '连续 1 次失败',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-last-error')).toHaveTextContent(
       'Requester comparison set delivery credential is not configured',
@@ -1657,8 +1680,8 @@ describe('submissions page', () => {
       screen.getByTestId('requester-comparison-delivery-target-url-input'),
       'https://ops.arena.test/recoverable-blocked-delivery',
     )
-    await user.clear(screen.getByLabelText('Credential key'))
-    await user.type(screen.getByLabelText('Credential key'), 'missing_key')
+    await user.clear(screen.getByLabelText('凭据 Key'))
+    await user.type(screen.getByLabelText('凭据 Key'), 'missing_key')
     await user.click(screen.getByTestId('requester-comparison-delivery-save'))
 
     const blockedRow = await waitFor(() => {
@@ -1670,7 +1693,7 @@ describe('submissions page', () => {
     })
 
     await user.click(within(blockedRow).getByTestId('requester-comparison-delivery-run'))
-    expect(await screen.findByText('Requester flow error')).toBeInTheDocument()
+    expect(await screen.findByText('已提交命题加载错误')).toBeInTheDocument()
 
     await user.click(within(blockedRow).getByTestId('requester-comparison-delivery-runs-open'))
     expect(await screen.findByTestId('requester-comparison-delivery-runs-panel')).toBeInTheDocument()
@@ -1678,12 +1701,12 @@ describe('submissions page', () => {
       'Requester comparison set delivery credential is not configured',
     )
     expect(screen.getByTestId('requester-comparison-delivery-run-item')).toHaveTextContent(
-      'Retained export',
+      '保留导出',
     )
     await user.click(within(blockedRow).getByTestId('requester-comparison-delivery-health-open'))
     expect(await screen.findByTestId('requester-comparison-delivery-health-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-health-transport')).toHaveTextContent(
-      'Blocked',
+      '受阻',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-credential-options')).toHaveTextContent(
       'ARENA_REQUESTER_WEBHOOK_BEARER',
@@ -1694,38 +1717,38 @@ describe('submissions page', () => {
       screen.getByTestId('requester-comparison-delivery-credential-binding-select'),
       'ARENA_REQUESTER_WEBHOOK_BEARER',
     )
-    expect(screen.getByLabelText('Credential key')).toHaveValue('ARENA_REQUESTER_WEBHOOK_BEARER')
+    expect(screen.getByLabelText('凭据 Key')).toHaveValue('ARENA_REQUESTER_WEBHOOK_BEARER')
     await user.click(screen.getByTestId('requester-comparison-delivery-save'))
 
     await user.click(screen.getByTestId('requester-comparison-delivery-run-retry'))
 
     expect(await screen.findByTestId('requester-comparison-delivery-retry-panel')).toBeInTheDocument()
     expect(screen.getByTestId('requester-comparison-delivery-retry-status')).toHaveTextContent(
-      'Completed',
+      '已完成',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-file-name')).toHaveTextContent(
       'arena-requester-comparison-demo-user-',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-provenance')).toHaveTextContent(
-      'Retried failed run',
+      '重试失败运行',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-panel')).toHaveTextContent(
-      'Reused retained export',
+      '复用保留导出',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-panel')).toHaveTextContent(
       'HTTP 202',
     )
     expect(screen.getByTestId('requester-comparison-delivery-retry-panel')).toHaveTextContent(
-      'Bearer credential ARENA_REQUESTER_WEBHOOK_BEARER',
+      'Bearer 凭据 ARENA_REQUESTER_WEBHOOK_BEARER',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Retried failed run',
+      '重试失败运行',
     )
     expect(within(blockedRow).getByTestId('requester-comparison-delivery-policy-latest-run-detail')).toHaveTextContent(
-      'Retried failed run',
+      '重试失败运行',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-transport')).toHaveTextContent(
-      'Ready',
+      '就绪',
     )
     expect(screen.getByTestId('requester-comparison-delivery-health-open-export')).toBeEnabled()
     expect(screen.getByTestId('requester-comparison-delivery-focus-open-export')).toBeEnabled()
@@ -1748,8 +1771,8 @@ describe('submissions page', () => {
       screen.getByTestId('requester-comparison-delivery-target-url-input'),
       'https://ops.arena.test/retry-fails-again',
     )
-    await user.clear(screen.getByLabelText('Credential key'))
-    await user.type(screen.getByLabelText('Credential key'), 'missing_key')
+    await user.clear(screen.getByLabelText('凭据 Key'))
+    await user.type(screen.getByLabelText('凭据 Key'), 'missing_key')
     await user.click(screen.getByTestId('requester-comparison-delivery-save'))
 
     const blockedRow = await waitFor(() => {
@@ -1761,25 +1784,25 @@ describe('submissions page', () => {
     })
 
     await user.click(within(blockedRow).getByTestId('requester-comparison-delivery-run'))
-    expect(await screen.findByText('Requester flow error')).toBeInTheDocument()
+    expect(await screen.findByText('已提交命题加载错误')).toBeInTheDocument()
 
     await user.click(within(blockedRow).getByTestId('requester-comparison-delivery-runs-open'))
     expect(await screen.findByTestId('requester-comparison-delivery-runs-panel')).toBeInTheDocument()
 
     await user.click(screen.getByTestId('requester-comparison-delivery-run-retry'))
 
-    expect(await screen.findByText('Requester flow error')).toBeInTheDocument()
+    expect(await screen.findByText('已提交命题加载错误')).toBeInTheDocument()
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
-      'Retried failed run',
+      '重试失败运行',
     )
     expect(screen.getAllByTestId('requester-comparison-delivery-run-item')[0]).toHaveTextContent(
       'Requester comparison set delivery credential is not configured',
     )
     expect(screen.getByTestId('requester-comparison-delivery-focus-latest-run')).toHaveTextContent(
-      'Retried failed run',
+      '重试失败运行',
     )
     expect(within(blockedRow).getByTestId('requester-comparison-delivery-policy-latest-run-detail')).toHaveTextContent(
-      'Retried failed run',
+      '重试失败运行',
     )
   }, 15000)
 
@@ -1815,17 +1838,17 @@ describe('submissions page', () => {
     expect(screen.getByTestId('requester-settled-report-title')).toHaveTextContent(
       'What is the recent public service satisfaction trend?',
     )
-    expect(screen.getByTestId('requester-settled-report-result-kind')).toHaveTextContent('Resolved')
+    expect(screen.getByTestId('requester-settled-report-result-kind')).toHaveTextContent('已判定')
     expect(screen.getByTestId('requester-settled-report-winning-option')).toHaveTextContent(
       'Will continue improving',
     )
     expect(screen.getByTestId('requester-settled-report-sample')).toHaveTextContent('12')
-    expect(screen.getByText('Budget ledger')).toBeInTheDocument()
+    expect(screen.getByText('预算台账')).toBeInTheDocument()
     expect(screen.getByTestId('requester-settled-report-budget-summary')).toHaveTextContent(
-      'Remaining',
+      '剩余',
     )
     expect(screen.getByTestId('requester-settled-report-budget-ledger')).toHaveTextContent(
-      'Spent',
+      '已支出',
     )
   })
 })

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import type { PropositionCategory } from '@arena/shared'
+import {
+  ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS,
+  type PropositionCategory,
+} from '@arena/shared'
 import {
   CheckCircle2,
   ChevronDown,
@@ -17,7 +20,6 @@ import { arenaApi, type PropositionDraftRecord } from '../features/api/arena-api
 import { AuthRequiredBlankGate } from '../components/shared/AuthRequiredBlankGate'
 import {
   buildDraftReferenceLink,
-  buildDraftTags,
   computeDraftCompletion,
   formatCategoryLabel,
 } from '../features/arena/arena-ui-mappers'
@@ -31,6 +33,119 @@ const categoryOptions = [
   'Consumer Research',
   'Entertainment',
 ] as const
+
+const categoryDisplayLabels: Record<(typeof categoryOptions)[number], string> = {
+  General: '综合',
+  'AI / Technology': 'AI / 科技',
+  'Sports / Competition': '体育 / 竞技',
+  'Public Policy': '公共政策',
+  'Consumer Research': '消费调研',
+  Entertainment: '娱乐',
+}
+
+function formatCategoryDisplayLabel(label: string) {
+  return categoryDisplayLabels[label as (typeof categoryOptions)[number]] ?? label
+}
+
+const sampleConstraintOptions = [
+  {
+    key: 'experienced_user',
+    label: '资深答题人',
+    description: '至少已有 3 条已审核回答记录，适合需要基本历史样本的命题。',
+    group: 'Eligibility',
+  },
+  {
+    key: 'wallet_signed',
+    label: '已绑定钱包',
+    description: '要求答题人已经绑定主钱包地址，适合后续奖励或链上动作需要钱包能力的任务。',
+    group: 'Eligibility',
+  },
+  {
+    key: 'high_completion',
+    label: '高完成率',
+    description: '优先覆盖历史完成率更稳定的人群。',
+    group: 'Quality',
+  },
+  {
+    key: 'high_quality',
+    label: '高质量',
+    description: '优先覆盖历史有效回答占比更高的人群。',
+    group: 'Quality',
+  },
+  {
+    key: 'low_anomaly',
+    label: '低异常率',
+    description: '优先覆盖异常率更低的人群。',
+    group: 'Quality',
+  },
+  {
+    key: 'stable_responder',
+    label: '稳定答题人',
+    description: '优先覆盖长期表现稳定的答题人。',
+    group: 'Quality',
+  },
+  {
+    key: 'risky_responder',
+    label: '高风险样本',
+    description: '用于明确聚焦高风险样本；系统仍会自动阻断极高风险账号。',
+    group: 'Quality',
+  },
+  {
+    key: 'interested_in_sports',
+    label: '体育兴趣',
+    description: '偏向历史上持续参与体育类任务的人群。',
+    group: 'Interest',
+  },
+  {
+    key: 'interested_in_ai',
+    label: 'AI 兴趣',
+    description: '偏向历史上持续参与 AI 类任务的人群。',
+    group: 'Interest',
+  },
+  {
+    key: 'interested_in_brand_research',
+    label: '品牌调研兴趣',
+    description: '偏向历史上持续参与消费与品牌研究类任务的人群。',
+    group: 'Interest',
+  },
+  {
+    key: 'interested_in_politics',
+    label: '公共政策兴趣',
+    description: '偏向历史上持续参与公共政策类任务的人群。',
+    group: 'Interest',
+  },
+  {
+    key: 'interested_in_entertainment',
+    label: '娱乐兴趣',
+    description: '偏向历史上持续参与娱乐类任务的人群。',
+    group: 'Interest',
+  },
+] as const satisfies ReadonlyArray<{
+  key: (typeof ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS)[number]
+  label: string
+  description: string
+  group: 'Eligibility' | 'Quality' | 'Interest'
+}>
+
+const sampleConstraintGroups = [
+  {
+    group: 'Eligibility',
+    title: '资格门槛',
+    description: '这些条件会直接决定候选答题人能否进入派单池。',
+  },
+  {
+    group: 'Quality',
+    title: '质量画像',
+    description: '这些标签来自历史完成率、有效率与异常率等质量信号。',
+  },
+  {
+    group: 'Interest',
+    title: '兴趣画像',
+    description: '这些标签来自历史参与任务的类别偏好。',
+  },
+] as const
+
+type SampleConstraintGroupId = (typeof sampleConstraintGroups)[number]['group']
 
 const reviewChecklist = [
   '标题要能在一句话里表达清楚判断对象',
@@ -114,6 +229,10 @@ function resolveRewardBudgetAmount(input: string, fallback: string | null | unde
   return parseRewardBudgetValue(fallback).amount || '1000'
 }
 
+function formatSampleConstraintLabel(value: string) {
+  return sampleConstraintOptions.find((item) => item.key === value)?.label ?? value
+}
+
 function mapCategoryLabelToApiValue(label: string): PropositionCategory {
   switch (label) {
     case 'AI / Technology':
@@ -144,7 +263,7 @@ function toDraftFormState(draft: PropositionDraftRecord | null): DraftFormState 
     category: draft ? formatCategoryLabel(draft.category) : 'AI / Technology',
     rewardBudget: parsedRewardBudget.amount,
     rewardCurrency: parsedRewardBudget.currency,
-    tags: draft ? buildDraftTags(draft) : [],
+    tags: draft ? [...draft.sampleConstraints] : [],
     referenceLink: buildDraftReferenceLink(),
     submissionStatus: draft?.submissionStatus === 'submitted' ? 'submitted' : 'draft',
   }
@@ -282,7 +401,7 @@ function ChallengeSubmitModal({
                     <p>{summary}</p>
                   </div>
                   <div className="challenge-submit-pill-row">
-                    <span className="challenge-submit-pill">{category}</span>
+                    <span className="challenge-submit-pill">{formatCategoryDisplayLabel(category)}</span>
                     <span className="challenge-submit-pill">赏金 {formatRewardBudgetLabel(rewardBudget, rewardCurrency)}</span>
                   </div>
                 </div>
@@ -381,6 +500,92 @@ function ChallengeSubmitModal({
   )
 }
 
+function SampleConstraintPickerModal({
+  group,
+  selectedTags,
+  onClose,
+  onToggle,
+}: {
+  group: (typeof sampleConstraintGroups)[number] | null
+  selectedTags: string[]
+  onClose: () => void
+  onToggle: (constraint: (typeof ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS)[number]) => void
+}) {
+  if (!group || typeof document === 'undefined') {
+    return null
+  }
+
+  const options = sampleConstraintOptions.filter((item) => item.group === group.group)
+  const selectedCount = options.filter((item) => selectedTags.includes(item.key)).length
+
+  return createPortal(
+    <div className="challenge-sample-modal-overlay" onClick={onClose} role="presentation">
+      <section
+        aria-labelledby="challenge-sample-modal-title"
+        aria-modal="true"
+        className="challenge-sample-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <button
+          aria-label="关闭样本约束选择弹窗"
+          className="challenge-sample-modal-close"
+          onClick={onClose}
+          type="button"
+        >
+          <X size={18} />
+        </button>
+
+        <header className="challenge-sample-modal-head">
+          <div>
+            <div className="challenge-sample-modal-title-row">
+              <h2 id="challenge-sample-modal-title">{group.title}</h2>
+              <span className="challenge-sample-modal-count">
+                已选 {selectedCount} / {options.length}
+              </span>
+            </div>
+            <p>{group.description}</p>
+          </div>
+        </header>
+
+        <div className="challenge-sample-modal-options">
+          {options.map((item) => {
+            const selected = selectedTags.includes(item.key)
+
+            return (
+              <button
+                aria-pressed={selected}
+                className={selected
+                  ? 'challenge-sample-modal-option challenge-sample-modal-option--selected'
+                  : 'challenge-sample-modal-option'}
+                key={item.key}
+                onClick={() => onToggle(item.key)}
+                type="button"
+              >
+                <span className="challenge-sample-modal-option-check" aria-hidden="true">
+                  {selected ? <CheckCircle2 size={16} /> : null}
+                </span>
+                <span className="challenge-sample-modal-option-copy">
+                  <strong>{item.label}</strong>
+                  <em>{item.key}</em>
+                  <span>{item.description}</span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        <footer className="challenge-sample-modal-footer">
+          <button className="challenge-secondary-button" onClick={onClose} type="button">
+            完成选择
+          </button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  )
+}
+
 export function ChallengePage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -389,10 +594,15 @@ export function ChallengePage() {
   const [draftRecord, setDraftRecord] = useState<PropositionDraftRecord | null>(null)
   const [form, setForm] = useState<DraftFormState>(() => toDraftFormState(null))
   const [submitModalStep, setSubmitModalStep] = useState<SubmitModalStep | null>(null)
+  const [activeSampleConstraintGroup, setActiveSampleConstraintGroup] = useState<SampleConstraintGroupId | null>(null)
   const [isLoadingDraft, setIsLoadingDraft] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<'title' | 'summary' | 'optionA' | 'optionB', string>>>({})
+
+  const closeSampleConstraintPicker = () => {
+    setActiveSampleConstraintGroup(null)
+  }
 
   const validateForm = (): boolean => {
     const errors: typeof fieldErrors = {}
@@ -476,7 +686,7 @@ export function ChallengePage() {
   }, [draftRecord, form])
 
   useEffect(() => {
-    if (submitModalStep === null) {
+    if (submitModalStep === null && activeSampleConstraintGroup === null) {
       return
     }
 
@@ -485,6 +695,7 @@ export function ChallengePage() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSubmitModalStep(null)
+        setActiveSampleConstraintGroup(null)
       }
     }
 
@@ -497,7 +708,7 @@ export function ChallengePage() {
       document.documentElement.style.overflow = previousHtmlOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [submitModalStep])
+  }, [activeSampleConstraintGroup, submitModalStep])
 
   const updateForm = <K extends keyof DraftFormState>(key: K, value: DraftFormState[K]) => {
     setForm((current) => ({
@@ -508,6 +719,15 @@ export function ChallengePage() {
 
   const toggleRewardCurrency = () => {
     updateForm('rewardCurrency', form.rewardCurrency === 'USDC' ? 'USDT' : 'USDC')
+  }
+
+  const toggleSampleConstraint = (constraint: (typeof ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS)[number]) => {
+    updateForm(
+      'tags',
+      form.tags.includes(constraint)
+        ? form.tags.filter((item) => item !== constraint)
+        : [...form.tags, constraint],
+    )
   }
 
   const saveDraft = async () => {
@@ -838,7 +1058,7 @@ export function ChallengePage() {
                 <div className="challenge-select-shell">
                   <select className="challenge-select" onChange={(event) => updateForm('category', event.target.value)} value={form.category}>
                     {categoryOptions.map((item) => (
-                      <option key={item} value={item}>{item}</option>
+                      <option key={item} value={item}>{formatCategoryDisplayLabel(item)}</option>
                     ))}
                   </select>
                   <ChevronDown size={16} />
@@ -881,6 +1101,50 @@ export function ChallengePage() {
                 />
               </div>
             </label>
+
+            <section className="challenge-field challenge-sample-constraint-field" aria-labelledby="challenge-sample-constraints-title">
+              <div className="challenge-label-row">
+                <span id="challenge-sample-constraints-title">7. 样本约束</span>
+                <small>这些条件会直接发送给真实派单策略，因此只能选择当前已支持的约束。</small>
+              </div>
+
+              <div className="challenge-sample-constraint-shell">
+                {sampleConstraintGroups.map((group) => {
+                  const groupOptions = sampleConstraintOptions.filter((item) => item.group === group.group)
+                  const selectedOptions = groupOptions.filter((item) => form.tags.includes(item.key))
+
+                  return (
+                    <button
+                      aria-expanded={activeSampleConstraintGroup === group.group}
+                      aria-haspopup="dialog"
+                      className="challenge-sample-constraint-group"
+                      key={group.group}
+                      onClick={() => {
+                        setActiveSampleConstraintGroup(group.group)
+                      }}
+                      type="button"
+                    >
+                      <div className="challenge-sample-constraint-group-copy">
+                        <strong>{group.title}</strong>
+                      </div>
+
+                      <div className="challenge-sample-constraint-group-action">
+                        <span>{selectedOptions.length > 0 ? `已选 ${selectedOptions.length} 项` : '点击选择'}</span>
+                        <ChevronDown size={16} />
+                      </div>
+
+                      {selectedOptions.length > 0 ? (
+                        <div className="challenge-sample-constraint-summary">
+                          {selectedOptions.slice(0, 3).map((item) => (
+                            <span key={item.key}>{item.label}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
           </div>
 
           <div className="challenge-actions">
@@ -910,7 +1174,7 @@ export function ChallengePage() {
 
             <div className="challenge-preview-card">
               <div className="challenge-preview-meta">
-                <span>{form.category}</span>
+                <span>{formatCategoryDisplayLabel(form.category)}</span>
                 <span>赏金 {formatRewardBudgetLabel(form.rewardBudget, form.rewardCurrency)}</span>
               </div>
               <strong style={{ color: form.title ? undefined : 'var(--arena-text-secondary, #6b7280)', fontStyle: form.title ? 'normal' : 'italic' }}>
@@ -935,6 +1199,18 @@ export function ChallengePage() {
               </div>
               <div className="challenge-preview-footer">
                 <span>{form.referenceLink || '未填写补充资料链接'}</span>
+              </div>
+              <div className="challenge-preview-constraints" aria-label="样本约束预览">
+                {form.tags.length > 0 ? (
+                  form.tags.map((constraint) => (
+                    <span className="challenge-preview-constraint-pill" key={constraint}>
+                      {formatSampleConstraintLabel(constraint)}
+                      <em>{constraint}</em>
+                    </span>
+                  ))
+                ) : (
+                  <span className="challenge-preview-constraint-empty">尚未选择样本约束，将使用平台默认派单资格。</span>
+                )}
               </div>
             </div>
           </section>
@@ -981,6 +1257,12 @@ export function ChallengePage() {
         onBack={handleSubmitModalBack}
         onClose={closeSubmitModal}
         onNext={() => void handleSubmitModalNext()}
+      />
+      <SampleConstraintPickerModal
+        group={sampleConstraintGroups.find((group) => group.group === activeSampleConstraintGroup) ?? null}
+        selectedTags={form.tags}
+        onClose={closeSampleConstraintPicker}
+        onToggle={toggleSampleConstraint}
       />
     </section>
   )

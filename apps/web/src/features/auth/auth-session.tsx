@@ -73,6 +73,27 @@ function clearStoredSession() {
   window.localStorage.removeItem(AUTH_IDENTITY_STORAGE_KEY)
 }
 
+function normalizeDemoIdentity(identity: JwtIdentity | null, chainId: number): JwtIdentity {
+  const baseline = buildDemoIdentity(chainId)
+  if (!identity) {
+    return baseline
+  }
+
+  const normalizedIdentity = {
+    ...identity,
+    walletAddress: baseline.walletAddress,
+    chainId: baseline.chainId,
+    roles: baseline.roles,
+  }
+
+  return identity.walletAddress === normalizedIdentity.walletAddress
+    && identity.chainId === normalizedIdentity.chainId
+    && identity.roles.length === normalizedIdentity.roles.length
+    && identity.roles.every((role, index) => role === normalizedIdentity.roles[index])
+    ? identity
+    : normalizedIdentity
+}
+
 async function signChallengeMessage(walletAddress: string, message: string): Promise<string> {
   const ethereumProvider = typeof window !== 'undefined'
     ? (window as Window & {
@@ -122,7 +143,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     }
 
     if (isDemoToken(token)) {
-      const nextIdentity = identity ?? buildDemoIdentity(configuredChainId)
+      const nextIdentity = normalizeDemoIdentity(identity, configuredChainId)
       setIdentity(nextIdentity)
       persistSession(DEMO_SESSION_TOKEN, nextIdentity)
       return

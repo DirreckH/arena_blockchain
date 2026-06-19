@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import { MarketRankingPage } from './MarketRankingPage'
@@ -12,6 +12,32 @@ function renderRankingPage(config: RankedMarketPageConfig, showSearch = false) {
       <MarketRankingPage config={config} showSearch={showSearch} />
     </MemoryRouter>,
   )
+}
+
+function buildRankingConfig(itemCount: number): RankedMarketPageConfig {
+  return {
+    pageClassName: 'test-ranking-page',
+    heroVariant: 'hot',
+    dateLabel: '2026-06-06',
+    title: 'Test ranking',
+    description: 'Synthetic ranking fixture',
+    categoryAriaLabel: 'Test ranking categories',
+    listAriaLabel: 'Test ranking list',
+    categories: [
+      { id: 'all', label: 'All' },
+      { id: 'sports', label: 'Sports' },
+      { id: 'tech', label: 'Tech' },
+    ],
+    items: Array.from({ length: itemCount }, (_, index) => ({
+      id: `ranking-item-${index + 1}`,
+      href: `/zh/event/ranking-item-${index + 1}`,
+      title: index < 4 ? `Sports ranking ${index + 1}` : `Tech ranking ${index + 1}`,
+      score: 100 - index,
+      change: 20 - index,
+      sparkline: [30, 40, 50, 60, 70, 80],
+      categoryIds: index < 4 ? ['sports'] : ['tech'],
+    })),
+  }
 }
 
 describe('MarketRankingPage', () => {
@@ -64,5 +90,21 @@ describe('MarketRankingPage', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: '__no-such-market__' } })
 
     expect(screen.getByRole('status')).toHaveTextContent('没有匹配')
+  })
+
+  it('keeps the leaderboard capped at twelve items across topic tabs', () => {
+    const rankingConfig = buildRankingConfig(14)
+    renderRankingPage(rankingConfig)
+
+    const rankingList = screen.getByRole('list', { name: rankingConfig.listAriaLabel })
+    expect(within(rankingList).getAllByRole('listitem')).toHaveLength(12)
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Sports' }))
+
+    const sportsRows = within(rankingList).getAllByRole('listitem')
+    expect(sportsRows).toHaveLength(12)
+    expect(sportsRows[0]).toHaveTextContent('Sports ranking 1')
+    expect(sportsRows[3]).toHaveTextContent('Sports ranking 4')
+    expect(sportsRows[4]).toHaveTextContent('Tech ranking 5')
   })
 })

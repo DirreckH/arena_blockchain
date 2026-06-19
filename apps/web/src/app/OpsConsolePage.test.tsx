@@ -819,17 +819,32 @@ vi.mock('../features/api/arena-api', async () => {
             responseId: 'response_ops_1',
             userId: 'respondent_1',
             sourceType: 'response',
-            status: 'pending',
-            reviewStatus: 'pending_review',
+            status: 'finalized',
+            reviewStatus: 'valid',
             pendingAmount: '20',
-            finalAmount: null,
+            finalAmount: '20',
             ledgerVersion: 1,
             reasonCode: null,
             reversalOfLedgerId: null,
             createdAt: '2026-06-01T10:05:05.000Z',
-            finalizedAt: null,
+            finalizedAt: '2026-06-01T10:06:00.000Z',
             voidedAt: null,
             reversedAt: null,
+            payoutId: 'payout_1',
+            payoutStatus: 'requested',
+            payoutMethod: 'wallet_transfer',
+            payoutAmount: '20',
+            payoutAssetSymbol: 'USDC',
+            payoutDestinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+            payoutRequestedAt: '2026-06-01T10:06:00.000Z',
+            payoutApprovedAt: null,
+            payoutCompletedAt: null,
+            payoutFailedAt: null,
+            payoutCancelledAt: null,
+            payoutExecutionTxHash: null,
+            payoutRetryCount: 0,
+            payoutLastErrorCode: null,
+            payoutLastErrorMessage: null,
           },
         ],
         totalCount: 1,
@@ -850,12 +865,32 @@ vi.mock('../features/api/arena-api', async () => {
           submittedAt: '2026-06-01T10:05:00.000Z',
         },
         currentReview: {
-          status: 'pending_review',
+          status: 'valid',
           qualityScore: 0.8,
           flags: [],
           reasonCodes: [],
-          reviewedByUserId: null,
-          reviewedAt: null,
+          reviewedByUserId: 'ops_user_1',
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'requested',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: null,
+          approvedByUserId: null,
+          executionStartedAt: null,
+          completedAt: null,
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: null,
+          externalReference: null,
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
         },
         chain: [
           {
@@ -865,17 +900,32 @@ vi.mock('../features/api/arena-api', async () => {
             responseId: 'response_ops_1',
             userId: 'respondent_1',
             sourceType: 'response',
-            status: 'pending',
-            reviewStatus: 'pending_review',
+            status: 'finalized',
+            reviewStatus: 'valid',
             pendingAmount: '20',
-            finalAmount: null,
+            finalAmount: '20',
             ledgerVersion: 1,
             reasonCode: null,
             reversalOfLedgerId: null,
             createdAt: '2026-06-01T10:05:05.000Z',
-            finalizedAt: null,
+            finalizedAt: '2026-06-01T10:06:00.000Z',
             voidedAt: null,
             reversedAt: null,
+            payoutId: 'payout_1',
+            payoutStatus: 'requested',
+            payoutMethod: 'wallet_transfer',
+            payoutAmount: '20',
+            payoutAssetSymbol: 'USDC',
+            payoutDestinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+            payoutRequestedAt: '2026-06-01T10:06:00.000Z',
+            payoutApprovedAt: null,
+            payoutCompletedAt: null,
+            payoutFailedAt: null,
+            payoutCancelledAt: null,
+            payoutExecutionTxHash: null,
+            payoutRetryCount: 0,
+            payoutLastErrorCode: null,
+            payoutLastErrorMessage: null,
           },
         ],
         auditEvents: [
@@ -907,8 +957,248 @@ vi.mock('../features/api/arena-api', async () => {
           qualityScore: 0.8,
           flags: [],
           reasonCodes: [],
-          reviewedByUserId: null,
-          reviewedAt: null,
+          reviewedByUserId: 'ops_user_1',
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'requested',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: null,
+          approvedByUserId: null,
+          executionStartedAt: null,
+          completedAt: null,
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: null,
+          externalReference: null,
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        },
+        chain: [],
+        auditEvents: [],
+      }),
+      approveOpsRewardPayout: vi.fn().mockResolvedValue({
+        ledgerId: 'ledger_1',
+        proposition: {
+          id: 'prop_list_1',
+          title: 'Ops proposition list item',
+          status: 'live',
+        },
+        response: {
+          id: 'response_ops_1',
+          userId: 'respondent_1',
+          isLatest: true,
+          submittedAt: '2026-06-01T10:05:00.000Z',
+        },
+        currentReview: {
+          status: 'valid',
+          qualityScore: 0.8,
+          flags: [],
+          reasonCodes: [],
+          reviewedByUserId: 'ops_user_1',
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'approved',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: '2026-06-01T10:07:00.000Z',
+          approvedByUserId: 'ops_user_1',
+          executionStartedAt: null,
+          completedAt: null,
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: null,
+          externalReference: null,
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        },
+        chain: [],
+        auditEvents: [],
+      }),
+      startOpsRewardPayoutExecution: vi.fn().mockResolvedValue({
+        ledgerId: 'ledger_1',
+        proposition: {
+          id: 'prop_list_1',
+          title: 'Ops proposition list item',
+          status: 'live',
+        },
+        response: {
+          id: 'response_ops_1',
+          userId: 'respondent_1',
+          isLatest: true,
+          submittedAt: '2026-06-01T10:05:00.000Z',
+        },
+        currentReview: {
+          status: 'valid',
+          qualityScore: 0.8,
+          flags: [],
+          reasonCodes: [],
+          reviewedByUserId: 'ops_user_1',
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'executing',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: '2026-06-01T10:07:00.000Z',
+          approvedByUserId: 'ops_user_1',
+          executionStartedAt: '2026-06-01T10:08:00.000Z',
+          completedAt: null,
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
+          externalReference: null,
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        },
+        chain: [],
+        auditEvents: [],
+      }),
+      confirmOpsRewardPayoutExecution: vi.fn().mockResolvedValue({
+        ledgerId: 'ledger_1',
+        proposition: {
+          id: 'prop_list_1',
+          title: 'Ops proposition list item',
+          status: 'live',
+        },
+        response: {
+          id: 'response_ops_1',
+          userId: 'respondent_1',
+          isLatest: true,
+          submittedAt: '2026-06-01T10:05:00.000Z',
+        },
+        currentReview: {
+          status: 'valid',
+          qualityScore: 0.8,
+          flags: [],
+          reasonCodes: [],
+          reviewedByUserId: 'ops_user_1',
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'completed',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: '2026-06-01T10:07:00.000Z',
+          approvedByUserId: 'ops_user_1',
+          executionStartedAt: '2026-06-01T10:08:00.000Z',
+          completedAt: '2026-06-01T10:09:00.000Z',
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
+          externalReference: 'batch-99',
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        },
+        chain: [],
+        auditEvents: [],
+      }),
+      completeOpsRewardPayout: vi.fn().mockResolvedValue({
+        ledgerId: 'ledger_1',
+        proposition: {
+          id: 'prop_list_1',
+          title: 'Ops proposition list item',
+          status: 'live',
+        },
+        response: {
+          id: 'response_ops_1',
+          userId: 'respondent_1',
+          isLatest: true,
+          submittedAt: '2026-06-01T10:05:00.000Z',
+        },
+        currentReview: {
+          status: 'valid',
+          qualityScore: 0.8,
+          flags: [],
+          reasonCodes: [],
+          reviewedByUserId: 'ops_user_1',
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'completed',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: '2026-06-01T10:07:00.000Z',
+          approvedByUserId: 'ops_user_1',
+          executionStartedAt: '2026-06-01T10:08:00.000Z',
+          completedAt: '2026-06-01T10:09:00.000Z',
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: '0xabc123',
+          externalReference: 'batch-42',
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        },
+        chain: [],
+        auditEvents: [],
+      }),
+      failOpsRewardPayout: vi.fn().mockResolvedValue({
+        ledgerId: 'ledger_1',
+        proposition: {
+          id: 'prop_list_1',
+          title: 'Ops proposition list item',
+          status: 'live',
+        },
+        response: {
+          id: 'response_ops_1',
+          userId: 'respondent_1',
+          isLatest: true,
+          submittedAt: '2026-06-01T10:05:00.000Z',
+        },
+        currentReview: {
+          status: 'valid',
+          qualityScore: 0.8,
+          flags: [],
+          reasonCodes: [],
+          reviewedByUserId: 'ops_user_1',
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'failed',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: '2026-06-01T10:07:00.000Z',
+          approvedByUserId: 'ops_user_1',
+          executionStartedAt: '2026-06-01T10:08:00.000Z',
+          completedAt: null,
+          failedAt: '2026-06-01T10:09:00.000Z',
+          cancelledAt: null,
+          executionTxHash: null,
+          externalReference: null,
+          retryCount: 0,
+          lastErrorCode: 'transfer_reverted',
+          lastErrorMessage: 'Transfer reverted by token contract.',
         },
         chain: [],
         auditEvents: [],
@@ -1522,6 +1812,21 @@ describe('OpsConsolePage', () => {
           finalizedAt: null,
           voidedAt: null,
           reversedAt: null,
+          payoutId: null,
+          payoutStatus: null,
+          payoutMethod: null,
+          payoutAmount: null,
+          payoutAssetSymbol: null,
+          payoutDestinationAddress: null,
+          payoutRequestedAt: null,
+          payoutApprovedAt: null,
+          payoutCompletedAt: null,
+          payoutFailedAt: null,
+          payoutCancelledAt: null,
+          payoutExecutionTxHash: null,
+          payoutRetryCount: 0,
+          payoutLastErrorCode: null,
+          payoutLastErrorMessage: null,
         },
         {
           ledgerId: 'ledger_2',
@@ -1541,6 +1846,21 @@ describe('OpsConsolePage', () => {
           finalizedAt: null,
           voidedAt: null,
           reversedAt: null,
+          payoutId: null,
+          payoutStatus: null,
+          payoutMethod: null,
+          payoutAmount: null,
+          payoutAssetSymbol: null,
+          payoutDestinationAddress: null,
+          payoutRequestedAt: null,
+          payoutApprovedAt: null,
+          payoutCompletedAt: null,
+          payoutFailedAt: null,
+          payoutCancelledAt: null,
+          payoutExecutionTxHash: null,
+          payoutRetryCount: 0,
+          payoutLastErrorCode: null,
+          payoutLastErrorMessage: null,
         },
       ],
       totalCount: 2,
@@ -1562,6 +1882,7 @@ describe('OpsConsolePage', () => {
           submittedAt: '2026-06-01T10:05:00.000Z',
         },
         currentReview: null,
+        payout: null,
         chain: [],
         auditEvents: [],
       })
@@ -1579,6 +1900,7 @@ describe('OpsConsolePage', () => {
           submittedAt: '2026-06-01T10:06:00.000Z',
         },
         currentReview: null,
+        payout: null,
         chain: [],
         auditEvents: [],
       })
@@ -1600,7 +1922,7 @@ describe('OpsConsolePage', () => {
     expect(vi.mocked(arenaApi.retriggerOpsRewardResolution).mock.calls[1]?.[0]).toBe('ledger_2')
     expect(screen.getByText(opsCopy.rewards.batchResultOk(2))).toBeInTheDocument()
     expect(screen.getByText('processedCount: 2')).toBeInTheDocument()
-  })
+  }, 15000)
 
   it('renders the rewards workspace with detail focus', async () => {
     window.localStorage.setItem('arena.auth.token', 'arena.demo.session')
@@ -1609,7 +1931,163 @@ describe('OpsConsolePage', () => {
     expect(await screen.findByText(opsCopy.rewards.queueTitle)).toBeInTheDocument()
     expect(screen.getByText('retrigger-review-resolution')).toBeInTheDocument()
     expect(screen.getByText(opsCopy.rewards.auditTitle)).toBeInTheDocument()
-  })
+  }, 15000)
+
+  it('requires an execution tx hash before completing reward payout from the rewards workspace', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem('arena.auth.token', 'arena.demo.session')
+    vi.mocked(arenaApi.getOpsRewardDetail).mockResolvedValueOnce({
+      ledgerId: 'ledger_1',
+      proposition: {
+        id: 'prop_list_1',
+        title: 'Ops proposition list item',
+        status: 'live',
+      },
+      response: {
+        id: 'response_ops_1',
+        userId: 'respondent_1',
+        isLatest: true,
+        submittedAt: '2026-06-01T10:05:00.000Z',
+      },
+      currentReview: {
+        status: 'valid',
+        qualityScore: 0.8,
+        flags: [],
+        reasonCodes: [],
+        reviewedByUserId: 'ops_user_1',
+        reviewedAt: '2026-06-01T10:05:50.000Z',
+      },
+      payout: {
+        payoutId: 'payout_1',
+        status: 'approved',
+        method: 'wallet_transfer',
+        amount: '20',
+        assetSymbol: 'USDC',
+        destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+        requestedAt: '2026-06-01T10:06:00.000Z',
+        approvedAt: '2026-06-01T10:07:00.000Z',
+        approvedByUserId: 'ops_user_1',
+        executionStartedAt: null,
+        completedAt: null,
+        failedAt: null,
+        cancelledAt: null,
+        executionTxHash: null,
+        externalReference: null,
+        retryCount: 0,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+      },
+      chain: [],
+      auditEvents: [],
+    })
+
+    renderApp(['/zh/ops/rewards?ledgerId=ledger_1&sourceType=response'])
+
+    expect(await screen.findByText(opsCopy.rewards.payoutTitle)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /complete-payout/i }))
+    const dialog = screen.getByRole('dialog')
+    const confirmButton = within(dialog).getByRole('button', { name: '确认' })
+
+    expect(confirmButton).toBeDisabled()
+
+    await user.type(
+      within(dialog).getByLabelText(opsCopy.rewards.payoutExecutionTxHashLabel),
+      '0xabc123',
+    )
+
+    expect(confirmButton).not.toBeDisabled()
+
+    await user.click(confirmButton)
+
+    await waitFor(() => {
+      expect(arenaApi.completeOpsRewardPayout).toHaveBeenCalledWith(
+        'ledger_1',
+        expect.objectContaining({
+          reason: 'complete_reward_payout',
+          executionTxHash: '0xabc123',
+        }),
+        'arena.demo.session',
+      )
+    })
+  }, 15000)
+
+  it('confirms an executing reward payout from its recorded transaction hash in the rewards workspace', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem('arena.auth.token', 'arena.demo.session')
+    vi.mocked(arenaApi.getOpsRewardDetail).mockResolvedValueOnce({
+      ledgerId: 'ledger_1',
+      proposition: {
+        id: 'prop_list_1',
+        title: 'Ops proposition list item',
+        status: 'live',
+      },
+      response: {
+        id: 'response_ops_1',
+        userId: 'respondent_1',
+        isLatest: true,
+        submittedAt: '2026-06-01T10:05:00.000Z',
+      },
+      currentReview: {
+        status: 'valid',
+        qualityScore: 0.8,
+        flags: [],
+        reasonCodes: [],
+        reviewedByUserId: 'ops_user_1',
+        reviewedAt: '2026-06-01T10:05:50.000Z',
+      },
+      payout: {
+        payoutId: 'payout_1',
+        status: 'executing',
+        method: 'wallet_transfer',
+        amount: '20',
+        assetSymbol: 'USDC',
+        destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+        requestedAt: '2026-06-01T10:06:00.000Z',
+        approvedAt: '2026-06-01T10:07:00.000Z',
+        approvedByUserId: 'ops_user_1',
+        executionStartedAt: '2026-06-01T10:08:00.000Z',
+        completedAt: null,
+        failedAt: null,
+        cancelledAt: null,
+        executionTxHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
+        externalReference: null,
+        retryCount: 0,
+        lastErrorCode: null,
+        lastErrorMessage: null,
+      },
+      chain: [],
+      auditEvents: [],
+    })
+
+    renderApp(['/zh/ops/rewards?ledgerId=ledger_1&sourceType=response'])
+
+    expect(await screen.findByText(opsCopy.rewards.payoutTitle)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /confirm-payout-execution/i }))
+    const dialog = screen.getByRole('dialog')
+    const confirmButton = within(dialog).getByRole('button', { name: '确认' })
+
+    expect(within(dialog).queryByLabelText(opsCopy.rewards.payoutExecutionTxHashLabel)).not.toBeInTheDocument()
+    expect(confirmButton).not.toBeDisabled()
+
+    await user.type(
+      within(dialog).getByLabelText(opsCopy.rewards.payoutExternalReferenceLabel),
+      'batch-99',
+    )
+    await user.click(confirmButton)
+
+    await waitFor(() => {
+      expect(arenaApi.confirmOpsRewardPayoutExecution).toHaveBeenCalledWith(
+        'ledger_1',
+        expect.objectContaining({
+          reason: 'confirm_reward_payout_execution',
+          externalReference: 'batch-99',
+        }),
+        'arena.demo.session',
+      )
+    })
+  }, 15000)
 
   it('renders the audit workspace and passes URL filters through to the api client', async () => {
     window.localStorage.setItem('arena.auth.token', 'arena.demo.session')
@@ -1916,7 +2394,8 @@ describe('OpsConsolePage', () => {
     const propositionView = renderApp(['/zh/ops/propositions/prop_list_1'])
     expect(await screen.findByText('证据中心')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: opsCopy.propositionDetail.actions.approve })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: opsCopy.propositionDetail.actions.freeze })).not.toBeInTheDocument()
+    // demo session resolves to Admin (demo-auth.ts), so the Admin/System-gated freeze action is correctly visible
+    expect(screen.getByRole('button', { name: opsCopy.propositionDetail.actions.freeze })).toBeInTheDocument()
     propositionView.unmount()
 
     const responsesView = renderApp(['/zh/ops/responses'])

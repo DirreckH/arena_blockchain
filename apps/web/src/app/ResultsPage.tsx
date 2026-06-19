@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import type {
   RespondentAccountActivityItemViewModel,
   RespondentResultOverviewViewModel,
@@ -15,12 +15,17 @@ import {
   Trophy,
   TrendingUp,
   Wallet,
+  ArrowDownToLine,
+  ArrowUpFromLine,
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { AccountShellHeader } from '../components/shared/AccountShellHeader'
 import { AuthRequiredBlankGate } from '../components/shared/AuthRequiredBlankGate'
 import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { useRulesIntro } from '../components/shared/RulesIntroContext'
+import { useAuthSession } from '../features/auth/auth-session'
+import { useWalletEnvironment } from '../features/auth/wallet-environment'
+import { formatCategoryLabel } from '../features/arena/arena-ui-mappers'
 import { useResultOverviewData } from '../features/arena/result-overview-data'
 import {
   ACCOUNT_ASSET_SUMMARY_ITEMS,
@@ -30,8 +35,16 @@ import {
   ACCOUNT_RECORDS,
   ACCOUNT_SUMMARY_STATS,
 } from '../mocks/account-shell.mock'
+import {
+  INITIAL_MARKET_BALANCE,
+  INITIAL_WALLET_BALANCE,
+  INITIAL_WALLET_TRANSFERS,
+  type WalletBalance,
+  type WalletTransferDirection,
+  type WalletTransferRecord,
+} from '../mocks/wallet-shell.mock'
 
-type ResultsTabId = 'overview' | 'performance' | 'positions' | 'records'
+type ResultsTabId = 'overview' | 'wallet' | 'performance' | 'positions' | 'records' | 'wagers'
 type SummaryStatTone = 'positive' | 'negative' | 'neutral'
 
 type SummaryStat = {
@@ -117,6 +130,21 @@ type RecordRow = {
   balance: string
   status: string
   detailText?: string
+}
+
+type WagerBadgeTone = 'long' | 'short' | 'won' | 'lost' | 'refund' | 'neutral'
+type WagerValueTone = 'positive' | 'negative' | 'neutral'
+
+type WageredPropositionItem = {
+  propositionId: string
+  title: string
+  categoryLabel: string
+  badgeLabel: string
+  badgeTone: WagerBadgeTone
+  metaItems: string[]
+  valueLabel: string
+  valueDetail: string
+  valueTone: WagerValueTone
 }
 
 type PerformanceChartData = {
@@ -520,15 +548,104 @@ function formatPublicPhaseLabel(phase: string) {
   }
 }
 
+function formatSettlementOutcomeLabel(
+  outcome: RespondentResultOverviewViewModel['settledResults']['items'][number]['currentUserSettlementOutcome'],
+  resultKind: RespondentResultOverviewViewModel['settledResults']['items'][number]['resultKind'],
+) {
+  if (resultKind === 'void') {
+    return { label: '已作废', tone: 'neutral' as WagerBadgeTone }
+  }
+
+  switch (outcome) {
+    case 'won':
+      return { label: '胜出', tone: 'won' as WagerBadgeTone }
+    case 'lost':
+      return { label: '落败', tone: 'lost' as WagerBadgeTone }
+    case 'refund':
+      return { label: '退款', tone: 'refund' as WagerBadgeTone }
+    default:
+      return { label: '已结算', tone: 'neutral' as WagerBadgeTone }
+  }
+}
+
+function buildSettledWagerItems(
+  overview: RespondentResultOverviewViewModel | null,
+): WageredPropositionItem[] {
+  if (!overview) {
+    return []
+  }
+
+  return overview.settledResults.items.map((item) => {
+    const outcome = formatSettlementOutcomeLabel(item.currentUserSettlementOutcome, item.resultKind)
+    const metaItems = [
+      `投入 ${item.currentUserStakeAmount ?? '0'} USDC`,
+      item.resultKind === 'void'
+        ? item.voidReason === 'tie'
+          ? '作废：平局'
+          : item.voidReason === 'insufficient_sample'
+            ? '作废：样本不足'
+            : '作废结算'
+        : `公开结果：${formatOptionLabel(item.winningOption)}`,
+    ]
+    const pnlLabel = formatResultAmount(item.currentUserPnl)
+      ?? formatResultAmount(item.currentUserRefundAmount)
+      ?? formatResultAmount(item.currentUserRewardAmount)
+      ?? '0.00 USDC'
+
+    return {
+      propositionId: item.propositionId,
+      title: item.propositionTitle,
+      categoryLabel: formatCategoryLabel(item.category),
+      badgeLabel: outcome.label,
+      badgeTone: outcome.tone,
+      metaItems,
+      valueLabel: pnlLabel,
+      valueDetail: formatShortDateTime(item.settledAt),
+      valueTone:
+        item.currentUserSettlementOutcome === 'won'
+          ? 'positive'
+          : item.currentUserSettlementOutcome === 'lost'
+            ? 'negative'
+            : 'neutral',
+    }
+  })
+}
+
+function buildOpenWagerItems(
+  overview: RespondentResultOverviewViewModel | null,
+): WageredPropositionItem[] {
+  if (!overview) {
+    return []
+  }
+
+  return overview.openPositions.items.map((item) => ({
+    propositionId: item.propositionId,
+    title: item.propositionTitle,
+    categoryLabel: formatCategoryLabel(item.category),
+    badgeLabel: item.selectedOption === 0 ? '多' : '空',
+    badgeTone: item.selectedOption === 0 ? 'long' : 'short',
+    metaItems: [
+      `投注 ${item.stakeAmount} USDC`,
+      `所选 ${item.selectedOptionLabel}`,
+      formatPublicPhaseLabel(item.currentPublicPhase),
+    ],
+    valueLabel: formatPublicResultLabel(item.publicResult),
+    valueDetail: formatShortDateTime(item.placedAt),
+    valueTone: 'neutral',
+  }))
+}
+
 const resultsTabs: ResultsTab[] = [
   { id: 'overview', label: '总览' },
+  { id: 'wallet', label: '钱包' },
   { id: 'performance', label: '收益表现' },
   { id: 'positions', label: '持仓明细' },
   { id: 'records', label: '账户记录' },
+  { id: 'wagers', label: '已下注命题' },
 ]
 
 function getInitialResultsTab(tab: string | null): ResultsTabId {
-  if (tab === 'performance' || tab === 'positions' || tab === 'records') {
+  if (tab === 'wallet' || tab === 'performance' || tab === 'positions' || tab === 'records' || tab === 'wagers') {
     return tab
   }
 
@@ -672,6 +789,67 @@ const positionExposureItems: ExposureItem[] = [
 ]
 
 const accountRecords: RecordRow[] = ACCOUNT_RECORDS
+
+const settledWagerItemsMock: WageredPropositionItem[] = [
+  {
+    propositionId: 'mock-settled-1',
+    title: 'Perplexity 是否在本月发布企业版搜索',
+    categoryLabel: 'AI / Technology',
+    badgeLabel: '胜出',
+    badgeTone: 'won',
+    metaItems: ['投入 320 USDC', '公开结果：选项 1'],
+    valueLabel: '+349.84 USDC',
+    valueDetail: '05-18 20:00',
+    valueTone: 'positive',
+  },
+  {
+    propositionId: 'mock-settled-2',
+    title: 'ChatGPT Search 是否在评测中领先',
+    categoryLabel: 'AI / Technology',
+    badgeLabel: '落败',
+    badgeTone: 'lost',
+    metaItems: ['投入 280 USDC', '公开结果：选项 2'],
+    valueLabel: '-280.00 USDC',
+    valueDetail: '05-14 15:30',
+    valueTone: 'negative',
+  },
+  {
+    propositionId: 'mock-settled-3',
+    title: '区域外交会谈是否如期举行',
+    categoryLabel: 'Public Policy',
+    badgeLabel: '退款',
+    badgeTone: 'refund',
+    metaItems: ['投入 150 USDC', '作废：样本不足'],
+    valueLabel: '+150.00 USDC',
+    valueDetail: '05-12 09:10',
+    valueTone: 'neutral',
+  },
+]
+
+const openWagerItemsMock: WageredPropositionItem[] = [
+  {
+    propositionId: 'mock-open-1',
+    title: '开发者工具链新版本是否在季度末上线',
+    categoryLabel: 'AI / Technology',
+    badgeLabel: '多',
+    badgeTone: 'long',
+    metaItems: ['投注 420 USDC', '所选 选项 1', '进行中'],
+    valueLabel: '等待公开结果',
+    valueDetail: '05-18 16:10',
+    valueTone: 'neutral',
+  },
+  {
+    propositionId: 'mock-open-2',
+    title: '公共服务满意度调查是否达标',
+    categoryLabel: 'Public Policy',
+    badgeLabel: '空',
+    badgeTone: 'short',
+    metaItems: ['投注 260 USDC', '所选 选项 2', '待公开'],
+    valueLabel: '待公开',
+    valueDetail: '05-17 21:40',
+    valueTone: 'neutral',
+  },
+]
 
 const positionStatusItems: SummaryItem[] = [
   { label: '进行中', value: '14', detail: '仍在等待公开结果或观察期结束' },
@@ -1270,6 +1448,54 @@ function AccountRecordsCard({
   )
 }
 
+function WageredPropositionsCard({
+  title,
+  note,
+  items,
+  emptyMessage,
+}: {
+  title: string
+  note: string
+  items: WageredPropositionItem[]
+  emptyMessage: string
+}) {
+  return (
+    <article className="results-card results-panel">
+      <div className="panel-head">
+        <h2>{title}</h2>
+        <span className="panel-head-note">{note}</span>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="boundary-note">{emptyMessage}</p>
+      ) : (
+        <div className="results-compact-list">
+          {items.map((item) => (
+            <div key={item.propositionId} className="results-compact-row">
+              <div className="results-compact-main">
+                <div className="results-compact-head">
+                  <span className={`wager-badge ${item.badgeTone}`}>{item.badgeLabel}</span>
+                  <strong className="results-compact-name">{item.title}</strong>
+                </div>
+                <div className="results-compact-meta">
+                  <span>{item.categoryLabel}</span>
+                  {item.metaItems.map((meta) => (
+                    <span key={`${item.propositionId}-${meta}`}>{meta}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="results-compact-value">
+                <strong className={getToneClassName(item.valueTone, item.valueLabel)}>{item.valueLabel}</strong>
+                <span>{item.valueDetail}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
+
 function StatusRailCard({
   title,
   items,
@@ -1485,6 +1711,316 @@ function HeatmapCard({ cells }: { cells?: HeatmapCell[] }) {
   )
 }
 
+function WalletBalanceDuoCard({
+  walletBalance,
+  marketBalance,
+}: {
+  walletBalance: WalletBalance
+  marketBalance: WalletBalance
+}) {
+  const total =
+    Number.parseFloat(walletBalance.amount.replace(/,/g, '')) +
+    Number.parseFloat(marketBalance.amount.replace(/,/g, ''))
+  const totalLabel = Number.isFinite(total)
+    ? total.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '--'
+
+  return (
+    <article className="results-card wallet-balance-card-shell" aria-label="钱包与市场余额">
+      <div className="panel-head">
+        <h2>余额总览</h2>
+        <span className="panel-head-note">钱包与 Arena 站内可用资金</span>
+      </div>
+
+      <div className="wallet-balance-grid">
+        {[walletBalance, marketBalance].map((entry, index) => {
+          const accent = index === 0 ? 'wallet-balance-accent-wallet' : 'wallet-balance-accent-market'
+          return (
+            <article key={entry.label} className={`wallet-balance-cell ${accent}`}>
+              <div className="wallet-balance-cell-head">
+                <span className="wallet-balance-pill">{entry.label}</span>
+                <span className="wallet-balance-address" title={entry.address}>
+                  {entry.address}
+                </span>
+              </div>
+              <strong className="wallet-balance-amount">
+                {entry.amount}
+                <small>{entry.unit}</small>
+              </strong>
+              <span className={getToneClassName(entry.tone, entry.delta)}>{entry.delta}</span>
+              <p className="wallet-balance-detail">{entry.detail}</p>
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="wallet-balance-foot">
+        <span>账户合计</span>
+        <strong>
+          {totalLabel}
+          <small>USDC</small>
+        </strong>
+        <span>含未确认转账</span>
+      </div>
+    </article>
+  )
+}
+
+function WalletTransferFormCard({
+  direction,
+  amount,
+  walletBalance,
+  marketBalance,
+  flashMessage,
+  onDirectionChange,
+  onAmountChange,
+  onSubmit,
+}: {
+  direction: WalletTransferDirection
+  amount: string
+  walletBalance: WalletBalance
+  marketBalance: WalletBalance
+  flashMessage: string | null
+  onDirectionChange: (next: WalletTransferDirection) => void
+  onAmountChange: (next: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const isDeposit = direction === 'deposit'
+  const sourceBalance = isDeposit ? walletBalance : marketBalance
+  const targetBalance = isDeposit ? marketBalance : walletBalance
+  const amountNumber = Number.parseFloat(amount)
+  const sourceNumber = Number.parseFloat(sourceBalance.amount.replace(/,/g, ''))
+  const exceedsBalance =
+    Number.isFinite(amountNumber) && Number.isFinite(sourceNumber) && amountNumber > sourceNumber
+  const submitDisabled =
+    !Number.isFinite(amountNumber) || amountNumber <= 0 || exceedsBalance
+
+  return (
+    <article className="results-card wallet-transfer-card">
+      <div className="panel-head">
+        <h2>资金划转</h2>
+        <span className="panel-head-note">
+          {isDeposit ? '钱包 → Arena 市场' : 'Arena 市场 → 钱包'}
+        </span>
+      </div>
+
+      <form className="wallet-transfer-form" onSubmit={onSubmit} noValidate>
+        <div className="wallet-direction-segmented" role="tablist" aria-label="转账方向">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isDeposit}
+            className={isDeposit ? 'wallet-direction-chip active' : 'wallet-direction-chip'}
+            onClick={() => onDirectionChange('deposit')}
+          >
+            <ArrowDownToLine size={14} strokeWidth={2.2} />
+            <span>转入到 Arena</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!isDeposit}
+            className={!isDeposit ? 'wallet-direction-chip active' : 'wallet-direction-chip'}
+            onClick={() => onDirectionChange('withdraw')}
+          >
+            <ArrowUpFromLine size={14} strokeWidth={2.2} />
+            <span>提现到钱包</span>
+          </button>
+        </div>
+
+        <div className="wallet-transfer-route">
+          <div className="wallet-transfer-route-cell">
+            <span>从</span>
+            <strong>{sourceBalance.label}</strong>
+            <small>{sourceBalance.address}</small>
+          </div>
+          <ChevronRight size={14} strokeWidth={2.2} aria-hidden />
+          <div className="wallet-transfer-route-cell">
+            <span>到</span>
+            <strong>{targetBalance.label}</strong>
+            <small>{targetBalance.address}</small>
+          </div>
+        </div>
+
+        <label className="wallet-amount-field">
+          <span className="wallet-amount-label">金额</span>
+          <div className="wallet-amount-input-wrap">
+            <input
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="0.00"
+              value={amount}
+              onChange={(event) => onAmountChange(event.target.value)}
+              aria-label="转账金额"
+            />
+            <span className="wallet-amount-unit">USDC</span>
+          </div>
+          <div className="wallet-amount-meta">
+            <span>
+              可用 {sourceBalance.amount} {sourceBalance.unit}
+            </span>
+            <button
+              type="button"
+              className="wallet-amount-max"
+              onClick={() => onAmountChange(sourceBalance.amount.replace(/,/g, ''))}
+            >
+              最大
+            </button>
+          </div>
+        </label>
+
+        {exceedsBalance ? (
+          <p className="wallet-transfer-hint warn">超过可用余额，请调整金额</p>
+        ) : flashMessage ? (
+          <p className="wallet-transfer-hint info">{flashMessage}</p>
+        ) : (
+          <p className="wallet-transfer-hint">
+            {isDeposit
+              ? '转入操作会从你的链上钱包扣款并入账到 Arena 市场。'
+              : '提现操作会从 Arena 市场扣款并打回你的链上钱包。'}
+          </p>
+        )}
+
+        <button type="submit" className="primary-action wallet-transfer-submit" disabled={submitDisabled}>
+          {isDeposit ? '确认转入' : '确认提现'}
+        </button>
+      </form>
+    </article>
+  )
+}
+
+function WalletTransfersHistoryCard({ rows }: { rows: WalletTransferRecord[] }) {
+  const statusLabel: Record<WalletTransferRecord['status'], string> = {
+    pending: '待确认',
+    confirmed: '已完成',
+    failed: '失败',
+  }
+
+  return (
+    <article className="results-card wallet-history-card">
+      <div className="panel-head">
+        <h2>最近转账流水</h2>
+        <span className="panel-head-note">{`共 ${rows.length} 条`}</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <p className="boundary-note">暂无转账记录，提交一次划转后这里会出现。</p>
+      ) : (
+        <div className="wallet-history-table-wrap">
+          <table className="wallet-history-table">
+            <thead>
+              <tr>
+                <th scope="col">时间</th>
+                <th scope="col">方向</th>
+                <th scope="col">金额</th>
+                <th scope="col">流向</th>
+                <th scope="col">状态</th>
+                <th scope="col">交易</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const isDeposit = row.direction === 'deposit'
+                const directionClass = isDeposit ? 'wallet-direction-tag deposit' : 'wallet-direction-tag withdraw'
+                const statusClass = `wallet-status-tag ${row.status}`
+                return (
+                  <tr key={row.id}>
+                    <td>{row.time}</td>
+                    <td>
+                      <span className={directionClass}>
+                        {isDeposit ? <ArrowDownToLine size={12} strokeWidth={2.4} /> : <ArrowUpFromLine size={12} strokeWidth={2.4} />}
+                        {isDeposit ? '转入' : '提现'}
+                      </span>
+                    </td>
+                    <td className={getToneClassName(isDeposit ? 'positive' : 'negative', row.amount)}>
+                      {row.amount}
+                    </td>
+                    <td>
+                      <small>{row.fromLabel}</small>
+                      <ChevronRight size={11} strokeWidth={2.2} aria-hidden />
+                      <small>{row.toLabel}</small>
+                    </td>
+                    <td>
+                      <span className={statusClass}>{statusLabel[row.status]}</span>
+                    </td>
+                    <td>
+                      <code>{row.txHash}</code>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
+  )
+}
+
+function WalletReadinessCard() {
+  const { configuredChainId } = useAuthSession()
+  const { availability, networkStatus, connectedWalletAddress, currentChainId } = useWalletEnvironment()
+
+  const rows = [
+    {
+      label: '钱包插件',
+      value: availability === 'available' ? '已检测到' : availability === 'missing' ? '未检测到' : '检测中',
+      detail:
+        availability === 'missing'
+          ? '需要安装或解锁注入式钱包以使用真实地址签名'
+          : connectedWalletAddress
+            ? `注入账户 ${connectedWalletAddress}`
+            : '需要时可连接钱包',
+      tone: (availability === 'available' ? 'positive' : availability === 'missing' ? 'negative' : 'neutral') as SummaryStatTone,
+    },
+    {
+      label: '网络',
+      value:
+        networkStatus === 'supported'
+          ? '已支持'
+          : networkStatus === 'unsupported'
+            ? '网络不匹配'
+            : '未知',
+      detail:
+        networkStatus === 'unsupported'
+          ? `${currentChainId === null ? '未检测到网络' : `已连接 Chain ID ${currentChainId}`}，需要 Chain ID ${configuredChainId}`
+          : networkStatus === 'supported'
+            ? `已就绪，Chain ID ${configuredChainId}`
+            : '签名时将自动校验链',
+      tone: (networkStatus === 'supported' ? 'positive' : networkStatus === 'unsupported' ? 'negative' : 'neutral') as SummaryStatTone,
+    },
+    {
+      label: '链上确认',
+      value: '约 12-30 秒',
+      detail: '取决于网络拥堵情况，转账完成会更新流水状态',
+      tone: 'neutral' as SummaryStatTone,
+    },
+  ]
+
+  return (
+    <article className="results-card rail-card wallet-readiness-card">
+      <div className="rail-head">
+        <h2>就绪状态</h2>
+      </div>
+      <div className="results-status-list">
+        {rows.map((row) => (
+          <div key={row.label} className="results-status-row">
+            <div>
+              <span>{row.label}</span>
+              <small>{row.detail}</small>
+            </div>
+            <strong className={getToneClassName(row.tone, row.value)}>{row.value}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="rail-foot">
+        <span>真实链上余额与链选择会在 A-track 接入后自动同步。</span>
+      </div>
+    </article>
+  )
+}
+
 function ResultsPage() {
   const { isAuthenticated, user, openAuthModal } = useRulesIntro()
   const {
@@ -1497,6 +2033,10 @@ function ResultsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState<ResultsTabId>(() => getInitialResultsTab(searchParams.get('tab')))
   const [activeChartRangeId, setActiveChartRangeId] = useState<ChartRangeId>('7d')
+  const [walletTransferDirection, setWalletTransferDirection] = useState<WalletTransferDirection>('deposit')
+  const [walletTransferAmount, setWalletTransferAmount] = useState<string>('')
+  const [walletTransfers, setWalletTransfers] = useState<WalletTransferRecord[]>(INITIAL_WALLET_TRANSFERS)
+  const [walletFlashMessage, setWalletFlashMessage] = useState<string | null>(null)
 
   if (!isAuthenticated) {
     return <AuthRequiredBlankGate className="route-page results-page" ariaLabel="结果页" />
@@ -1505,6 +2045,56 @@ function ResultsPage() {
   const handleTabChange = (tabId: ResultsTabId) => {
     setActiveTab(tabId)
     setSearchParams(tabId === 'overview' ? {} : { tab: tabId }, { replace: true })
+  }
+
+  const walletBalance: WalletBalance = INITIAL_WALLET_BALANCE
+  const marketBalance: WalletBalance = INITIAL_MARKET_BALANCE
+
+  const handleWalletDirectionChange = (direction: WalletTransferDirection) => {
+    setWalletTransferDirection(direction)
+    setWalletFlashMessage(null)
+  }
+
+  const handleWalletAmountChange = (raw: string) => {
+    const sanitized = raw.replace(/[^0-9.]/g, '')
+    const parts = sanitized.split('.')
+    const next = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : sanitized
+    setWalletTransferAmount(next)
+    setWalletFlashMessage(null)
+  }
+
+  const handleWalletTransferSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const amountNumber = Number.parseFloat(walletTransferAmount)
+    if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+      setWalletFlashMessage('请输入大于 0 的金额')
+      return
+    }
+    const formattedAmount = amountNumber.toLocaleString('zh-CN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+    const isDeposit = walletTransferDirection === 'deposit'
+    const now = new Date()
+    const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const hourMinute = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    const newRecord: WalletTransferRecord = {
+      id: `tx-mock-${now.getTime()}`,
+      time: `${monthDay} ${hourMinute}`,
+      direction: walletTransferDirection,
+      amount: `${isDeposit ? '+' : '-'}${formattedAmount} USDC`,
+      fromLabel: isDeposit ? `钱包 ${walletBalance.address}` : 'Arena Vault',
+      toLabel: isDeposit ? 'Arena Vault' : `钱包 ${walletBalance.address}`,
+      status: 'pending',
+      txHash: `0x${now.getTime().toString(16).slice(0, 4)}…mock`,
+    }
+    setWalletTransfers((prev) => [newRecord, ...prev].slice(0, 12))
+    setWalletTransferAmount('')
+    setWalletFlashMessage(
+      isDeposit
+        ? `已提交转入 ${formattedAmount} USDC，等待链上确认`
+        : `已提交提现 ${formattedAmount} USDC，等待链上确认`,
+    )
   }
 
   const activeChartRange = chartRanges.find((range) => range.id === activeChartRangeId) ?? chartRanges[3]
@@ -2025,6 +2615,13 @@ function ResultsPage() {
       ]
     : settlementBands
 
+  const liveSettledWagerItems: WageredPropositionItem[] = overview
+    ? buildSettledWagerItems(overview)
+    : settledWagerItemsMock
+  const liveOpenWagerItems: WageredPropositionItem[] = overview
+    ? buildOpenWagerItems(overview)
+    : openWagerItemsMock
+
   const livePerformancePulseItems: SparkItem[] = overview
     ? [
         {
@@ -2144,6 +2741,8 @@ function ResultsPage() {
     const assetDistributionSegments = liveAssetDistributionSegments
     const holdingStructureSegments = liveHoldingStructureSegments
     const settlementBands = liveSettlementBands
+    const settledWagerItems = liveSettledWagerItems
+    const openWagerItems = liveOpenWagerItems
 
     return (
     <section className="route-page results-page">
@@ -2201,6 +2800,32 @@ function ResultsPage() {
             </div>
             <div className="results-slot results-slot-6">
               <SettlementSummaryCard title="结算概览" note="近 7 天已结算汇总" items={settlementSummaryItems} />
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === 'wallet' ? (
+          <section className="results-workspace main-grid">
+            <div className="results-slot results-slot-8">
+              <WalletBalanceDuoCard walletBalance={walletBalance} marketBalance={marketBalance} />
+            </div>
+            <div className="results-slot results-slot-4">
+              <WalletReadinessCard />
+            </div>
+            <div className="results-slot results-slot-4">
+              <WalletTransferFormCard
+                direction={walletTransferDirection}
+                amount={walletTransferAmount}
+                walletBalance={walletBalance}
+                marketBalance={marketBalance}
+                flashMessage={walletFlashMessage}
+                onDirectionChange={handleWalletDirectionChange}
+                onAmountChange={handleWalletAmountChange}
+                onSubmit={handleWalletTransferSubmit}
+              />
+            </div>
+            <div className="results-slot results-slot-8">
+              <WalletTransfersHistoryCard rows={walletTransfers} />
             </div>
           </section>
         ) : null}
@@ -2346,6 +2971,27 @@ function ResultsPage() {
               ) : (
                 <FundFlowCard data={overview ? activityFlowData : undefined} />
               )}
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === 'wagers' ? (
+          <section className="results-workspace main-grid">
+            <div className="results-slot results-slot-6">
+              <WageredPropositionsCard
+                title="已开奖命题"
+                note={`共 ${settledWagerItems.length} 项`}
+                items={settledWagerItems}
+                emptyMessage="暂无已开奖的命题，结算完成后会在此展示。"
+              />
+            </div>
+            <div className="results-slot results-slot-6">
+              <WageredPropositionsCard
+                title="未开奖命题"
+                note={`共 ${openWagerItems.length} 项`}
+                items={openWagerItems}
+                emptyMessage="暂无未开奖的命题，下注后会在此展示。"
+              />
             </div>
           </section>
         ) : null}

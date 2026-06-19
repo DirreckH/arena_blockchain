@@ -5,6 +5,7 @@ import { DataSourceBadge } from '../components/shared/DataSourceBadge'
 import { WalletStatusCard } from '../components/shared/WalletStatusCard'
 import {
   buildDraftTags,
+  formatSampleConstraintLabel,
   formatCategoryLabel,
   formatRelativeTime,
 } from '../features/arena/arena-ui-mappers'
@@ -59,7 +60,7 @@ function toSubmissionCardRecord(draft: PropositionDraftRecord): SubmissionCardRe
     summary: draft.summary,
     categoryLabel: formatCategoryLabel(draft.category),
     tags: buildDraftTags(draft),
-    submittedAtLabel: draft.submittedAt ? formatRelativeTime(draft.submittedAt) : 'Just now',
+    submittedAtLabel: draft.submittedAt ? formatRelativeTime(draft.submittedAt) : '刚刚',
     updatedAtLabel: formatRelativeTime(draft.updatedAt),
     minEffectiveSample: draft.minEffectiveSample,
     marketEnabled: draft.marketEnabled,
@@ -73,37 +74,37 @@ function buildSourceDetail(_sessionMode: 'real' | 'demo' | 'anonymous', _isAuthe
 function formatSubmissionStatus(status: string) {
   switch (status) {
     case 'submitted':
-      return 'Submitted'
+      return '已提交'
     case 'approved':
-      return 'Approved'
+      return '已通过'
     case 'rejected':
-      return 'Rejected'
+      return '已驳回'
     case 'withdrawn':
-      return 'Withdrawn'
+      return '已撤回'
     case 'archived':
-      return 'Archived'
+      return '已归档'
     case 'draft':
     default:
-      return 'Draft'
+      return '草稿'
   }
 }
 
 function formatLifecycleStatus(status: string) {
   switch (status) {
     case 'draft':
-      return 'Draft'
+      return '草稿'
     case 'scheduled':
-      return 'Scheduled'
+      return '待开始'
     case 'live':
-      return 'Live'
+      return '进行中'
     case 'frozen':
-      return 'Frozen'
+      return '已冻结'
     case 'revealing':
-      return 'Revealing'
+      return '揭晓中'
     case 'settled':
-      return 'Settled'
+      return '已开奖'
     case 'archived':
-      return 'Archived'
+      return '已归档'
     default:
       return status
   }
@@ -112,12 +113,12 @@ function formatLifecycleStatus(status: string) {
 function formatClosureReason(reason: string) {
   switch (reason) {
     case 'min_duration_and_sample_reached':
-      return 'Ready when minimum duration and sample threshold are both satisfied.'
+      return '达到最短持续时间和样本门槛后，即可进入冻结或结算。'
     case 'max_duration_reached':
-      return 'Ready because the maximum run duration has been reached.'
+      return '已达到最长持续时间，可进入冻结或结算。'
     case 'not_ready':
     default:
-      return 'Not ready for freeze or settlement yet.'
+      return '暂未满足冻结或结算条件。'
   }
 }
 
@@ -127,8 +128,8 @@ export function formatExportTime(isoTimestamp: string) {
     return isoTimestamp
   }
 
-  return date.toLocaleString('en-US', {
-    month: 'short',
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
@@ -139,9 +140,9 @@ export function formatExportTime(isoTimestamp: string) {
 function formatResultKindLabel(resultKind: string) {
   switch (resultKind) {
     case 'resolved':
-      return 'Resolved'
+      return '已判定'
     case 'void':
-      return 'Void'
+      return '作废'
     default:
       return resultKind
   }
@@ -164,13 +165,13 @@ function BudgetLedgerPanel({
     <>
       <div className="account-menu-status-row">
         <div>
-          <strong>Budget ledger</strong>
+          <strong>预算台账</strong>
           <span data-testid={summaryTestId}>
-            {formatBudgetSummary(summary)} · configured {formatBudgetAmount(summary.configuredAmount)}
+            {formatBudgetSummary(summary)} · 已配置 {formatBudgetAmount(summary.configuredAmount)}
           </span>
         </div>
         <em className="account-menu-value">
-          <span>{formatBudgetAmount(summary.remainingAmount)} remaining</span>
+          <span>剩余 {formatBudgetAmount(summary.remainingAmount)}</span>
         </em>
       </div>
       <div className="account-menu-status-row">
@@ -184,12 +185,12 @@ function BudgetLedgerPanel({
               </div>
             ))
           ) : (
-            <span>No requester-visible budget entries yet.</span>
+            <span>暂未生成可展示给发起方的预算记录。</span>
           )}
         </div>
         <em className="account-menu-value">
           <span>
-            {summary.currentEntryCount} current · {summary.adjustedEntryCount} adjusted
+            {summary.currentEntryCount} 条当前记录 · {summary.adjustedEntryCount} 条调整记录
           </span>
         </em>
       </div>
@@ -202,7 +203,7 @@ function formatTopCategoryLabel(
 ) {
   const topCategory = analytics.categoryHistory[0]
   if (!topCategory) {
-    return 'No category data'
+    return '暂无分类数据'
   }
 
   return formatCategoryLabel(topCategory.category)
@@ -211,13 +212,13 @@ function formatTopCategoryLabel(
 function formatDeliveryHealthStatus(status: string) {
   switch (status) {
     case 'scheduled':
-      return 'Scheduled'
+      return '已排期'
     case 'due':
-      return 'Due'
+      return '待执行'
     case 'failing':
-      return 'Failing'
+      return '异常中'
     case 'disabled':
-      return 'Disabled'
+      return '已停用'
     default:
       return status
   }
@@ -226,11 +227,11 @@ function formatDeliveryHealthStatus(status: string) {
 function formatDeliveryRunStatus(status: string | null) {
   switch (status) {
     case 'completed':
-      return 'Completed'
+      return '已完成'
     case 'failed':
-      return 'Failed'
+      return '已失败'
     default:
-      return 'Not run yet'
+      return '尚未运行'
   }
 }
 
@@ -238,29 +239,29 @@ function formatDeliveryHealthDetail(
   health: RequesterComparisonSetDeliveryPolicyHealthRecord['health'],
 ) {
   const transportSummary =
-    health.transport.status === 'ready' ? 'Transport ready' : 'Transport blocked'
-  const snapshotSummary = `Snapshot checked ${formatExportTime(health.checkedAt)}`
+    health.transport.status === 'ready' ? '传输就绪' : '传输受阻'
+  const snapshotSummary = `快照检查于 ${formatExportTime(health.checkedAt)}`
 
   if (health.runCounts.totalCount > 0) {
-    return `${health.runCounts.totalCount} runs · ${transportSummary} · ${snapshotSummary}`
+    return `${health.runCounts.totalCount} 次运行 · ${transportSummary} · ${snapshotSummary}`
   }
 
   return health.transport.status === 'blocked'
-    ? `No delivery runs yet · ${transportSummary} · ${snapshotSummary}`
-    : `No delivery runs yet · ${snapshotSummary}`
+    ? `暂无投递运行 · ${transportSummary} · ${snapshotSummary}`
+    : `暂无投递运行 · ${snapshotSummary}`
 }
 
 function formatDeliveryRunArtifactDetail(exportId: string | null) {
   return exportId
-    ? `Retained export ${exportId}`
-    : 'No retained export artifact'
+    ? `保留导出 ${exportId}`
+    : '暂无保留导出产物'
 }
 
 function formatRetainedExportActionLabel(
   available: boolean,
-  fallback: 'Open latest export' | 'Open retained export',
+  fallback: string,
 ) {
-  return available ? fallback : 'Export pruned'
+  return available ? fallback : '导出已被清理'
 }
 
 function formatDeliveryRetryArtifactDetail(
@@ -268,8 +269,8 @@ function formatDeliveryRetryArtifactDetail(
   retainedExportAvailable = true,
 ) {
   return retainedExportAvailable
-    ? `Reused retained export ${exportId}`
-    : `Reused retained export ${exportId} is no longer available`
+    ? `复用保留导出 ${exportId}`
+    : `复用的保留导出 ${exportId} 已不可用`
 }
 
 function formatDeliveryRunProvenanceDetail(
@@ -277,10 +278,10 @@ function formatDeliveryRunProvenanceDetail(
 ) {
   return run.retriedRunId
     ? run.exportId && !run.retainedExportAvailable
-      ? `Retried failed run ${run.retriedRunId} · Retained export ${run.exportId} is no longer available`
-      : `Retried failed run ${run.retriedRunId}`
+      ? `重试失败运行 ${run.retriedRunId} · 保留导出 ${run.exportId} 已不可用`
+      : `重试失败运行 ${run.retriedRunId}`
     : run.exportId && !run.retainedExportAvailable
-      ? `Retained export ${run.exportId} is no longer available`
+      ? `保留导出 ${run.exportId} 已不可用`
       : `${formatDeliveryRunArtifactDetail(run.exportId)}`
 }
 
@@ -290,26 +291,26 @@ function formatDeliveryTransportAuthenticationDetail(
     | RequesterComparisonSetDeliveryRunListRecord['items'][number]['delivery'],
 ) {
   if (!delivery) {
-    return 'No downstream transport'
+    return '暂无下游传输'
   }
 
   if (delivery.authentication.kind === 'bearer') {
     return delivery.authentication.credentialKey
-      ? `Bearer credential ${delivery.authentication.credentialKey}`
-      : 'Bearer delivery without a credential binding'
+      ? `Bearer 凭据 ${delivery.authentication.credentialKey}`
+      : 'Bearer 投递未绑定凭据'
   }
 
-  return 'No downstream authentication'
+  return '暂无下游鉴权'
 }
 
 function formatDeliveryRunTransportSummary(
   delivery: RequesterComparisonSetDeliveryRunListRecord['items'][number]['delivery'],
 ) {
   if (!delivery) {
-    return 'No downstream transport'
+    return '暂无下游传输'
   }
 
-  return `HTTP ${delivery.statusCode} 路 ${formatDeliveryTransportAuthenticationDetail(delivery)}`
+  return `HTTP ${delivery.statusCode} · ${formatDeliveryTransportAuthenticationDetail(delivery)}`
 }
 
 function formatDeliveryTransportBlockingReason(
@@ -317,55 +318,55 @@ function formatDeliveryTransportBlockingReason(
 ) {
   switch (blockingReason) {
     case 'transport_credential_missing':
-      return 'Missing credential binding'
+      return '缺少凭据绑定'
     default:
-      return 'No transport block'
+      return '无传输阻塞'
   }
 }
 
 function formatDeliveryFailureStreak(count: number) {
-  return count === 1 ? '1 consecutive failure' : `${count} consecutive failures`
+  return count === 1 ? '连续 1 次失败' : `连续 ${count} 次失败`
 }
 
 function formatDeliveryLastError(
   error: RequesterComparisonSetDeliveryPolicyHealthRecord['policy']['lastRunError'],
 ) {
-  return error?.message ?? 'No recent run error'
+  return error?.message ?? '暂无最近运行错误'
 }
 
 function formatDeliveryRunTimingSummary(
   health: RequesterComparisonSetDeliveryPolicyHealthRecord['health'],
 ) {
   const completedSummary = health.lastCompletedRunAt
-    ? `Last completed ${formatExportTime(health.lastCompletedRunAt)}`
-    : 'Last completed not yet available'
+    ? `最近完成于 ${formatExportTime(health.lastCompletedRunAt)}`
+    : '最近完成时间暂未生成'
   const failedSummary = health.lastFailedRunAt
-    ? `Last failed ${formatExportTime(health.lastFailedRunAt)}`
-    : 'Last failed not yet available'
+    ? `最近失败于 ${formatExportTime(health.lastFailedRunAt)}`
+    : '最近失败时间暂未生成'
 
   return `${completedSummary} · ${failedSummary}`
 }
 
 function formatDeliveryLagSeconds(lagSeconds: number) {
   if (lagSeconds < 60) {
-    return `${lagSeconds}s`
+    return `${lagSeconds} 秒`
   }
 
   const minutes = Math.floor(lagSeconds / 60)
   const seconds = lagSeconds % 60
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`
+  return seconds > 0 ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分`
 }
 
 function formatDeliverySchedulerDetail(
   policy: RequesterComparisonSetDeliveryPolicyHealthRecord['policy'],
   health: RequesterComparisonSetDeliveryPolicyHealthRecord['health'],
 ) {
-  const nextRunSummary = `Next run ${formatExportTime(policy.nextRunAt)}`
+  const nextRunSummary = `下次运行 ${formatExportTime(policy.nextRunAt)}`
   if (!health.isDue) {
     return nextRunSummary
   }
 
-  return `${nextRunSummary} · Overdue by ${formatDeliveryLagSeconds(health.lagSeconds)}`
+  return `${nextRunSummary} · 已逾期 ${formatDeliveryLagSeconds(health.lagSeconds)}`
 }
 
 function formatDeliveryRunTriggerType(
@@ -375,9 +376,9 @@ function formatDeliveryRunTriggerType(
 ) {
   switch (triggerType) {
     case 'manual':
-      return 'Manual'
+      return '手动'
     case 'automation':
-      return 'Automation'
+      return '自动'
     default:
       return triggerType
   }
@@ -388,11 +389,11 @@ function formatDeliveryRunReplayFilter(
 ) {
   switch (replay) {
     case 'fresh_only':
-      return 'Fresh runs only'
+      return '仅新运行'
     case 'replayed_only':
-      return 'Replay runs only'
+      return '仅重试运行'
     default:
-      return 'All provenance'
+      return '全部来源'
   }
 }
 
@@ -401,44 +402,44 @@ function formatDeliveryRunHistorySummary(
 ) {
   const scopeParts: string[] = []
   if (runs.appliedFilters.status) {
-    scopeParts.push(`${formatDeliveryRunStatus(runs.appliedFilters.status)} only`)
+    scopeParts.push(`状态：${formatDeliveryRunStatus(runs.appliedFilters.status)}`)
   }
   if (runs.appliedFilters.triggerType) {
-    scopeParts.push(`${formatDeliveryRunTriggerType(runs.appliedFilters.triggerType)} only`)
+    scopeParts.push(`触发：${formatDeliveryRunTriggerType(runs.appliedFilters.triggerType)}`)
   }
   if (runs.appliedFilters.replay !== 'all') {
     scopeParts.push(formatDeliveryRunReplayFilter(runs.appliedFilters.replay))
   }
 
   const scopeLabel =
-    scopeParts.length > 0 ? scopeParts.join(' · ') : 'All retained delivery runs'
+    scopeParts.length > 0 ? scopeParts.join(' · ') : '全部保留投递记录'
 
   if (runs.totalCount < runs.storedCount) {
-    return `${scopeLabel} · Showing ${runs.totalCount} of ${runs.storedCount} stored runs`
+    return `${scopeLabel} · 显示 ${runs.totalCount} / ${runs.storedCount} 条已保存记录`
   }
 
-  return `${scopeLabel} · ${runs.totalCount} stored runs`
+  return `${scopeLabel} · 共 ${runs.totalCount} 条已保存记录`
 }
 
 function formatDeliveryLatestRunDetail(
   health: RequesterComparisonSetDeliveryPolicyHealthRecord['health'],
 ) {
   if (!health.latestRun) {
-    return 'Latest run not yet available'
+    return '最近运行信息暂未生成'
   }
 
   const latestRunSummary = health.latestRun.retriedRunId
-    ? `Retried failed run ${health.latestRun.retriedRunId}`
-    : `${formatDeliveryRunTriggerType(health.latestRun.triggerType)} run ${formatDeliveryRunStatus(
+    ? `已重试失败运行 ${health.latestRun.retriedRunId}`
+    : `${formatDeliveryRunTriggerType(health.latestRun.triggerType)}运行 · ${formatDeliveryRunStatus(
         health.latestRun.status,
-      ).toLowerCase()}`
+      )}`
 
   const artifactSummary =
     health.latestRun.exportId && !health.latestRun.retainedExportAvailable
-      ? `Retained export ${health.latestRun.exportId} was pruned`
+      ? `保留导出 ${health.latestRun.exportId} 已被清理`
       : formatDeliveryRunArtifactDetail(health.latestRun.exportId)
 
-  return `${latestRunSummary} 路 ${artifactSummary}`
+  return `${latestRunSummary} · ${artifactSummary}`
 }
 
 export function formatDeliveryLatestExportAgreementDetail(
@@ -461,52 +462,52 @@ export function formatDeliveryLatestExportAgreementDetail(
     && Date.parse(selectedCheckedAt) > Date.parse(focusedCheckedAt)
 
   if (!focusedExportId && !selectedExportId) {
-    return `Focused summary and health panel both have no retained export evidence yet · Health snapshot checked ${formatExportTime(selectedCheckedAt)}`
+    return `聚焦摘要与健康面板当前都暂无保留导出记录 · 健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
   }
 
   if (focusedExportId && selectedExportId && focusedExportId === selectedExportId) {
     if (!focusedExportAvailable && !selectedExportAvailable) {
-      return `Focused summary and health panel both reference export ${selectedExportId}, but it is no longer retained · Health snapshot checked ${formatExportTime(selectedCheckedAt)}`
+      return `聚焦摘要与健康面板都引用了导出 ${selectedExportId}，但该导出已不再保留 · 健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
     }
 
     if (!focusedExportAvailable && selectedExportAvailable) {
       const freshnessDetail = selectedIsFresher
-        ? `this health panel is fresher than the focused summary snapshot from ${formatExportTime(focusedCheckedAt)}`
-        : `this health snapshot was checked ${formatExportTime(selectedCheckedAt)}`
+        ? `当前健康面板比 ${formatExportTime(focusedCheckedAt)} 的聚焦摘要快照更新`
+        : `当前健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
 
-      return `Health panel still has retained export ${selectedExportId} available, but the focused summary no longer has this retained export available · ${freshnessDetail}`
+      return `健康面板仍可访问保留导出 ${selectedExportId}，但聚焦摘要中已不可用 · ${freshnessDetail}`
     }
 
     if (focusedExportAvailable && !selectedExportAvailable) {
-      return `Focused summary still has retained export ${selectedExportId} available, but this health panel no longer has this retained export available · this health snapshot was checked ${formatExportTime(selectedCheckedAt)}`
+      return `聚焦摘要仍可访问保留导出 ${selectedExportId}，但当前健康面板中已不可用 · 当前健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
     }
 
-    return `Focused summary matches this retained export: ${selectedExportId} · Health snapshot checked ${formatExportTime(selectedCheckedAt)}`
+    return `聚焦摘要与当前保留导出一致：${selectedExportId} · 健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
   }
 
   if (!focusedExportId && selectedExportId) {
     if (!selectedExportAvailable) {
-      return `Health panel still references export ${selectedExportId}, but it is no longer retained while the focused summary has no retained export evidence · this health snapshot was checked ${formatExportTime(selectedCheckedAt)}`
+      return `健康面板仍引用导出 ${selectedExportId}，但该导出已不再保留，且聚焦摘要暂无保留导出记录 · 当前健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
     }
 
     const freshnessDetail = selectedIsFresher
-      ? `this health panel is fresher than the focused summary snapshot from ${formatExportTime(focusedCheckedAt)}`
-      : `this health snapshot was checked ${formatExportTime(selectedCheckedAt)}`
+      ? `当前健康面板比 ${formatExportTime(focusedCheckedAt)} 的聚焦摘要快照更新`
+      : `当前健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
 
-    return `Health panel has retained export ${selectedExportId}, but the focused summary has not refreshed yet · ${freshnessDetail}`
+    return `健康面板已有保留导出 ${selectedExportId}，但聚焦摘要尚未刷新到该记录 · ${freshnessDetail}`
   }
 
   if (focusedExportId && !selectedExportId) {
     return focusedExportAvailable
-      ? `Focused summary still references retained export ${focusedExportId}, but this health panel has no retained export evidence · this health snapshot was checked ${formatExportTime(selectedCheckedAt)}`
-      : `Focused summary still references export ${focusedExportId}, but it is no longer retained and this health panel has no retained export evidence · this health snapshot was checked ${formatExportTime(selectedCheckedAt)}`
+      ? `聚焦摘要仍引用保留导出 ${focusedExportId}，但当前健康面板暂无保留导出记录 · 当前健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
+      : `聚焦摘要仍引用导出 ${focusedExportId}，但该导出已不再保留，且当前健康面板暂无保留导出记录 · 当前健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
   }
 
   const freshnessDetail = focusedIsFresher
-    ? `the focused summary is fresher than this health snapshot from ${formatExportTime(selectedCheckedAt)}`
-    : `this health snapshot was checked ${formatExportTime(selectedCheckedAt)}`
+    ? `聚焦摘要比 ${formatExportTime(selectedCheckedAt)} 的健康快照更新`
+    : `当前健康快照检查于 ${formatExportTime(selectedCheckedAt)}`
 
-  return `Focused summary references retained export ${focusedExportId}, while this health panel references ${selectedExportId} · ${freshnessDetail}`
+  return `聚焦摘要引用的是保留导出 ${focusedExportId}，而当前健康面板引用的是 ${selectedExportId} · ${freshnessDetail}`
 }
 
 export function formatDeliveryRowExportAgreementDetail(
@@ -532,65 +533,65 @@ export function formatDeliveryRowExportAgreementDetail(
 
   if (!selectedHealth) {
     if (!rowHealth) {
-      return 'Refreshing retained-export agreement.'
+      return '正在刷新保留导出一致性信息。'
     }
 
-    const rowSnapshotSummary = `Snapshot checked ${formatExportTime(rowHealth.checkedAt)}`
+    const rowSnapshotSummary = `快照检查于 ${formatExportTime(rowHealth.checkedAt)}`
 
     return rowExportId
       ? rowExportAvailable
-        ? `This row currently references retained export ${rowExportId} · ${rowSnapshotSummary} · Open this policy health panel to compare retained-export evidence.`
-        : `This row still references export ${rowExportId}, but it is no longer retained · ${rowSnapshotSummary} · Open this policy health panel to compare retained-export evidence.`
-      : `This row has no retained export evidence yet · ${rowSnapshotSummary} · Open this policy health panel to compare retained-export evidence.`
+        ? `当前这一行引用的是保留导出 ${rowExportId} · ${rowSnapshotSummary} · 打开该策略的健康面板可对比保留导出记录。`
+        : `当前这一行仍引用导出 ${rowExportId}，但该导出已不再保留 · ${rowSnapshotSummary} · 打开该策略的健康面板可对比保留导出记录。`
+      : `当前这一行暂无保留导出记录 · ${rowSnapshotSummary} · 打开该策略的健康面板可对比保留导出记录。`
   }
 
   if (!rowExportId && !selectedExportId) {
-    return `This row and the open health panel both have no retained export evidence yet · Health snapshot checked ${formatExportTime(selectedHealth.checkedAt)}`
+    return `当前这一行与已打开的健康面板都暂无保留导出记录 · 健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
   }
 
   if (rowExportId && selectedExportId && rowExportId === selectedExportId) {
     if (!rowExportAvailable && !selectedExportAvailable) {
-      return `This row and the open health panel both reference export ${selectedExportId}, but it is no longer retained · Health snapshot checked ${formatExportTime(selectedHealth.checkedAt)}`
+      return `当前这一行与已打开的健康面板都引用了导出 ${selectedExportId}，但该导出已不再保留 · 健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
     }
 
     if (!rowExportAvailable && selectedExportAvailable) {
       const freshnessDetail = selectedIsFresher
-        ? `this open health panel is fresher than the row snapshot from ${formatExportTime(rowCheckedAt)}`
-        : `the open health snapshot was checked ${formatExportTime(selectedHealth.checkedAt)}`
+        ? `已打开的健康面板比 ${formatExportTime(rowCheckedAt)} 的列表快照更新`
+        : `已打开的健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
 
-      return `The open health panel still has retained export ${selectedExportId} available, but this row no longer has this retained export available · ${freshnessDetail}`
+      return `已打开的健康面板仍可访问保留导出 ${selectedExportId}，但当前这一行中已不可用 · ${freshnessDetail}`
     }
 
     if (rowExportAvailable && !selectedExportAvailable) {
-      return `This row still has retained export ${selectedExportId} available, but the open health panel no longer has this retained export available · the open health snapshot was checked ${formatExportTime(selectedHealth.checkedAt)}`
+      return `当前这一行仍可访问保留导出 ${selectedExportId}，但已打开的健康面板中已不可用 · 已打开的健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
     }
 
-    return `This row matches the open health panel retained export: ${selectedExportId} · Health snapshot checked ${formatExportTime(selectedHealth.checkedAt)}`
+    return `当前这一行与已打开健康面板的保留导出一致：${selectedExportId} · 健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
   }
 
   if (!rowExportId && selectedExportId) {
     if (!selectedExportAvailable) {
-      return `The open health panel still references export ${selectedExportId}, but it is no longer retained while this row has no retained export evidence · the open health snapshot was checked ${formatExportTime(selectedHealth.checkedAt)}`
+      return `已打开的健康面板仍引用导出 ${selectedExportId}，但该导出已不再保留，且当前这一行暂无保留导出记录 · 已打开的健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
     }
 
     const freshnessDetail = selectedIsFresher
-      ? `this open health panel is fresher than the row snapshot from ${formatExportTime(rowCheckedAt)}`
-      : `the open health snapshot was checked ${formatExportTime(selectedHealth.checkedAt)}`
+      ? `已打开的健康面板比 ${formatExportTime(rowCheckedAt)} 的列表快照更新`
+      : `已打开的健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
 
-    return `The open health panel has retained export ${selectedExportId}, but this row has not refreshed yet · ${freshnessDetail}`
+    return `已打开的健康面板已有保留导出 ${selectedExportId}，但当前这一行尚未刷新到该记录 · ${freshnessDetail}`
   }
 
   if (rowExportId && !selectedExportId) {
     return rowExportAvailable
-      ? `This row still references retained export ${rowExportId}, but the open health panel has no retained export evidence · the open health snapshot was checked ${formatExportTime(selectedHealth.checkedAt)}`
-      : `This row still references export ${rowExportId}, but it is no longer retained and the open health panel has no retained export evidence · the open health snapshot was checked ${formatExportTime(selectedHealth.checkedAt)}`
+      ? `当前这一行仍引用保留导出 ${rowExportId}，但已打开的健康面板暂无保留导出记录 · 已打开的健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
+      : `当前这一行仍引用导出 ${rowExportId}，但该导出已不再保留，且已打开的健康面板暂无保留导出记录 · 已打开的健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
   }
 
   const freshnessDetail = rowIsFresher
-    ? `this row is fresher than the open health snapshot from ${formatExportTime(selectedHealth.checkedAt)}`
-    : `the open health snapshot was checked ${formatExportTime(selectedHealth.checkedAt)}`
+    ? `当前这一行比 ${formatExportTime(selectedHealth.checkedAt)} 的健康快照更新`
+    : `已打开的健康快照检查于 ${formatExportTime(selectedHealth.checkedAt)}`
 
-  return `This row references retained export ${rowExportId}, while the open health panel references ${selectedExportId} · ${freshnessDetail}`
+  return `当前这一行引用的是保留导出 ${rowExportId}，而已打开的健康面板引用的是 ${selectedExportId} · ${freshnessDetail}`
 }
 
 type ComparisonDeliveryFormState = {
@@ -677,7 +678,7 @@ function buildDeliveryCredentialBindingOptions(
     return [
       {
         value: normalizedCredentialKey,
-        label: `Unavailable binding: ${normalizedCredentialKey}`,
+        label: `不可用绑定：${normalizedCredentialKey}`,
       },
       ...options,
     ]
@@ -692,12 +693,12 @@ function formatDeliveryCredentialBindingStatus(
 ) {
   const normalizedCredentialKey = normalizeDeliveryCredentialKey(credentialKey)
   if (normalizedCredentialKey.length === 0) {
-    return 'No credential'
+    return '无凭据'
   }
 
   return isSavedDeliveryCredential(credentials, normalizedCredentialKey)
-    ? 'Ready binding'
-    : 'Missing binding'
+    ? '绑定正常'
+    : '缺少绑定'
 }
 
 function formatDeliveryCredentialBindingDetail(
@@ -706,24 +707,24 @@ function formatDeliveryCredentialBindingDetail(
 ) {
   const normalizedCredentialKey = normalizeDeliveryCredentialKey(credentialKey)
   if (normalizedCredentialKey.length === 0) {
-    return 'No downstream bearer token will be attached'
+    return '不会附加下游 Bearer 令牌'
   }
 
   return isSavedDeliveryCredential(credentials, normalizedCredentialKey)
-    ? `Bound to saved bearer credential ${normalizedCredentialKey}`
-    : `Saved bearer credential ${normalizedCredentialKey} is not available on this environment`
+    ? `已绑定已保存的 Bearer 凭据 ${normalizedCredentialKey}`
+    : `当前环境中不存在已保存的 Bearer 凭据 ${normalizedCredentialKey}`
 }
 
 function formatDeliveryCredentialDirectorySummary(
   credentials: RequesterDeliveryCredentialDirectoryRecord | null,
 ) {
   if (!credentials || credentials.totalCount === 0) {
-    return 'No saved webhook credentials are currently configured'
+    return '当前未配置已保存的 Webhook 凭据'
   }
 
   return credentials.totalCount === 1
-    ? `1 saved binding · ${credentials.items[0]?.label ?? 'Unknown binding'}`
-    : `${credentials.totalCount} saved bindings · ${credentials.items.map((item) => item.label).join(', ')}`
+    ? `1 个已保存绑定 · ${credentials.items[0]?.label ?? '未知绑定'}`
+    : `${credentials.totalCount} 个已保存绑定 · ${credentials.items.map((item) => item.label).join('、')}`
 }
 
 function buildCreateComparisonDeliveryFormState(
@@ -733,8 +734,8 @@ function buildCreateComparisonDeliveryFormState(
   return {
     comparisonSetId,
     policyId: null,
-    name: 'Daily requester digest',
-    description: 'Deliver requester comparison exports into the downstream reporting pipeline.',
+    name: '发起方每日摘要',
+    description: '将发起方对比导出投递到下游报表流程。',
     nextRunAt: toDeliveryDatetimeInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()),
     enabled: true,
     retainedExportCount: '5',
@@ -749,38 +750,38 @@ function formatBudgetAmount(amount: string) {
 }
 
 function formatBudgetSummary(summary: RequesterBudgetSummaryRecord) {
-  return `Remaining ${formatBudgetAmount(summary.remainingAmount)} · reserved ${formatBudgetAmount(
+  return `剩余 ${formatBudgetAmount(summary.remainingAmount)} · 已预留 ${formatBudgetAmount(
     summary.reservedAmount,
-  )} · spent ${formatBudgetAmount(summary.spentAmount)}`
+  )} · 已花费 ${formatBudgetAmount(summary.spentAmount)}`
 }
 
 function formatBudgetEntryType(type: RequesterBudgetLedgerEntryRecord['entryType']) {
   switch (type) {
     case 'reserved':
-      return 'Reserved'
+      return '已预留'
     case 'spent':
-      return 'Spent'
+      return '已支出'
     case 'released':
-      return 'Released'
+      return '已释放'
     case 'adjusted':
     default:
-      return 'Adjusted'
+      return '已调整'
   }
 }
 
 function formatBudgetEntryDetail(entry: RequesterBudgetLedgerEntryRecord) {
   switch (entry.entryType) {
     case 'reserved':
-      return `Reserved ${formatBudgetAmount(entry.reservedAmount)} pending review resolution`
+      return `已预留 ${formatBudgetAmount(entry.reservedAmount)}，待评审结果确认`
     case 'spent':
       return entry.releasedAmount !== '0'
-        ? `Spent ${formatBudgetAmount(entry.spentAmount)} · released ${formatBudgetAmount(entry.releasedAmount)}`
-        : `Spent ${formatBudgetAmount(entry.spentAmount)}`
+        ? `已支出 ${formatBudgetAmount(entry.spentAmount)} · 已释放 ${formatBudgetAmount(entry.releasedAmount)}`
+        : `已支出 ${formatBudgetAmount(entry.spentAmount)}`
     case 'released':
-      return `Released ${formatBudgetAmount(entry.releasedAmount)} back into remaining budget`
+      return `已释放 ${formatBudgetAmount(entry.releasedAmount)} 回到剩余预算`
     case 'adjusted':
     default:
-      return `Adjusted ${formatBudgetAmount(entry.adjustedAmount)} · ${entry.reasonCode ?? 'historical correction'}`
+      return `已调整 ${formatBudgetAmount(entry.adjustedAmount)} · ${entry.reasonCode ?? '历史修正'}`
   }
 }
 
@@ -943,7 +944,7 @@ export function SubmissionsPage() {
         }
 
         const nextErrorMessage =
-          error instanceof Error ? error.message : 'Failed to load requester submissions'
+          error instanceof Error ? error.message : '加载已提交命题失败'
         setErrorMessage(nextErrorMessage)
         setTopLevelLoadErrorMessage(nextErrorMessage)
       } finally {
@@ -965,24 +966,24 @@ export function SubmissionsPage() {
 
     return [
       {
-        label: 'Submitted',
+        label: '已提交',
         value: String(overview.submissionSummary.submittedCount),
-        detail: 'Already handed off into the real requester review queue.',
+        detail: '已进入真实的发起方审核队列。',
       },
       {
-        label: 'Market-enabled',
+        label: '已启用验证市场',
         value: String(overview.marketSummary.enabledCount),
-        detail: 'Retain the capability to later open a validation market.',
+        detail: '保留后续开启验证市场的能力。',
       },
       {
-        label: 'Unresolved',
+        label: '未揭晓',
         value: String(overview.resultSummary.unresolvedHiddenCount),
-        detail: 'Still hidden from directional result disclosure before settlement.',
+        detail: '在结算前仍不会展示方向性结果。',
       },
       {
-        label: 'Remaining budget',
+        label: '剩余预算',
         value: formatBudgetAmount(overview.budgetSummary.remainingAmount),
-        detail: `Reserved ${formatBudgetAmount(overview.budgetSummary.reservedAmount)} · spent ${formatBudgetAmount(
+        detail: `已预留 ${formatBudgetAmount(overview.budgetSummary.reservedAmount)} · 已花费 ${formatBudgetAmount(
           overview.budgetSummary.spentAmount,
         )}.`,
       },
@@ -1216,7 +1217,7 @@ export function SubmissionsPage() {
       } catch (error) {
         if (!disposed) {
           setFocusedComparisonDeliveryHealth(null)
-          setErrorMessage(error instanceof Error ? error.message : 'Failed to load focused delivery policy health')
+          setErrorMessage(error instanceof Error ? error.message : '加载当前投递策略健康状态失败')
         }
       }
     })()
@@ -1266,10 +1267,10 @@ export function SubmissionsPage() {
       }
 
       if (nextDraft.submissionStatus !== 'draft') {
-        throw new Error('Submission returned an unexpected status after withdraw')
+        throw new Error('撤回后返回了异常的提交状态')
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to withdraw submission')
+      setErrorMessage(error instanceof Error ? error.message : '撤回已提交命题失败')
     } finally {
       setPendingWithdrawId(null)
     }
@@ -1307,7 +1308,7 @@ export function SubmissionsPage() {
           [propositionId]: budgetLedger,
         }))
       } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to load submission detail')
+        setErrorMessage(error instanceof Error ? error.message : '加载命题详情失败')
         setPendingDetailId(null)
         return
       } finally {
@@ -1332,12 +1333,10 @@ export function SubmissionsPage() {
         token,
       )
       setExportsView((current) => ({
-        userId: created.userId,
         totalCount: (current?.totalCount ?? 0) + 1,
         items: [
           {
             exportId: created.exportId,
-            userId: created.userId,
             status: created.status,
             format: created.format,
             requestedAt: created.requestedAt,
@@ -1356,7 +1355,7 @@ export function SubmissionsPage() {
       }))
       setSelectedExport(created)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to create requester export')
+      setErrorMessage(error instanceof Error ? error.message : '创建发起方导出失败')
     } finally {
       setPendingExport(false)
     }
@@ -1374,7 +1373,7 @@ export function SubmissionsPage() {
       const artifact = await arenaApi.getOwnedPropositionExport(exportId, token)
       setSelectedExport(artifact)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load requester export')
+      setErrorMessage(error instanceof Error ? error.message : '加载发起方导出失败')
     } finally {
       setPendingExportId(null)
     }
@@ -1401,7 +1400,7 @@ export function SubmissionsPage() {
         [propositionId]: budgetLedger,
       }))
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load settled requester report')
+      setErrorMessage(error instanceof Error ? error.message : '加载已开奖报告失败')
     } finally {
       setPendingReportId(null)
     }
@@ -1427,7 +1426,7 @@ export function SubmissionsPage() {
         limit: '10',
       })
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load requester comparison analytics')
+      setErrorMessage(error instanceof Error ? error.message : '加载发起方对比统计失败')
     }
   }
 
@@ -1457,7 +1456,7 @@ export function SubmissionsPage() {
       setSelectedComparisonExports(exports)
       setSelectedComparisonExport(artifact)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to create requester comparison export')
+      setErrorMessage(error instanceof Error ? error.message : '创建发起方对比导出失败')
     }
   }
 
@@ -1493,7 +1492,7 @@ export function SubmissionsPage() {
       const artifact = await arenaApi.getRequesterComparisonSetExport(comparisonSetId, exportId, token)
       setSelectedComparisonExport(artifact)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load requester comparison export')
+      setErrorMessage(error instanceof Error ? error.message : '加载发起方对比导出失败')
     } finally {
       setPendingComparisonExportId(null)
     }
@@ -1504,7 +1503,7 @@ export function SubmissionsPage() {
     exportId: string | null,
   ) => {
     if (!exportId) {
-      setErrorMessage('No retained comparison export is available for this delivery run')
+      setErrorMessage('当前投递运行没有可打开的保留对比导出')
       return
     }
 
@@ -1638,7 +1637,7 @@ export function SubmissionsPage() {
         current?.exportId === exportId ? null : current,
       )
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete requester comparison export')
+      setErrorMessage(error instanceof Error ? error.message : '删除发起方对比导出失败')
     } finally {
       setPendingComparisonExportId(null)
     }
@@ -1671,7 +1670,7 @@ export function SubmissionsPage() {
       setComparisonDeliveryForm(null)
       setComparisonRunFilters(null)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load requester comparison deliveries')
+      setErrorMessage(error instanceof Error ? error.message : '加载发起方对比投递失败')
     }
   }
 
@@ -1719,7 +1718,7 @@ export function SubmissionsPage() {
         openPanel: true,
       })
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load delivery health')
+      setErrorMessage(error instanceof Error ? error.message : '加载投递健康状态失败')
     } finally {
       setPendingComparisonPolicyId(null)
     }
@@ -1796,7 +1795,7 @@ export function SubmissionsPage() {
       requestComparisonDeliveryHealthRefresh()
       setComparisonDeliveryForm(buildEditComparisonDeliveryFormState(updatedPolicy))
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to save delivery policy')
+      setErrorMessage(error instanceof Error ? error.message : '保存投递策略失败')
     } finally {
       setPendingComparisonDeliverySave(false)
     }
@@ -1859,7 +1858,7 @@ export function SubmissionsPage() {
           : current,
       )
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete delivery policy')
+      setErrorMessage(error instanceof Error ? error.message : '删除投递策略失败')
     } finally {
       setPendingComparisonPolicyId(null)
     }
@@ -1968,7 +1967,7 @@ export function SubmissionsPage() {
       setSelectedComparisonDeliveryPolicies(updatedPolicies)
       setSelectedComparisonDeliveryRuns(updatedRuns)
       syncComparisonDeliveryHealth(updatedHealth)
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to run delivery policy')
+      setErrorMessage(error instanceof Error ? error.message : '执行投递策略失败')
     } finally {
       setPendingComparisonPolicyId(null)
     }
@@ -2018,7 +2017,7 @@ export function SubmissionsPage() {
       )
       setSelectedComparisonDeliveryRetry(null)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to load delivery runs')
+      setErrorMessage(error instanceof Error ? error.message : '加载投递运行记录失败')
     } finally {
       setPendingComparisonPolicyId(null)
     }
@@ -2123,7 +2122,7 @@ export function SubmissionsPage() {
       setSelectedComparisonDeliveryPolicies(updatedPolicies)
       setSelectedComparisonDeliveryRuns(updatedRuns)
       syncComparisonDeliveryHealth(updatedHealth)
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to retry delivery run')
+      setErrorMessage(error instanceof Error ? error.message : '重试投递运行失败')
     } finally {
       setPendingComparisonPolicyId(null)
     }
@@ -2142,7 +2141,7 @@ export function SubmissionsPage() {
     try {
       await reloadComparisonExports(nextFilters.comparisonSetId, nextFilters)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to filter requester comparison exports')
+      setErrorMessage(error instanceof Error ? error.message : '筛选发起方对比导出失败')
     }
   }
 
@@ -2195,7 +2194,7 @@ export function SubmissionsPage() {
       setSelectedComparisonDeliveryRuns(runs)
       setSelectedComparisonDeliveryRetry(null)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to filter delivery runs')
+      setErrorMessage(error instanceof Error ? error.message : '筛选投递运行记录失败')
     }
   }
 
@@ -2241,7 +2240,7 @@ export function SubmissionsPage() {
       )
       requestComparisonDeliveryHealthRefresh()
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to update delivery policy')
+      setErrorMessage(error instanceof Error ? error.message : '更新投递策略失败')
     } finally {
       setPendingComparisonPolicyId(null)
     }
@@ -2265,7 +2264,7 @@ export function SubmissionsPage() {
         <span>Arena</span>
         <h1>已提交命题</h1>
         <p>
-          在不改动既有产品流程形状的前提下，继续追踪 requester 已提交命题的审核状态、真实 owner 详情与导出能力。
+          在不改动既有产品流程形状的前提下，继续追踪发起方已提交命题的审核状态、真实详情与导出能力。
         </p>
       </div>
 
@@ -2278,17 +2277,16 @@ export function SubmissionsPage() {
               <div className="account-empty-icon" aria-hidden="true">
                 <LogIn size={28} />
               </div>
-              <strong>Sign in to inspect requester submissions</strong>
+              <strong>登录后查看已提交命题</strong>
               <p>
-                Arena can show real requester submission records, owner-side progress, and export actions
-                once the wallet session is authenticated.
+                钱包会话认证后，Arena 会展示真实的发起方提交记录、详情进度与导出操作。
               </p>
               <div className="account-summary-actions">
                 <Link className="primary-action" to="/zh/challenges">
-                  Create a proposition
+                  创建命题
                 </Link>
                 <Link className="secondary-action" to="/zh/drafts">
-                  Open drafts
+                  打开草稿箱
                 </Link>
               </div>
             </section>
@@ -2299,7 +2297,7 @@ export function SubmissionsPage() {
         {isAuthenticated && errorMessage ? (
           <section className="account-menu-panel">
             <div className="account-menu-panel-head">
-              <h2>Requester flow error</h2>
+              <h2>已提交命题加载错误</h2>
               <span>{errorMessage}</span>
             </div>
           </section>
@@ -2308,8 +2306,8 @@ export function SubmissionsPage() {
         {isAuthenticated && isLoading ? (
           <section className="account-menu-panel">
             <div className="account-menu-panel-head">
-              <h2>Loading requester submissions</h2>
-              <span>Syncing the real owner overview, submission detail, and export history.</span>
+              <h2>正在加载已提交命题</h2>
+              <span>正在同步真实概览、提交详情与导出历史。</span>
             </div>
           </section>
         ) : null}
@@ -2317,7 +2315,7 @@ export function SubmissionsPage() {
         {isAuthenticated && !isLoading && summaryCards.length > 0 ? (
           <section
             className="submissions-summary-grid"
-            aria-label="Submission overview"
+            aria-label="已提交概览"
             data-testid="submission-overview-section"
           >
             {summaryCards.map((card) => (
@@ -2333,22 +2331,21 @@ export function SubmissionsPage() {
         {isAuthenticated && !isLoading ? (
           <section className="account-menu-panel">
             <div className="account-menu-panel-head">
-              <h2>Requester export snapshots</h2>
+              <h2>发起方导出快照</h2>
               <span>
-                Generate a real owner-scoped snapshot from the current proposition portfolio without leaving
-                the submissions flow.
+                无需离开已提交命题流程，即可从当前命题组合生成真实导出快照。
               </span>
             </div>
 
             <div className="submissions-actions">
               <label className="field-shell">
-                <span className="field-label">Export preset</span>
+                <span className="field-label">导出预设</span>
                 <select
                   data-testid="requester-export-preset-select"
                   value={selectedPresetId}
                   onChange={(event) => setSelectedPresetId(event.target.value)}
                 >
-                  <option value="">Direct snapshot</option>
+                  <option value="">直接快照</option>
                   {(reportPresets?.items ?? []).map((preset) => (
                     <option key={preset.presetId} value={preset.presetId}>
                       {preset.name}
@@ -2364,7 +2361,7 @@ export function SubmissionsPage() {
                 type="button"
               >
                 <Download size={16} />
-                <span>{pendingExport ? 'Generating export...' : 'Generate export snapshot'}</span>
+                <span>{pendingExport ? '正在生成导出...' : '生成导出快照'}</span>
               </button>
             </div>
 
@@ -2378,8 +2375,7 @@ export function SubmissionsPage() {
                   <div>
                     <strong>{item.fileName}</strong>
                     <span>
-                      {formatExportTime(item.completedAt)} · {item.metrics.openLifecycleCount} open lifecycle
-                      items
+                      {formatExportTime(item.completedAt)} · {item.metrics.openLifecycleCount} 条进行中流程项
                     </span>
                   </div>
                   <div className="submissions-export-row-actions">
@@ -2392,7 +2388,7 @@ export function SubmissionsPage() {
                     >
                       <Search size={14} />
                       <span>
-                        {pendingExportId === item.exportId ? 'Opening...' : 'Inspect export'}
+                        {pendingExportId === item.exportId ? '打开中...' : '查看导出'}
                       </span>
                     </button>
                     <em className="account-menu-value">
@@ -2411,79 +2407,79 @@ export function SubmissionsPage() {
               >
                 <div className="submission-detail-grid submissions-export-detail-grid">
                   <article className="account-summary-item">
-                    <span>File name</span>
+                    <span>文件名</span>
                     <strong data-testid="requester-export-detail-file-name">
                       {selectedExport.fileName}
                     </strong>
-                    <small>{formatExportTime(selectedExport.completedAt)} generated</small>
+                    <small>{formatExportTime(selectedExport.completedAt)} 已生成</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Settled reports</span>
+                    <span>已开奖报告</span>
                     <strong data-testid="requester-export-detail-settled-count">
                       {selectedExport.metrics.settledReportCount}
                     </strong>
-                    <small>Settled proposition reports captured in this artifact.</small>
+                    <small>该导出产物中收录的已开奖命题报告。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Open lifecycle items</span>
+                    <span>进行中流程项</span>
                     <strong data-testid="requester-export-detail-open-count">
                       {selectedExport.metrics.openLifecycleCount}
                     </strong>
-                    <small>Unresolved owner-side proposition lifecycle records still in flight.</small>
+                    <small>尚未结束的命题流程记录。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Report payload count</span>
+                    <span>报告条数</span>
                     <strong data-testid="requester-export-detail-report-count">
                       {selectedExport.reports.length}
                     </strong>
                     <small>
-                      Settled requester reports included in this export artifact after settlement.
+                      该导出产物中包含结算后的发起方报告。
                     </small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Analytics window</span>
+                    <span>统计窗口</span>
                     <strong data-testid="requester-export-detail-window-days">
                       {selectedExport.analytics.windowDays}
                     </strong>
-                    <small>Rolling requester analytics window captured in this snapshot.</small>
+                    <small>此快照记录的滚动统计窗口。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Created propositions</span>
+                    <span>已创建命题数</span>
                     <strong data-testid="requester-export-detail-created-count">
                       {selectedExport.analytics.totals.createdCount}
                     </strong>
-                    <small>Owner-side propositions included in the export analytics window.</small>
+                    <small>导出统计窗口中纳入的命题数量。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Market-enabled count</span>
+                    <span>可开验证市场数</span>
                     <strong data-testid="requester-export-detail-market-enabled-count">
                       {selectedExport.analytics.totals.marketEnabledCount}
                     </strong>
-                    <small>How many tracked propositions retained validation-market capability.</small>
+                    <small>仍保留验证市场能力的命题数量。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Top category</span>
+                    <span>最高频分类</span>
                     <strong data-testid="requester-export-detail-top-category">
                       {formatTopCategoryLabel(selectedExport.analytics)}
                     </strong>
-                    <small>Most represented proposition category across the analytics window.</small>
+                    <small>统计窗口中占比最高的命题分类。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Captured exports</span>
+                    <span>已捕获导出数</span>
                     <strong data-testid="requester-export-detail-latest-export-count">
                       {selectedExport.analytics.delivery.exportCount}
                     </strong>
-                    <small>Requester export history counted by the backend delivery summary.</small>
+                    <small>由后端投递摘要统计到的发起方导出历史数量。</small>
                   </article>
                 </div>
 
                 <div className="account-menu-status-list">
                   <div className="account-menu-status-row">
                     <div>
-                      <strong>Overview snapshot</strong>
+                      <strong>概览快照</strong>
                       <span>
-                        Submitted {selectedExport.overview.submissionSummary.submittedCount} · Drafts{' '}
-                        {selectedExport.overview.submissionSummary.draftCount} · Market-enabled{' '}
+                        已提交 {selectedExport.overview.submissionSummary.submittedCount} · 草稿{' '}
+                        {selectedExport.overview.submissionSummary.draftCount} · 已启用验证市场{' '}
                         {selectedExport.overview.marketSummary.enabledCount}
                       </span>
                     </div>
@@ -2493,29 +2489,29 @@ export function SubmissionsPage() {
                   </div>
                   <div className="account-menu-status-row">
                     <div>
-                      <strong>Analytics delivery</strong>
+                      <strong>统计投递</strong>
                       <span>
-                        Window start {formatExportTime(selectedExport.analytics.windowStartedAt)} 路 latest
-                        export {selectedExport.analytics.delivery.latestExportAt
+                        窗口开始于 {formatExportTime(selectedExport.analytics.windowStartedAt)} · 最近导出{' '}
+                        {selectedExport.analytics.delivery.latestExportAt
                           ? formatExportTime(selectedExport.analytics.delivery.latestExportAt)
-                          : 'not captured'}
+                          : '未记录'}
                       </span>
                     </div>
                     <em className="account-menu-value">
-                      <span>{selectedExport.analytics.totals.settledCount} settled</span>
+                      <span>{selectedExport.analytics.totals.settledCount} 条已开奖</span>
                     </em>
                   </div>
                   <div className="account-menu-status-row">
                     <div>
-                      <strong>Preset scope</strong>
+                      <strong>预设范围</strong>
                       <span>
                         {selectedExport.preset
-                          ? `${selectedExport.preset.name} preset scoped to ${selectedExport.preset.statusScope}.`
-                          : 'No saved preset was attached; this is a direct owner export snapshot.'}
+                          ? `${selectedExport.preset.name} 预设，范围：${selectedExport.preset.statusScope}。`
+                          : '未附加已保存预设；这是直接生成的导出快照。'}
                       </span>
                     </div>
                     <em className="account-menu-value">
-                      <span>{selectedExport.preset ? 'Preset-backed' : 'Direct snapshot'}</span>
+                      <span>{selectedExport.preset ? '预设生成' : '直接快照'}</span>
                     </em>
                   </div>
                 </div>
@@ -2533,13 +2529,13 @@ export function SubmissionsPage() {
                             {report.proposition.title}
                           </strong>
                           <span>
-                            {formatResultKindLabel(report.result.resultKind)} 路 sample{' '}
+                            {formatResultKindLabel(report.result.resultKind)} · 样本{' '}
                             {report.sample.effectiveSampleCount}
                           </span>
                         </div>
                         <em className="account-menu-value">
                           <span data-testid="requester-export-report-winning-option">
-                            {report.result.winningOptionLabel ?? 'No winning option'}
+                            {report.result.winningOptionLabel ?? '暂无获胜选项'}
                           </span>
                         </em>
                       </div>
@@ -2554,10 +2550,9 @@ export function SubmissionsPage() {
         {isAuthenticated && !isLoading && comparisonSets?.items.length ? (
           <section className="account-menu-panel" data-testid="requester-comparison-set-section">
             <div className="account-menu-panel-head">
-              <h2>Requester comparison sets</h2>
+              <h2>发起方对比集合</h2>
               <span>
-                Saved requester cohorts can now be reopened, compared, and exported inside the same
-                shaped submissions flow.
+                已保存的发起方分组可以在当前已提交命题流程中重新打开、对比并导出。
               </span>
             </div>
 
@@ -2570,7 +2565,7 @@ export function SubmissionsPage() {
                 >
                   <div>
                     <strong>{item.name}</strong>
-                    <span>{item.presetIds.length} preset cohorts</span>
+                    <span>{item.presetIds.length} 个预设分组</span>
                   </div>
                   <div className="submissions-export-row-actions">
                     <button
@@ -2580,7 +2575,7 @@ export function SubmissionsPage() {
                       type="button"
                     >
                       <Search size={14} />
-                      <span>Open analytics</span>
+                      <span>打开统计</span>
                     </button>
                     <button
                       className="secondary-action"
@@ -2589,7 +2584,7 @@ export function SubmissionsPage() {
                       type="button"
                     >
                       <Download size={14} />
-                      <span>Create comparison export</span>
+                      <span>创建对比导出</span>
                     </button>
                     <button
                       className="secondary-action"
@@ -2598,7 +2593,7 @@ export function SubmissionsPage() {
                       type="button"
                     >
                       <FileClock size={14} />
-                      <span>Delivery policies</span>
+                      <span>投递策略</span>
                     </button>
                   </div>
                 </div>
@@ -2612,23 +2607,23 @@ export function SubmissionsPage() {
               >
                 <div className="submission-detail-grid submissions-export-detail-grid">
                   <article className="account-summary-item">
-                    <span>Comparison set</span>
-                    <strong>{selectedComparisonAnalytics.comparisonSet?.name ?? 'Saved comparison'}</strong>
-                    <small>{selectedComparisonAnalytics.summary.presetCount} preset cohorts included.</small>
+                    <span>对比集合</span>
+                    <strong>{selectedComparisonAnalytics.comparisonSet?.name ?? '已保存对比'}</strong>
+                    <small>已包含 {selectedComparisonAnalytics.summary.presetCount} 个预设分组。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Total cohorts</span>
+                    <span>分组总数</span>
                     <strong data-testid="requester-comparison-set-total-count">
                       {selectedComparisonAnalytics.totalCount}
                     </strong>
-                    <small>Preset-backed requester analytics rows available in this saved comparison.</small>
+                    <small>该已保存对比中可用的预设统计行数量。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Top preset</span>
+                    <span>最高排名预设</span>
                     <strong data-testid="requester-comparison-set-top-preset">
-                      {selectedComparisonAnalytics.items[0]?.preset.name ?? 'No preset'}
+                      {selectedComparisonAnalytics.items[0]?.preset.name ?? '暂无预设'}
                     </strong>
-                    <small>Highest-ranked preset row from the saved requester comparison.</small>
+                    <small>已保存对比中排名最高的预设统计行。</small>
                   </article>
                 </div>
               </div>
@@ -2641,32 +2636,32 @@ export function SubmissionsPage() {
               >
                 <div className="submission-detail-grid submissions-export-detail-grid">
                   <article className="account-summary-item">
-                    <span>Comparison export</span>
+                    <span>对比导出</span>
                     <strong data-testid="requester-comparison-export-file-name">
                       {selectedComparisonExport.fileName}
                     </strong>
-                    <small>{formatExportTime(selectedComparisonExport.completedAt)} generated</small>
+                    <small>{formatExportTime(selectedComparisonExport.completedAt)} 已生成</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Preset count</span>
+                    <span>预设数量</span>
                     <strong data-testid="requester-comparison-export-preset-count">
                       {selectedComparisonExport.report.presetCount}
                     </strong>
-                    <small>Preset cohorts materialized into this comparison export artifact.</small>
+                    <small>已写入该对比导出产物的预设分组数量。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Export origin</span>
+                    <span>导出来源</span>
                     <strong data-testid="requester-comparison-export-origin">
                       {selectedComparisonExport.origin.type === 'manual'
-                        ? 'Manual snapshot'
+                        ? '手动快照'
                         : selectedComparisonExport.origin.type === 'delivery_policy_manual'
-                          ? 'Policy manual run'
-                          : 'Policy automation'}
+                          ? '策略手动执行'
+                          : '策略自动执行'}
                     </strong>
                     <small>
                       {selectedComparisonExport.origin.policyName
                         ? selectedComparisonExport.origin.policyName
-                        : 'Not attached to a recurring policy.'}
+                        : '未关联到周期策略。'}
                     </small>
                   </article>
                 </div>
@@ -2681,12 +2676,12 @@ export function SubmissionsPage() {
                       <div>
                         <strong>{row.preset.name}</strong>
                         <span>
-                          Created {row.createdCount} 路 Settled {row.settledCount} 路 Unresolved{' '}
+                          已创建 {row.createdCount} · 已开奖 {row.settledCount} · 未揭晓{' '}
                           {row.unresolvedCount}
                         </span>
                       </div>
                       <em className="account-menu-value">
-                        <span>Rank {row.rank}</span>
+                        <span>排名 {row.rank}</span>
                       </em>
                     </div>
                   ))}
@@ -2701,7 +2696,7 @@ export function SubmissionsPage() {
               >
                 <div className="submissions-actions">
                   <label className="field-shell">
-                    <span className="field-label">Origin</span>
+                    <span className="field-label">来源</span>
                     <select
                       data-testid="requester-comparison-export-history-origin-filter"
                       value={comparisonExportFilters?.origin ?? ''}
@@ -2715,14 +2710,14 @@ export function SubmissionsPage() {
                         void handleApplyComparisonExportFilters(nextFilters)
                       }}
                     >
-                      <option value="">All origins</option>
-                      <option value="manual">Manual</option>
-                      <option value="delivery_policy_manual">Policy manual</option>
-                      <option value="delivery_policy_automation">Policy automation</option>
+                      <option value="">全部来源</option>
+                      <option value="manual">手动</option>
+                      <option value="delivery_policy_manual">策略手动</option>
+                      <option value="delivery_policy_automation">策略自动</option>
                     </select>
                   </label>
                   <label className="field-shell">
-                    <span className="field-label">Limit</span>
+                    <span className="field-label">数量</span>
                     <select
                       value={comparisonExportFilters?.limit ?? '10'}
                       onChange={(event) => {
@@ -2744,25 +2739,25 @@ export function SubmissionsPage() {
 
                 <div className="submission-detail-grid submissions-export-detail-grid">
                   <article className="account-summary-item">
-                    <span>Stored exports</span>
+                    <span>已保存导出</span>
                     <strong data-testid="requester-comparison-export-history-count">
                       {selectedComparisonExports.totalCount}
                     </strong>
                     <small>
-                      Retained comparison export artifacts still available for this saved cohort.
+                      此已保存分组仍可用的保留对比导出产物。
                     </small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Retention semantics</span>
+                    <span>保留规则</span>
                     <strong data-testid="requester-comparison-export-history-retention">
-                      Policy retention prunes only matching policy-origin exports
+                      策略保留仅会清理同来源的策略导出
                     </strong>
                     <small>
-                      Manual snapshots stay available unless you explicitly delete them here.
+                      手动快照会一直保留，除非你在这里主动删除。
                     </small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Active filter</span>
+                    <span>当前筛选</span>
                     <strong data-testid="requester-comparison-export-history-filter-summary">
                       {comparisonExportFilters?.policyId
                         ? selectedComparisonDeliveryPolicies?.items.find(
@@ -2770,12 +2765,12 @@ export function SubmissionsPage() {
                           )?.name ?? comparisonExportFilters.policyId
                         : comparisonExportFilters?.origin
                           ? comparisonExportFilters.origin
-                          : 'All retained exports'}
+                          : '全部保留导出'}
                     </strong>
                     <small>
                       {comparisonExportFilters?.policyId
-                        ? 'Scoped to one delivery policy history.'
-                        : 'Showing all retained comparison artifacts for this saved comparison set.'}
+                        ? '仅查看单个投递策略历史。'
+                        : '正在显示该对比集合的全部保留导出产物。'}
                     </small>
                   </article>
                 </div>
@@ -2792,15 +2787,15 @@ export function SubmissionsPage() {
                         <span>
                           {formatExportTime(item.completedAt)} ·{' '}
                           {item.origin.type === 'manual'
-                            ? 'Manual snapshot'
+                            ? '手动快照'
                             : item.origin.policyName
                               ? `${item.origin.policyName}`
-                              : 'Policy export'}
+                              : '策略导出'}
                         </span>
                         <small>
                           {item.origin.type === 'manual'
-                            ? 'Not subject to policy retention pruning.'
-                            : `Retention applies only within policy ${item.origin.policyName ?? item.origin.policyId ?? 'scope'}.`}
+                            ? '不受策略保留清理影响。'
+                            : `保留规则仅在策略 ${item.origin.policyName ?? item.origin.policyId ?? '当前范围'} 内生效。`}
                         </small>
                       </div>
                       <div className="submissions-export-row-actions">
@@ -2818,7 +2813,7 @@ export function SubmissionsPage() {
                         >
                           <Search size={14} />
                           <span>
-                            {pendingComparisonExportId === item.exportId ? 'Opening...' : 'Open'}
+                            {pendingComparisonExportId === item.exportId ? '打开中...' : '打开'}
                           </span>
                         </button>
                         <button
@@ -2835,7 +2830,7 @@ export function SubmissionsPage() {
                         >
                           <Trash2 size={14} />
                           <span>
-                            {pendingComparisonExportId === item.exportId ? 'Deleting...' : 'Delete'}
+                            {pendingComparisonExportId === item.exportId ? '删除中...' : '删除'}
                           </span>
                         </button>
                       </div>
@@ -2856,15 +2851,15 @@ export function SubmissionsPage() {
                     data-testid="requester-comparison-delivery-focus-panel"
                   >
                     <article className="account-summary-item">
-                      <span>Focused policy</span>
+                      <span>当前聚焦策略</span>
                       <strong>{focusedComparisonDeliveryPolicy.name}</strong>
                       <small>
-                        Actions and scoped panels below now follow this delivery policy.
+                        下方的操作与面板都将围绕这个投递策略展示。
                       </small>
                       <small data-testid="requester-comparison-delivery-focus-run-timing">
                         {focusedComparisonDeliveryHealthSummary
                           ? formatDeliveryRunTimingSummary(focusedComparisonDeliveryHealthSummary.health)
-                          : 'Refreshing focused run timing.'}
+                          : '正在刷新当前运行时间。'}
                       </small>
                       <small data-testid="requester-comparison-delivery-focus-scheduler-detail">
                         {focusedComparisonDeliveryHealthSummary
@@ -2872,12 +2867,12 @@ export function SubmissionsPage() {
                             focusedComparisonDeliveryHealthSummary.policy,
                             focusedComparisonDeliveryHealthSummary.health,
                           )
-                          : 'Refreshing scheduler state.'}
+                          : '正在刷新调度状态。'}
                       </small>
                       <small data-testid="requester-comparison-delivery-focus-latest-run">
                         {focusedComparisonDeliveryHealthSummary
                           ? formatDeliveryLatestRunDetail(focusedComparisonDeliveryHealthSummary.health)
-                          : 'Refreshing latest run evidence.'}
+                          : '正在刷新最近运行记录。'}
                       </small>
                       <button
                         className="secondary-action"
@@ -2900,45 +2895,45 @@ export function SubmissionsPage() {
                         <span>
                           {pendingComparisonExportId
                             === focusedComparisonDeliveryHealthSummary?.health.latestRun?.exportId
-                            ? 'Opening...'
+                            ? '打开中...'
                             : formatRetainedExportActionLabel(
                               focusedComparisonDeliveryHealthSummary?.health.latestRun
                                 ?.retainedExportAvailable ?? false,
-                              'Open latest export',
+                              '打开最近导出',
                             )}
                         </span>
                       </button>
                     </article>
                     <article className="account-summary-item">
-                      <span>Status</span>
+                      <span>状态</span>
                       <strong data-testid="requester-comparison-delivery-focus-status">
-                        {focusedComparisonDeliveryPolicy.enabled ? 'Enabled' : 'Paused'}
+                        {focusedComparisonDeliveryPolicy.enabled ? '已启用' : '已暂停'}
                       </strong>
                       <small>
-                        Retain {focusedComparisonDeliveryPolicy.retainedExportCount} completed exports.
+                        保留 {focusedComparisonDeliveryPolicy.retainedExportCount} 份已完成导出。
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Health</span>
+                      <span>健康状态</span>
                       <strong data-testid="requester-comparison-delivery-focus-health-status">
                         {focusedComparisonDeliveryHealthSummary
                           ? formatDeliveryHealthStatus(focusedComparisonDeliveryHealthSummary.health.status)
-                          : 'Loading...'}
+                          : '加载中...'}
                       </strong>
                       <small data-testid="requester-comparison-delivery-focus-health-detail">
                         {focusedComparisonDeliveryHealthSummary
                           ? `${focusedComparisonDeliveryHealthSummary.health.transport.status === 'ready'
-                              ? 'Transport ready'
-                              : `Transport blocked · ${formatDeliveryTransportBlockingReason(
+                              ? '传输就绪'
+                              : `传输受阻 · ${formatDeliveryTransportBlockingReason(
                                 focusedComparisonDeliveryHealthSummary.health.transport.blockingReason,
-                              )}`} · Snapshot checked ${formatExportTime(
+                              )}`} · 快照检查于 ${formatExportTime(
                               focusedComparisonDeliveryHealthSummary.health.checkedAt,
                             )}`
-                          : 'Refreshing focused policy health.'}
+                          : '正在刷新当前策略健康状态。'}
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Runs</span>
+                      <span>运行次数</span>
                       <strong data-testid="requester-comparison-delivery-focus-run-count">
                         {focusedComparisonDeliveryHealthSummary
                           ? focusedComparisonDeliveryHealthSummary.health.runCounts.totalCount
@@ -2947,30 +2942,30 @@ export function SubmissionsPage() {
                       <small data-testid="requester-comparison-delivery-focus-run-breakdown">
                         {focusedComparisonDeliveryHealthSummary
                           ? focusedComparisonDeliveryHealthSummary.health.runCounts.totalCount > 0
-                            ? `${focusedComparisonDeliveryHealthSummary.health.runCounts.completedCount} completed · ${focusedComparisonDeliveryHealthSummary.health.runCounts.failedCount} failed`
-                            : 'No delivery runs yet'
-                          : 'Refreshing focused run summary.'}
+                            ? `${focusedComparisonDeliveryHealthSummary.health.runCounts.completedCount} 次已完成 · ${focusedComparisonDeliveryHealthSummary.health.runCounts.failedCount} 次失败`
+                            : '暂无投递运行'
+                          : '正在刷新当前运行摘要。'}
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Failures</span>
+                      <span>失败情况</span>
                       <strong data-testid="requester-comparison-delivery-focus-failure-streak">
                         {focusedComparisonDeliveryHealthSummary
                           ? focusedComparisonDeliveryHealthSummary.health.consecutiveFailureCount > 0
                             ? formatDeliveryFailureStreak(
                               focusedComparisonDeliveryHealthSummary.health.consecutiveFailureCount,
                             )
-                            : 'No active failure streak'
-                          : 'Refreshing failure streak.'}
+                            : '当前无连续失败'
+                          : '正在刷新连续失败信息。'}
                       </strong>
                       <small data-testid="requester-comparison-delivery-focus-last-error">
                         {focusedComparisonDeliveryHealthSummary
                           ? focusedComparisonDeliveryHealthSummary.policy.lastRunError
-                            ? `Latest failure: ${formatDeliveryLastError(
+                            ? `最近失败：${formatDeliveryLastError(
                               focusedComparisonDeliveryHealthSummary.policy.lastRunError,
                             )}`
-                            : 'No recent run error'
-                          : 'Refreshing latest error.'}
+                            : '暂无最近运行错误'
+                          : '正在刷新最近错误。'}
                       </small>
                     </article>
                   </div>
@@ -2988,7 +2983,7 @@ export function SubmissionsPage() {
                     type="button"
                   >
                     <Plus size={16} />
-                    <span>Create delivery policy</span>
+                    <span>创建投递策略</span>
                   </button>
                 </div>
 
@@ -2998,7 +2993,7 @@ export function SubmissionsPage() {
                     data-testid="requester-comparison-delivery-form"
                   >
                     <label className="field-shell">
-                      <span className="field-label">Policy name</span>
+                      <span className="field-label">策略名称</span>
                       <input
                         data-testid="requester-comparison-delivery-name-input"
                         value={comparisonDeliveryForm.name}
@@ -3015,7 +3010,7 @@ export function SubmissionsPage() {
                       />
                     </label>
                     <label className="field-shell">
-                      <span className="field-label">Description</span>
+                      <span className="field-label">描述</span>
                       <input
                         value={comparisonDeliveryForm.description}
                         onChange={(event) =>
@@ -3031,7 +3026,7 @@ export function SubmissionsPage() {
                       />
                     </label>
                     <label className="field-shell">
-                      <span className="field-label">Next run</span>
+                      <span className="field-label">下次运行</span>
                       <input
                         data-testid="requester-comparison-delivery-next-run-input"
                         type="datetime-local"
@@ -3049,7 +3044,7 @@ export function SubmissionsPage() {
                       />
                     </label>
                     <label className="field-shell">
-                      <span className="field-label">Retained exports</span>
+                      <span className="field-label">保留导出数</span>
                       <input
                         data-testid="requester-comparison-delivery-retained-count-input"
                         inputMode="numeric"
@@ -3067,7 +3062,7 @@ export function SubmissionsPage() {
                       />
                     </label>
                     <label className="field-shell">
-                      <span className="field-label">Webhook target</span>
+                      <span className="field-label">Webhook 目标地址</span>
                       <input
                         data-testid="requester-comparison-delivery-target-url-input"
                         value={comparisonDeliveryForm.targetUrl}
@@ -3084,7 +3079,7 @@ export function SubmissionsPage() {
                       />
                     </label>
                     <label className="field-shell">
-                      <span className="field-label">Saved credential binding</span>
+                      <span className="field-label">已保存凭据绑定</span>
                       <select
                         data-testid="requester-comparison-delivery-credential-binding-select"
                         value={normalizeDeliveryCredentialKey(comparisonDeliveryForm.credentialKey)}
@@ -3099,7 +3094,7 @@ export function SubmissionsPage() {
                           )
                         }
                       >
-                        <option value="">No credential binding</option>
+                        <option value="">无凭据绑定</option>
                         {comparisonDeliveryCredentialBindingOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
@@ -3108,7 +3103,7 @@ export function SubmissionsPage() {
                       </select>
                     </label>
                     <label className="field-shell">
-                      <span className="field-label">Credential key</span>
+                      <span className="field-label">凭据 Key</span>
                       <input
                         value={comparisonDeliveryForm.credentialKey}
                         onChange={(event) =>
@@ -3124,7 +3119,7 @@ export function SubmissionsPage() {
                       />
                     </label>
                     <label className="field-shell">
-                      <span className="field-label">Enabled</span>
+                      <span className="field-label">是否启用</span>
                       <select
                         value={comparisonDeliveryForm.enabled ? 'enabled' : 'paused'}
                         onChange={(event) =>
@@ -3138,8 +3133,8 @@ export function SubmissionsPage() {
                           )
                         }
                       >
-                        <option value="enabled">Enabled</option>
-                        <option value="paused">Paused</option>
+                        <option value="enabled">已启用</option>
+                        <option value="paused">已暂停</option>
                       </select>
                     </label>
                     <div className="account-summary-actions">
@@ -3151,7 +3146,7 @@ export function SubmissionsPage() {
                         type="button"
                       >
                         <Download size={16} />
-                        <span>{pendingComparisonDeliverySave ? 'Saving...' : 'Save policy'}</span>
+                        <span>{pendingComparisonDeliverySave ? '保存中...' : '保存策略'}</span>
                       </button>
                       <button
                         className="secondary-action"
@@ -3170,11 +3165,11 @@ export function SubmissionsPage() {
                         type="button"
                       >
                         <Undo2 size={16} />
-                        <span>Clear binding</span>
+                        <span>清空绑定</span>
                       </button>
                     </div>
                     <article className="account-summary-item">
-                      <span>Credential binding</span>
+                      <span>凭据绑定</span>
                       <strong data-testid="requester-comparison-delivery-credential-status">
                         {formatDeliveryCredentialBindingStatus(
                           requesterDeliveryCredentials,
@@ -3192,7 +3187,7 @@ export function SubmissionsPage() {
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Retention policy</span>
+                      <span>保留策略</span>
                       <strong data-testid="requester-comparison-delivery-form-retained-count">
                         {comparisonDeliveryForm.retainedExportCount}
                       </strong>
@@ -3225,19 +3220,19 @@ export function SubmissionsPage() {
                       <div>
                         <strong>{policy.name}</strong>
                         <span>
-                          {policy.enabled ? 'Enabled' : 'Paused'} 路 Next run{' '}
+                          {policy.enabled ? '已启用' : '已暂停'} · 下次运行{' '}
                           {formatExportTime(policy.nextRunAt)}
                         </span>
-                        <small>Retain {policy.retainedExportCount} completed exports</small>
+                        <small>保留 {policy.retainedExportCount} 份已完成导出</small>
                         <small data-testid="requester-comparison-delivery-policy-run-summary">
                           {policy.lastRunStatus
-                            ? `Last run ${formatDeliveryRunStatus(policy.lastRunStatus)}`
-                            : 'Not run yet'}
+                            ? `最近运行：${formatDeliveryRunStatus(policy.lastRunStatus)}`
+                            : '尚未运行'}
                         </small>
                         <small data-testid="requester-comparison-delivery-policy-latest-run-detail">
                           {policyHealth
                             ? formatDeliveryLatestRunDetail(policyHealth.health)
-                            : 'Refreshing latest run evidence.'}
+                            : '正在刷新最近运行记录。'}
                         </small>
                         <small data-testid="requester-comparison-delivery-policy-export-agreement">
                           {formatDeliveryRowExportAgreementDetail(
@@ -3251,33 +3246,33 @@ export function SubmissionsPage() {
                         <small data-testid="requester-comparison-delivery-policy-health-summary">
                           {policyHealth
                             ? formatDeliveryHealthStatus(policyHealth.health.status)
-                            : 'Loading...'}
+                            : '加载中...'}
                         </small>
                         <small data-testid="requester-comparison-delivery-policy-health-detail">
                           {policyHealth
                             ? formatDeliveryHealthDetail(policyHealth.health)
-                            : 'Refreshing health summary.'}
+                            : '正在刷新健康摘要。'}
                         </small>
                         <small data-testid="requester-comparison-delivery-policy-scheduler-detail">
                           {policyHealth
                             ? formatDeliverySchedulerDetail(policy, policyHealth.health)
-                            : 'Refreshing scheduler state.'}
+                            : '正在刷新调度状态。'}
                         </small>
                         <small data-testid="requester-comparison-delivery-policy-failure-streak">
                           {policyHealth
                             ? policyHealth.health.consecutiveFailureCount > 0
                               ? formatDeliveryFailureStreak(policyHealth.health.consecutiveFailureCount)
-                              : 'No active failure streak'
-                            : 'Refreshing failure streak.'}
+                              : '当前无连续失败'
+                            : '正在刷新连续失败信息。'}
                         </small>
                         <small data-testid="requester-comparison-delivery-policy-last-error">
                           {policy.lastRunError
-                            ? `Latest failure: ${formatDeliveryLastError(policy.lastRunError)}`
-                            : 'No recent run error'}
+                            ? `最近失败：${formatDeliveryLastError(policy.lastRunError)}`
+                            : '暂无最近运行错误'}
                         </small>
                         {focusedComparisonDeliveryPolicy?.policyId === policy.policyId ? (
                           <small data-testid="requester-comparison-delivery-policy-focus-tag">
-                            Current focus
+                            当前聚焦
                           </small>
                         ) : null}
                       </div>
@@ -3295,7 +3290,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <ChevronDown size={14} />
-                          <span>Focus</span>
+                          <span>聚焦</span>
                         </button>
                         <button
                           className="secondary-action"
@@ -3305,7 +3300,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <Pencil size={14} />
-                          <span>Edit</span>
+                          <span>编辑</span>
                         </button>
                         <button
                           className="secondary-action"
@@ -3320,7 +3315,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <Search size={14} />
-                          <span>Health</span>
+                          <span>健康状态</span>
                         </button>
                         <button
                           className="secondary-action"
@@ -3342,10 +3337,10 @@ export function SubmissionsPage() {
                           <Search size={14} />
                           <span>
                             {pendingComparisonExportId === policyHealth?.health.latestRun?.exportId
-                              ? 'Opening...'
+                              ? '打开中...'
                               : formatRetainedExportActionLabel(
                                 policyHealth?.health.latestRun?.retainedExportAvailable ?? false,
-                                'Open latest export',
+                                '打开最近导出',
                               )}
                           </span>
                         </button>
@@ -3363,7 +3358,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <Download size={14} />
-                          <span>Exports</span>
+                          <span>导出</span>
                         </button>
                         <button
                           className="secondary-action"
@@ -3378,7 +3373,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <FileClock size={14} />
-                          <span>Runs</span>
+                          <span>运行记录</span>
                         </button>
                         <button
                           className="secondary-action"
@@ -3393,7 +3388,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <Play size={14} />
-                          <span>Run now</span>
+                          <span>立即执行</span>
                         </button>
                         <button
                           className="secondary-action"
@@ -3409,7 +3404,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <Undo2 size={14} />
-                          <span>{policy.enabled ? 'Pause' : 'Resume'}</span>
+                          <span>{policy.enabled ? '暂停' : '恢复'}</span>
                         </button>
                         <button
                           className="secondary-action"
@@ -3424,7 +3419,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <Trash2 size={14} />
-                          <span>Delete</span>
+                          <span>删除</span>
                         </button>
                       </div>
                     </div>
@@ -3441,10 +3436,9 @@ export function SubmissionsPage() {
                     <div className="account-empty-icon" aria-hidden="true">
                       <FileClock size={28} />
                     </div>
-                    <strong>No delivery policies are configured for this comparison set</strong>
+                    <strong>该对比集合尚未配置投递策略</strong>
                     <p>
-                      Create a recurring delivery policy to retain comparison exports and push them
-                      into the downstream reporting workflow without leaving this submissions page.
+                      创建周期投递策略后，就能在当前页面内保留对比导出并推送到下游报表流程。
                     </p>
                   </section>
                 ) : null}
@@ -3455,7 +3449,7 @@ export function SubmissionsPage() {
                     data-testid="requester-comparison-delivery-health-panel"
                   >
                     <article className="account-summary-item">
-                      <span>Policy status</span>
+                      <span>策略状态</span>
                       <strong data-testid="requester-comparison-delivery-health-status">
                         {formatDeliveryHealthStatus(selectedComparisonDeliveryHealth.health.status)}
                       </strong>
@@ -3464,22 +3458,22 @@ export function SubmissionsPage() {
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Transport</span>
+                      <span>传输</span>
                       <strong data-testid="requester-comparison-delivery-health-transport">
                         {selectedComparisonDeliveryHealth.health.transport.status === 'ready'
-                          ? 'Ready'
-                          : 'Blocked'}
+                          ? '就绪'
+                          : '受阻'}
                       </strong>
                       <small data-testid="requester-comparison-delivery-health-transport-detail">
                         {selectedComparisonDeliveryHealth.health.transport.status === 'ready'
-                          ? (selectedComparisonDeliveryHealth.health.transport.credentialKey ?? 'No credential binding')
+                          ? (selectedComparisonDeliveryHealth.health.transport.credentialKey ?? '无凭据绑定')
                           : formatDeliveryTransportBlockingReason(
                             selectedComparisonDeliveryHealth.health.transport.blockingReason,
                           )}
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Saved bindings</span>
+                      <span>已保存绑定</span>
                       <strong data-testid="requester-comparison-delivery-health-credential-count">
                         {requesterDeliveryCredentials?.totalCount ?? 0}
                       </strong>
@@ -3488,9 +3482,9 @@ export function SubmissionsPage() {
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Latest retained export</span>
+                      <span>最近保留导出</span>
                       <strong>
-                        {selectedComparisonDeliveryHealth.health.latestRun?.exportId ?? 'No retained export'}
+                        {selectedComparisonDeliveryHealth.health.latestRun?.exportId ?? '暂无保留导出'}
                       </strong>
                       <small data-testid="requester-comparison-delivery-health-export-agreement">
                         {formatDeliveryLatestExportAgreementDetail(
@@ -3519,23 +3513,23 @@ export function SubmissionsPage() {
                         <span>
                           {pendingComparisonExportId
                             === selectedComparisonDeliveryHealth.health.latestRun?.exportId
-                            ? 'Opening...'
+                            ? '打开中...'
                             : formatRetainedExportActionLabel(
                               selectedComparisonDeliveryHealth.health.latestRun
                                 ?.retainedExportAvailable ?? false,
-                              'Open retained export',
+                              '打开保留导出',
                             )}
                         </span>
                       </button>
                     </article>
                     <article className="account-summary-item">
-                      <span>Failure streak</span>
+                      <span>连续失败</span>
                       <strong data-testid="requester-comparison-delivery-health-failure-streak">
                         {selectedComparisonDeliveryHealth.health.consecutiveFailureCount > 0
                           ? formatDeliveryFailureStreak(
                             selectedComparisonDeliveryHealth.health.consecutiveFailureCount,
                           )
-                          : 'No active failure streak'}
+                          : '当前无连续失败'}
                       </strong>
                       <small data-testid="requester-comparison-delivery-health-last-error">
                         {formatDeliveryLastError(selectedComparisonDeliveryHealth.policy.lastRunError)}
@@ -3550,14 +3544,14 @@ export function SubmissionsPage() {
                     data-testid="requester-comparison-delivery-run-panel"
                   >
                     <article className="account-summary-item">
-                      <span>Latest run export</span>
+                      <span>最近运行导出</span>
                       <strong data-testid="requester-comparison-delivery-run-file-name">
                         {selectedComparisonDeliveryRun.export.fileName}
                       </strong>
-                      <small>{formatExportTime(selectedComparisonDeliveryRun.export.completedAt)} delivered</small>
+                      <small>{formatExportTime(selectedComparisonDeliveryRun.export.completedAt)} 已投递</small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Run status</span>
+                      <span>运行状态</span>
                       <strong data-testid="requester-comparison-delivery-run-status">
                         {formatDeliveryRunStatus(selectedComparisonDeliveryRun.policy.lastRunStatus)}
                       </strong>
@@ -3567,7 +3561,7 @@ export function SubmissionsPage() {
                       <small>
                         {selectedComparisonDeliveryRun.run.delivery
                           ? `HTTP ${selectedComparisonDeliveryRun.run.delivery.statusCode}`
-                          : 'No downstream transport'}
+                          : '暂无下游传输'}
                       </small>
                       <small>
                         {formatDeliveryTransportAuthenticationDetail(
@@ -3582,20 +3576,20 @@ export function SubmissionsPage() {
                   <>
                     <div className="account-summary-grid">
                       <article className="account-summary-item">
-                        <span>Run history</span>
+                        <span>运行历史</span>
                         <strong data-testid="requester-comparison-delivery-run-history-summary">
                           {formatDeliveryRunHistorySummary(selectedComparisonDeliveryRuns)}
                         </strong>
                         <small>
                           {selectedComparisonDeliveryRuns.totalCount < selectedComparisonDeliveryRuns.storedCount
-                            ? 'Limited history stays explicit even when filters narrow the visible run list.'
-                            : 'All retained requester delivery runs for this policy are currently visible.'}
+                            ? '即使筛选缩小了可见范围，有限历史仍会明确保留。'
+                            : '当前已显示该策略下全部保留的发起方投递运行记录。'}
                         </small>
                       </article>
                     </div>
                     <div className="submissions-actions">
                       <label className="field-shell">
-                        <span className="field-label">Run status</span>
+                        <span className="field-label">运行状态</span>
                         <select
                           data-testid="requester-comparison-delivery-run-status-filter"
                           value={comparisonRunFilters?.status ?? ''}
@@ -3615,13 +3609,13 @@ export function SubmissionsPage() {
                             )
                           }}
                         >
-                          <option value="">All runs</option>
-                          <option value="completed">Completed</option>
-                          <option value="failed">Failed</option>
+                          <option value="">全部运行</option>
+                          <option value="completed">已完成</option>
+                          <option value="failed">已失败</option>
                         </select>
                       </label>
                       <label className="field-shell">
-                        <span className="field-label">Trigger</span>
+                        <span className="field-label">触发方式</span>
                         <select
                           data-testid="requester-comparison-delivery-run-trigger-filter"
                           value={comparisonRunFilters?.triggerType ?? ''}
@@ -3641,13 +3635,13 @@ export function SubmissionsPage() {
                             )
                           }}
                         >
-                          <option value="">All triggers</option>
-                          <option value="manual">Manual</option>
-                          <option value="automation">Automation</option>
+                          <option value="">全部触发方式</option>
+                          <option value="manual">手动</option>
+                          <option value="automation">自动</option>
                         </select>
                       </label>
                       <label className="field-shell">
-                        <span className="field-label">Provenance</span>
+                        <span className="field-label">来源</span>
                         <select
                           data-testid="requester-comparison-delivery-run-replay-filter"
                           value={comparisonRunFilters?.replay ?? 'all'}
@@ -3667,13 +3661,13 @@ export function SubmissionsPage() {
                             )
                           }}
                         >
-                          <option value="all">All provenance</option>
-                          <option value="fresh_only">Fresh only</option>
-                          <option value="replayed_only">Replay only</option>
+                          <option value="all">全部来源</option>
+                          <option value="fresh_only">仅新运行</option>
+                          <option value="replayed_only">仅重试</option>
                         </select>
                       </label>
                       <label className="field-shell">
-                        <span className="field-label">Limit</span>
+                        <span className="field-label">数量</span>
                         <select
                           data-testid="requester-comparison-delivery-run-limit-filter"
                           value={comparisonRunFilters?.limit ?? '10'}
@@ -3712,16 +3706,16 @@ export function SubmissionsPage() {
                         <div>
                           <strong>{formatDeliveryRunStatus(run.status)}</strong>
                           <span>
-                            {formatExportTime(run.completedAt)} · {run.origin.policyName ?? 'Unnamed policy'}
+                            {formatExportTime(run.completedAt)} · {run.origin.policyName ?? '未命名策略'}
                           </span>
                           <small>
-                            {`${formatDeliveryRunTriggerType(run.triggerType)} delivery 路 ${formatDeliveryRunTransportSummary(run.delivery)}`}
+                            {`${formatDeliveryRunTriggerType(run.triggerType)}投递 · ${formatDeliveryRunTransportSummary(run.delivery)}`}
                           </small>
                           <small>{formatDeliveryRunProvenanceDetail(run)}</small>
                           {run.retriedRunId ? (
                             <small>
                               {formatDeliveryRetryArtifactDetail(
-                                run.exportId ?? 'unknown export',
+                                run.exportId ?? '未知导出',
                                 run.retainedExportAvailable,
                               )}
                             </small>
@@ -3731,7 +3725,7 @@ export function SubmissionsPage() {
                               <small>{run.error.message}</small>
                             </>
                           ) : (
-                            <small>No delivery error</small>
+                            <small>暂无投递错误</small>
                           )}
                         </div>
                         <div className="submissions-export-row-actions">
@@ -3754,10 +3748,10 @@ export function SubmissionsPage() {
                             <Search size={14} />
                             <span>
                               {pendingComparisonExportId === run.exportId
-                                ? 'Opening...'
+                                ? '打开中...'
                                 : formatRetainedExportActionLabel(
                                   run.retainedExportAvailable,
-                                  'Open retained export',
+                                  '打开保留导出',
                                 )}
                             </span>
                           </button>
@@ -3779,7 +3773,7 @@ export function SubmissionsPage() {
                               type="button"
                             >
                               <Undo2 size={14} />
-                              <span>Retry</span>
+                              <span>重试</span>
                             </button>
                           ) : null}
                         </div>
@@ -3795,7 +3789,7 @@ export function SubmissionsPage() {
                     data-testid="requester-comparison-delivery-retry-panel"
                   >
                     <article className="account-summary-item">
-                      <span>Retry status</span>
+                      <span>重试状态</span>
                       <strong data-testid="requester-comparison-delivery-retry-status">
                         {formatDeliveryRunStatus(selectedComparisonDeliveryRetry.policy.lastRunStatus)}
                       </strong>
@@ -3804,11 +3798,11 @@ export function SubmissionsPage() {
                       </small>
                     </article>
                     <article className="account-summary-item">
-                      <span>Retry export</span>
+                      <span>重试导出</span>
                       <strong data-testid="requester-comparison-delivery-retry-file-name">
                         {selectedComparisonDeliveryRetry.export.fileName}
                       </strong>
-                      <small>{formatExportTime(selectedComparisonDeliveryRetry.export.completedAt)} delivered</small>
+                      <small>{formatExportTime(selectedComparisonDeliveryRetry.export.completedAt)} 已投递</small>
                       <small>
                         {formatDeliveryRetryArtifactDetail(
                           selectedComparisonDeliveryRetry.export.exportId,
@@ -3818,7 +3812,7 @@ export function SubmissionsPage() {
                       <small>
                         {selectedComparisonDeliveryRetry.run.delivery
                           ? `HTTP ${selectedComparisonDeliveryRetry.run.delivery.statusCode}`
-                          : 'No downstream transport'}
+                          : '暂无下游传输'}
                       </small>
                       <small>
                         {formatDeliveryTransportAuthenticationDetail(
@@ -3843,10 +3837,10 @@ export function SubmissionsPage() {
                         <Search size={14} />
                         <span>
                           {pendingComparisonExportId === selectedComparisonDeliveryRetry.export.exportId
-                            ? 'Opening...'
+                            ? '打开中...'
                             : formatRetainedExportActionLabel(
                               selectedComparisonDeliveryRetry.run.retainedExportAvailable,
-                              'Open retained export',
+                              '打开保留导出',
                             )}
                         </span>
                       </button>
@@ -3863,17 +3857,16 @@ export function SubmissionsPage() {
             <div className="account-empty-icon" aria-hidden="true">
               <Search size={28} />
             </div>
-            <strong>No propositions are currently in the requester review queue</strong>
+            <strong>当前暂无进入发起方审核队列的命题</strong>
             <p>
-              Once a draft is submitted, it appears here. Withdrawing moves it back to drafts so the same
-              shaped proposition flow can continue without losing context.
+              草稿提交后会出现在这里。撤回后会回到草稿箱，方便你在不丢失上下文的情况下继续编辑。
             </p>
             <div className="account-summary-actions">
               <Link className="primary-action" to="/zh/challenges">
-                Create a proposition
+                创建命题
               </Link>
               <Link className="secondary-action" to="/zh/drafts">
-                Open drafts
+                打开草稿箱
               </Link>
             </div>
           </section>
@@ -3884,8 +3877,7 @@ export function SubmissionsPage() {
             <div className="account-menu-panel-head">
               <h2>审核中的候选命题</h2>
               <span>
-                These propositions have already entered the real submit contract and can now expose owner-side
-                detail without breaking the existing product shape.
+                这些命题已经进入真实提交流程，现在可以在不破坏现有产品形态的前提下展示真实详情。
               </span>
             </div>
 
@@ -3908,32 +3900,41 @@ export function SubmissionsPage() {
                         <p>{submission.summary}</p>
                       </div>
                       <span className="submissions-status-pill">
-                        {detail ? formatSubmissionStatus(detail.submission.status) : 'Under review'}
+                        {detail ? formatSubmissionStatus(detail.submission.status) : '审核中'}
                       </span>
                     </div>
 
                     <div className="submissions-meta-row">
                       <span>{submission.categoryLabel}</span>
-                      <span>Minimum effective sample {submission.minEffectiveSample}</span>
+                      <span>最低有效样本 {submission.minEffectiveSample}</span>
                       <span>
                         {submission.marketEnabled
-                          ? 'Validation-market capability retained'
-                          : 'No validation market reserved'}
+                          ? '保留验证市场能力'
+                          : '未预留验证市场'}
                       </span>
                     </div>
 
                     <div className="drafts-tags-row">
-                      {submission.tags.map((tag) => (
-                        <span className="drafts-tag" key={`${submission.propositionId}-${tag}`}>
-                          {tag}
+                      {submission.tags.length > 0 ? (
+                        submission.tags.map((tag) => (
+                          <span className="drafts-tag" key={`${submission.propositionId}-${tag}`}>
+                            {formatSampleConstraintLabel(tag)}
+                          </span>
+                        ))
+                      ) : (
+                        <span
+                          className="drafts-tag drafts-tag--empty"
+                          data-testid={`submission-sample-constraints-empty-${submission.propositionId}`}
+                        >
+                          暂无样本约束
                         </span>
-                      ))}
+                      )}
                     </div>
 
                     <div className="submissions-foot">
                       <div className="submissions-time-copy">
-                        <span>Submitted {submission.submittedAtLabel}</span>
-                        <span>Updated {submission.updatedAtLabel}</span>
+                        <span>提交于 {submission.submittedAtLabel}</span>
+                        <span>更新于 {submission.updatedAtLabel}</span>
                       </div>
                       <div className="submissions-actions">
                         <button
@@ -3943,10 +3944,10 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                          <span>{isExpanded ? 'Hide owner detail' : 'Open owner detail'}</span>
+                          <span>{isExpanded ? '收起详情' : '展开详情'}</span>
                         </button>
                         <Link className="secondary-action" to={`/zh/challenges?draft=${submission.propositionId}`}>
-                          Continue viewing
+                          继续查看
                         </Link>
                         <button
                           className="primary-action submissions-withdraw-button"
@@ -3956,7 +3957,7 @@ export function SubmissionsPage() {
                           type="button"
                         >
                           <Undo2 size={16} />
-                          <span>{isPendingWithdraw ? 'Withdrawing...' : 'Withdraw to drafts'}</span>
+                          <span>{isPendingWithdraw ? '撤回中...' : '撤回到草稿箱'}</span>
                         </button>
                       </div>
                     </div>
@@ -3968,48 +3969,48 @@ export function SubmissionsPage() {
                       >
                         <div className="submission-detail-grid">
                           <article className="account-summary-item">
-                            <span>Submission status</span>
+                            <span>提交状态</span>
                             <strong data-testid={`submission-status-${submission.propositionId}`}>
                               {formatSubmissionStatus(detail.submission.status)}
                             </strong>
-                            <small>{detail.submission.submissionNote ?? 'No owner note was attached.'}</small>
+                            <small>{detail.submission.submissionNote ?? '未附带备注。'}</small>
                           </article>
                           <article className="account-summary-item">
-                            <span>Lifecycle status</span>
+                            <span>流程状态</span>
                             <strong data-testid={`proposition-status-${submission.propositionId}`}>
                               {formatLifecycleStatus(detail.proposition.status)}
                             </strong>
                             <small>{formatClosureReason(detail.closureReadiness.triggerReason)}</small>
                           </article>
                           <article className="account-summary-item">
-                            <span>Effective sample</span>
+                            <span>有效样本</span>
                             <strong data-testid={`sample-progress-${submission.propositionId}`}>
                               {detail.sampleCounter.effectiveSampleCount} / {detail.proposition.minEffectiveSample}
                             </strong>
-                            <small>{detail.reviewSummary.finalizedCount} finalized reviews so far.</small>
+                            <small>当前已完成 {detail.reviewSummary.finalizedCount} 条评审。</small>
                           </article>
                           <article className="account-summary-item">
-                            <span>Dispatch coverage</span>
+                            <span>分发覆盖</span>
                             <strong>
                               {detail.dispatchSummary.submittedCount} / {detail.dispatchSummary.totalTasks}
                             </strong>
-                            <small>{detail.dispatchSummary.uniqueAssignedUsers} unique assigned users.</small>
+                            <small>{detail.dispatchSummary.uniqueAssignedUsers} 位唯一分配用户。</small>
                           </article>
                         </div>
 
                         <div className="account-menu-status-list">
                           <div className="account-menu-status-row">
                             <div>
-                              <strong>Reveal and settlement guardrail</strong>
+                              <strong>揭晓与结算约束</strong>
                               <span>
                                 {detail.revealSettlement.resultKind
-                                  ? `Result ${detail.revealSettlement.resultKind}`
-                                  : 'No directional result is exposed before settlement.'}
+                                  ? `结果：${detail.revealSettlement.resultKind}`
+                                  : '结算前不会展示方向性结果。'}
                               </span>
                             </div>
                             <em className="account-menu-value">
                               <FileClock size={14} />
-                              <span>{detail.market ? detail.market.status : 'No market yet'}</span>
+                              <span>{detail.market ? detail.market.status : '暂无市场'}</span>
                             </em>
                           </div>
                           <BudgetLedgerPanel
@@ -4024,7 +4025,7 @@ export function SubmissionsPage() {
 
                     {isPendingDetail ? (
                       <div className="submission-detail-loading">
-                        <span>Loading owner detail...</span>
+                        <span>正在加载详情...</span>
                       </div>
                     ) : null}
                   </article>
@@ -4037,8 +4038,8 @@ export function SubmissionsPage() {
 {isAuthenticated && overview?.recent.length ? (
           <section className="account-menu-panel" data-testid="submission-recent-section">
             <div className="account-menu-panel-head">
-              <h2>Recent submission handoff</h2>
-              <span>Recent requester-owned proposition records from the real owner overview contract.</span>
+              <h2>最近提交记录</h2>
+              <span>来自真实概览接口的最近发起方命题记录。</span>
             </div>
 
             <div className="account-menu-status-list">
@@ -4049,8 +4050,8 @@ export function SubmissionsPage() {
                     <span>
                       {formatCategoryLabel(item.category)} ·{' '}
                       {item.status === 'settled'
-                        ? `settled ${item.settledAt ? formatRelativeTime(item.settledAt) : 'recently'}`
-                        : `submitted ${item.submittedAt ? formatRelativeTime(item.submittedAt) : 'just now'}`}
+                        ? `已开奖 ${item.settledAt ? formatRelativeTime(item.settledAt) : '刚刚'}`
+                        : `已提交 ${item.submittedAt ? formatRelativeTime(item.submittedAt) : '刚刚'}`}
                     </span>
                   </div>
                   <div className="submissions-export-row-actions">
@@ -4064,7 +4065,7 @@ export function SubmissionsPage() {
                       >
                         <Search size={14} />
                         <span>
-                          {pendingReportId === item.propositionId ? 'Opening...' : 'View settled report'}
+                          {pendingReportId === item.propositionId ? '打开中...' : '查看已开奖报告'}
                         </span>
                       </button>
                     ) : null}
@@ -4084,50 +4085,50 @@ export function SubmissionsPage() {
               >
                 <div className="submission-detail-grid submissions-export-detail-grid">
                   <article className="account-summary-item">
-                    <span>Settled proposition</span>
+                    <span>已开奖命题</span>
                     <strong data-testid="requester-settled-report-title">
                       {selectedSettledReport.proposition.title}
                     </strong>
                     <small>
-                      {formatCategoryLabel(selectedSettledReport.proposition.category)} · settled{' '}
+                      {formatCategoryLabel(selectedSettledReport.proposition.category)} · 已开奖{' '}
                       {formatExportTime(selectedSettledReport.result.settledAt)}
                     </small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Result kind</span>
+                    <span>结果类型</span>
                     <strong data-testid="requester-settled-report-result-kind">
                       {formatResultKindLabel(selectedSettledReport.result.resultKind)}
                     </strong>
-                    <small>Owner-side settled result contract from Arena requester APIs.</small>
+                    <small>来自 Arena 发起方接口的已结算结果。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Winning option</span>
+                    <span>获胜选项</span>
                     <strong data-testid="requester-settled-report-winning-option">
-                      {selectedSettledReport.result.winningOptionLabel ?? 'No winning option'}
+                      {selectedSettledReport.result.winningOptionLabel ?? '暂无获胜选项'}
                     </strong>
-                    <small>Directional result only appears after settlement completes.</small>
+                    <small>仅在结算完成后展示方向性结果。</small>
                   </article>
                   <article className="account-summary-item">
-                    <span>Effective sample</span>
+                    <span>有效样本</span>
                     <strong data-testid="requester-settled-report-sample">
                       {selectedSettledReport.sample.effectiveSampleCount}
                     </strong>
-                    <small>{selectedSettledReport.reviewSummary.finalizedCount} finalized reviews.</small>
+                    <small>已完成 {selectedSettledReport.reviewSummary.finalizedCount} 条评审。</small>
                   </article>
                 </div>
 
                 <div className="account-menu-status-list">
                   <div className="account-menu-status-row">
                     <div>
-                      <strong>Dispatch coverage</strong>
+                      <strong>分发覆盖</strong>
                       <span>
                         {selectedSettledReport.dispatchSummary.submittedCount} /{' '}
-                        {selectedSettledReport.dispatchSummary.totalTasks} submitted tasks ·{' '}
-                        {selectedSettledReport.dispatchSummary.uniqueAssignedUsers} unique users
+                        {selectedSettledReport.dispatchSummary.totalTasks} 条已提交任务 ·{' '}
+                        {selectedSettledReport.dispatchSummary.uniqueAssignedUsers} 位唯一用户
                       </span>
                     </div>
                     <em className="account-menu-value">
-                      <span>{selectedSettledReport.result.marketStatus ?? 'No market'}</span>
+                      <span>{selectedSettledReport.result.marketStatus ?? '暂无市场'}</span>
                     </em>
                   </div>
                   <BudgetLedgerPanel

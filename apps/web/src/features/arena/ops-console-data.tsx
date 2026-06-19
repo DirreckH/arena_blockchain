@@ -9,6 +9,9 @@ import {
 import { useAuthSession } from '../auth/auth-session'
 import { ArenaApiError, arenaApi } from '../api/arena-api'
 import type {
+  InternalDiscoveryCategoryConfigSummaryViewModel,
+  InternalDiscoveryCategoryConfigViewModel,
+  InternalDiscoveryGlobalConfigViewModel,
   InternalAuditEventListPageViewModel,
   InternalPropositionListPageViewModel,
   InternalPropositionDetailViewModel,
@@ -213,6 +216,26 @@ export function useOpsRuntimeContract(token: string | null) {
 export function useOpsQueueOverview(token: string | null) {
   const fetcher = useCallback((t: string) => arenaApi.getOpsQueueOverview(t), [])
   return useOpsQuery<QueueOverviewSnapshot>(token, fetcher, { pollIntervalMs: DEFAULT_OPS_POLL_INTERVAL_MS })
+}
+
+export function useOpsDiscoveryGlobalConfig(token: string | null) {
+  const fetcher = useCallback((t: string) => arenaApi.getOpsDiscoveryGlobalConfig(t), [])
+  return useOpsQuery<InternalDiscoveryGlobalConfigViewModel>(token, fetcher)
+}
+
+export function useOpsDiscoveryCategoryConfigs(token: string | null) {
+  const fetcher = useCallback((t: string) => arenaApi.getOpsDiscoveryCategoryConfigs(t), [])
+  return useOpsQuery<InternalDiscoveryCategoryConfigSummaryViewModel[]>(token, fetcher)
+}
+
+export function useOpsDiscoveryCategoryConfig(token: string | null, slug: string | null) {
+  const fetcher = useCallback(
+    (t: string) => slug
+      ? arenaApi.getOpsDiscoveryCategoryConfig(slug, t)
+      : Promise.reject(new Error('no slug')),
+    [slug],
+  )
+  return useOpsQuery<InternalDiscoveryCategoryConfigViewModel>(slug ? token : null, fetcher)
 }
 
 export function useOpsResponseReviewState(token: string | null, responseId: string | null) {

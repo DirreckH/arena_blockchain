@@ -18,6 +18,7 @@ import {
 import { arenaApi } from '../api/arena-api'
 import { demoBackend } from '../demo/demo-backend'
 import { useAuthSession } from '../auth/auth-session'
+import type { InternalDiscoverySecondaryCapsuleViewModel } from './internal-ops.types'
 
 type DiscoveryDataContextValue = {
   home: PublicDiscoverPageViewModel | null
@@ -27,6 +28,12 @@ type DiscoveryDataContextValue = {
   respondentLeaderboard: PublicRespondentLeaderboardViewModel | null
   categoryIndex: Map<string, PublicCategoryDirectoryIndexItemViewModel>
   categories: Map<string, PublicCategoryDirectoryViewModel>
+  /**
+   * Operator-managed secondary capsule config used by the ops/demo surface.
+   * In live mode public ranking feeds already contain the resolved categories
+   * needed by ranking pages, so this raw config remains `null` here.
+   */
+  secondaryCapsules: InternalDiscoverySecondaryCapsuleViewModel[] | null
   sourceMode: 'live' | 'demo' | 'mixed'
   isLoading: boolean
   errorMessage: string | null
@@ -52,6 +59,7 @@ export function DiscoveryDataProvider({ children }: { children: ReactNode }) {
   const [respondentLeaderboard, setRespondentLeaderboard] = useState<PublicRespondentLeaderboardViewModel | null>(null)
   const [categoryIndex, setCategoryIndex] = useState<Map<string, PublicCategoryDirectoryIndexItemViewModel>>(new Map())
   const [categories, setCategories] = useState<Map<string, PublicCategoryDirectoryViewModel>>(new Map())
+  const [secondaryCapsules, setSecondaryCapsules] = useState<InternalDiscoverySecondaryCapsuleViewModel[] | null>(null)
   const [sourceMode, setSourceMode] = useState<'live' | 'demo' | 'mixed'>('live')
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -80,6 +88,7 @@ export function DiscoveryDataProvider({ children }: { children: ReactNode }) {
             })
             .filter(isCategoryEntry),
         ))
+        setSecondaryCapsules(demoBackend.getOpsDiscoveryGlobalConfig().secondaryCapsules)
         return
       }
 
@@ -135,6 +144,9 @@ export function DiscoveryDataProvider({ children }: { children: ReactNode }) {
           .map(({ pathname, feed }) => (feed.data ? ([pathname, feed.data] as const) : null))
           .filter(isCategoryEntry),
       ))
+      // Live mode consumes resolved ranking categories from the ranking feeds,
+      // so this raw ops capsule config is only populated for demo sessions.
+      setSecondaryCapsules(null)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load discovery data')
     } finally {
@@ -154,13 +166,14 @@ export function DiscoveryDataProvider({ children }: { children: ReactNode }) {
     respondentLeaderboard,
     categoryIndex,
     categories,
+    secondaryCapsules,
     sourceMode,
     isLoading,
     errorMessage,
     refresh,
     hasCategoryPath: (pathname: string) => categoryIndex.has(pathname),
     getCategory: (pathname: string) => categories.get(pathname) ?? null,
-  }), [breaking, categories, categoryIndex, errorMessage, home, hot, isLoading, latestTopics, refresh, respondentLeaderboard, sourceMode])
+  }), [breaking, categories, categoryIndex, errorMessage, home, hot, isLoading, latestTopics, refresh, respondentLeaderboard, secondaryCapsules, sourceMode])
 
   return (
     <DiscoveryDataContext.Provider value={value}>

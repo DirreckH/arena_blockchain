@@ -46,6 +46,15 @@ const REWARD_STATUS: LabelMap = {
   reversed: '已冲正',
 }
 
+const PAYOUT_STATUS: LabelMap = {
+  requested: '待审核',
+  approved: '已审核',
+  executing: '执行中',
+  completed: '已到账',
+  failed: '失败待重试',
+  cancelled: '已取消',
+}
+
 const MARKET_STATUS: LabelMap = {
   pending: '待开盘',
   live: '交易中',
@@ -112,6 +121,7 @@ const KIND_MAPS = {
   review: REVIEW_STATUS,
   workflow: WORKFLOW_STATE,
   reward: REWARD_STATUS,
+  payout: PAYOUT_STATUS,
   market: MARKET_STATUS,
   chainMarket: CHAIN_MARKET_STATUS,
   sync: SYNC_STATUS,

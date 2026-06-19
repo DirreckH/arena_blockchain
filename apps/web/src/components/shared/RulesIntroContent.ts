@@ -57,17 +57,17 @@ export const RULES_INTRO_STEPS: RulesIntroStep[] = [
   },
   {
     title: '做出你的判断',
-    description: '进入命题后先阅读选项，再选择你支持的结果。现阶段前端只做产品壳，不接钱包、下注或提交。',
+    description: '进入命题后先阅读选项，再选择你支持的结果。连接钱包后即可提交判断或下注，并在公开后看到结算。',
     visualVariant: 'judge',
     primaryButtonLabel: '下一页',
     eyebrow: '玩法 02',
     panelTitle: '阅读选项，再做出你的判断',
-    panelNote: '你会先看到选项结构和进度信息，而不是交易型字段。',
-    chips: ['阅读选项', '选择结果', '产品壳阶段'],
+    panelNote: '你会先看到选项结构和进度信息，而不是会提前暴露方向的交易型字段。',
+    chips: ['阅读选项', '选择结果', '连接钱包提交'],
     metrics: [
-      { label: '当前阶段', value: '未接钱包' },
-      { label: '当前阶段', value: '未接下注' },
-      { label: '当前阶段', value: '未接提交' },
+      { label: '判断方式', value: '选择结果' },
+      { label: '参与前提', value: '连接钱包' },
+      { label: '提交后', value: '等待公开' },
     ],
   },
   {
@@ -77,7 +77,7 @@ export const RULES_INTRO_STEPS: RulesIntroStep[] = [
     primaryButtonLabel: '下一页',
     eyebrow: '玩法 03',
     panelTitle: '公开前保持信息边界',
-    panelNote: 'Arena 当前前端只保留玩法判断所需的公开字段，不提前暴露趋势。',
+    panelNote: 'Arena 公开前只保留玩法判断所需的公开字段，不提前暴露趋势。',
     chips: visibleHighlights,
     metrics: [
       { label: '隐藏字段', value: hiddenHighlights[0] },

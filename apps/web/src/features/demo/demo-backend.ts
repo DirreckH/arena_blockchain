@@ -70,6 +70,17 @@ import type {
   RequesterOwnedSettledPropositionReportRecord,
   UpdateRequesterComparisonSetDeliveryPolicyInputRecord,
 } from '../api/arena-api'
+import type {
+  InternalDiscoveryCategoryConfigInput,
+  InternalDiscoveryCategoryConfigSummaryViewModel,
+  InternalDiscoveryCategoryConfigViewModel,
+  InternalDiscoveryCategoryPageState,
+  InternalDiscoveryGlobalCategoryConfigViewModel,
+  InternalDiscoveryGlobalConfigInput,
+  InternalDiscoveryGlobalConfigViewModel,
+  InternalDiscoverySecondaryCapsuleViewModel,
+  InternalDiscoverySidebarItemInput,
+} from '../arena/internal-ops.types'
 import { CATEGORY_DIRECTORY_CONFIGS, getCategoryDirectoryConfig } from '../../mocks/category-directory.mock'
 import { DISCOVER_PAGE_SECTION_PATHS } from '../../mocks/discover-page.mock'
 import { LATEST_TOPIC_ITEMS } from '../../mocks/latest-page.mock'
@@ -98,12 +109,29 @@ type DemoState = {
   exports: RespondentAccountExportListViewModel
   latestExport: RespondentAccountExportArtifactViewModel | null
   discussionThreads: Record<string, ArenaDiscussionThreadViewModel>
+  discoveryGlobalConfig: InternalDiscoveryGlobalConfigViewModel
+  discoveryCategoryConfigs: Record<string, InternalDiscoveryCategoryConfigInput>
 }
 
 const DEMO_USER_ID = 'demo-user'
 const DEMO_CHAIN_ID = 31337
 const DEMO_NOW = '2026-05-08T09:30:00.000Z'
 const DEMO_CLOSING_SOON_URGENT_WINDOW_MS = 3 * 60 * 60 * 1000
+const DEMO_DISCOVERY_RANKING_CATEGORY_ORDER = ['all', 'general', 'politics', 'sports', 'tech', 'research', 'culture'] as const
+
+const DEMO_CUSTOM_DIRECTORY_PATHNAME_PREFIX = '/zh/c/'
+const DEMO_CUSTOM_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,31}$/
+const DEMO_RESERVED_CUSTOM_SLUGS = new Set([
+  'ops', 'admin', 'api', 'auth', 'event', 'events', 'markets', 'results',
+  'rewards', 'watchlist', 'drafts', 'submissions', 'leaderboard', 'docs',
+  'help', 'contact', 'predictions', 'categories', 'pages', 'menu', 'language',
+  'share', 'breaking', 'hot', 'new', 'latest', 'adjudication', 'challenges',
+  'accuracy', 'market-integrity', 'activity', 'dev', 'c',
+])
+
+function buildDemoCustomDirectoryPathname(slug: string): string {
+  return `${DEMO_CUSTOM_DIRECTORY_PATHNAME_PREFIX}${slug}`
+}
 
 const demoCategoryDirectoryIndexItems: PublicCategoryDirectoryIndexViewModel['items'] = Object.entries(
   CATEGORY_DIRECTORY_CONFIGS,
@@ -149,6 +177,48 @@ const demoCategoryDirectoryIndexItems: PublicCategoryDirectoryIndexViewModel['it
                         : '周期更新与上期结果归档',
 }))
 
+const DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG: InternalDiscoveryGlobalConfigViewModel = {
+  categories: demoCategoryDirectoryIndexItems.map((item, index) => ({
+    slug: item.slug,
+    pathname: item.pathname,
+    label: item.label,
+    title: item.title,
+    directoryLabel: item.directoryLabel,
+    description: item.description,
+    displayOrder: index,
+    pageState: 'visible',
+    kind: 'system',
+    marketIdWhitelist: [],
+    invalidMarketIds: [],
+  })),
+  rankingCategoryLabels: {
+    all: '全部',
+    general: '综合',
+    politics: '政策',
+    sports: '体育',
+    tech: '科技',
+    research: '研究',
+    culture: '文化',
+  },
+  secondaryCapsules: DEMO_DISCOVERY_RANKING_CATEGORY_ORDER.map((id, index) => ({
+    id,
+    label:
+      id === 'all' ? '全部'
+        : id === 'general' ? '综合'
+          : id === 'politics' ? '政策'
+            : id === 'sports' ? '体育'
+              : id === 'tech' ? '科技'
+                : id === 'research' ? '研究'
+                  : '文化',
+    displayOrder: index,
+    pageState: 'visible',
+    kind: 'system',
+    baseRankingId: id,
+    marketIdWhitelist: [],
+    invalidMarketIds: [],
+  })),
+}
+
 function plusHours(hours: number) {
   return new Date(Date.parse(DEMO_NOW) + hours * 60 * 60 * 1000).toISOString()
 }
@@ -185,6 +255,349 @@ function toCategory(categoryHref: string): PropositionCategory {
     case '/zh/weather':
     case '/zh/surveys':
     case '/zh/economy':
+    default:
+      return 'general'
+  }
+}
+
+function normalizeDemoText(value: string | undefined, fallback: string) {
+  const trimmed = value?.trim()
+  return trimmed && trimmed.length > 0 ? trimmed : fallback
+}
+
+function normalizeDemoPageState(
+  value: string | undefined,
+  fallback: InternalDiscoveryCategoryPageState = 'visible',
+): InternalDiscoveryCategoryPageState {
+  return value === 'hidden' || value === 'deleted' || value === 'visible'
+    ? value
+    : fallback
+}
+
+function dedupeDemoStrings(values: string[]) {
+  return [...new Set(values)]
+}
+
+function getDemoDiscoveryGlobalConfigState() {
+  return demoState.discoveryGlobalConfig
+}
+
+function isDemoSystemSlug(slug: string): boolean {
+  return DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.categories.some((item) => item.slug === slug)
+}
+
+function getDemoDiscoveryCategoryMeta(slug: string) {
+  return getDemoDiscoveryGlobalConfigState().categories.find((item) => item.slug === slug) ?? null
+}
+
+function getDemoDiscoveryCategoriesSorted() {
+  return [...getDemoDiscoveryGlobalConfigState().categories].sort((left, right) => {
+    const orderDelta = left.displayOrder - right.displayOrder
+    if (orderDelta !== 0) {
+      return orderDelta
+    }
+
+      const leftSystemIndex = DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.categories.findIndex((item) => item.slug === left.slug)
+      const rightSystemIndex = DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.categories.findIndex((item) => item.slug === right.slug)
+      // System slugs come first (preserved by their default index); custom slugs (-1) sort after.
+      const leftRank = leftSystemIndex >= 0 ? leftSystemIndex : Number.MAX_SAFE_INTEGER
+      const rightRank = rightSystemIndex >= 0 ? rightSystemIndex : Number.MAX_SAFE_INTEGER
+      return leftRank - rightRank
+  })
+}
+
+function getDemoVisibleDiscoveryCategoriesSorted() {
+  return getDemoDiscoveryCategoriesSorted().filter((item) => item.pageState === 'visible')
+}
+
+function isValidDemoCustomSlug(slug: string): boolean {
+  return (
+    DEMO_CUSTOM_SLUG_PATTERN.test(slug)
+    && !isDemoSystemSlug(slug)
+    && !DEMO_RESERVED_CUSTOM_SLUGS.has(slug)
+  )
+}
+
+function buildInvalidDemoMarketIds(marketIds: string[]): string[] {
+  const validIds = new Set(demoState.markets.map((market) => market.marketId))
+  return marketIds.filter((marketId) => !validIds.has(marketId))
+}
+
+function normalizeDemoDiscoveryGlobalConfig(
+  input: InternalDiscoveryGlobalConfigInput,
+): InternalDiscoveryGlobalConfigViewModel {
+  // System categories: preserve metadata but allow operator overrides.
+  const systemCategories: InternalDiscoveryGlobalCategoryConfigViewModel[]
+    = DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.categories.map((defaultCategory) => {
+      const override = input.categories.find((item) => item.slug === defaultCategory.slug)
+      return {
+        ...defaultCategory,
+        label: normalizeDemoText(override?.label, defaultCategory.label),
+        title: normalizeDemoText(override?.title, defaultCategory.title),
+        directoryLabel: normalizeDemoText(override?.directoryLabel, defaultCategory.directoryLabel),
+        description: normalizeDemoText(override?.description, defaultCategory.description),
+        displayOrder: typeof override?.displayOrder === 'number' ? override.displayOrder : defaultCategory.displayOrder,
+        pageState: normalizeDemoPageState(override?.pageState, defaultCategory.pageState),
+        kind: 'system',
+        marketIdWhitelist: [],
+        invalidMarketIds: [],
+      }
+    })
+
+  // Custom categories: any slug not in the system list. Validate slug format
+  // and skip duplicates / reserved.
+  const seenCustomSlugs = new Set<string>()
+  const customCategories: InternalDiscoveryGlobalCategoryConfigViewModel[] = []
+  for (const entry of input.categories) {
+    if (isDemoSystemSlug(entry.slug)) {
+      continue
+    }
+
+    const slug = entry.slug.trim()
+    if (!isValidDemoCustomSlug(slug) || seenCustomSlugs.has(slug)) {
+      continue
+    }
+    seenCustomSlugs.add(slug)
+
+    const label = normalizeDemoText(entry.label, slug)
+    const marketIdWhitelist = dedupeDemoStrings(
+      (entry.marketIdWhitelist ?? []).map((id) => id.trim()).filter((id) => id.length > 0),
+    )
+
+    customCategories.push({
+      slug,
+      pathname: buildDemoCustomDirectoryPathname(slug),
+      label,
+      title: normalizeDemoText(entry.title, label),
+      directoryLabel: normalizeDemoText(entry.directoryLabel, label),
+      description: normalizeDemoText(entry.description, ''),
+      displayOrder: typeof entry.displayOrder === 'number' ? entry.displayOrder : DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.categories.length + customCategories.length,
+      pageState: normalizeDemoPageState(entry.pageState, 'visible'),
+      kind: 'custom',
+      marketIdWhitelist,
+      invalidMarketIds: buildInvalidDemoMarketIds(marketIdWhitelist),
+    })
+  }
+
+  const categories = [...systemCategories, ...customCategories].sort((left, right) => {
+    const orderDelta = left.displayOrder - right.displayOrder
+    if (orderDelta !== 0) {
+      return orderDelta
+    }
+
+    const leftSystemIndex = DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.categories.findIndex((item) => item.slug === left.slug)
+    const rightSystemIndex = DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.categories.findIndex((item) => item.slug === right.slug)
+    const leftRank = leftSystemIndex >= 0 ? leftSystemIndex : Number.MAX_SAFE_INTEGER
+    const rightRank = rightSystemIndex >= 0 ? rightSystemIndex : Number.MAX_SAFE_INTEGER
+    return leftRank - rightRank
+  })
+
+  const rankingCategoryLabels = Object.fromEntries(
+    DEMO_DISCOVERY_RANKING_CATEGORY_ORDER.map((categoryId) => [
+      categoryId,
+      normalizeDemoText(
+        input.rankingCategoryLabels[categoryId],
+        DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.rankingCategoryLabels[categoryId],
+      ),
+    ]),
+  ) as InternalDiscoveryGlobalConfigViewModel['rankingCategoryLabels']
+
+  // Secondary capsules: keep system entries (id matches a base ranking id) intact
+  // for label/order/state changes; custom entries (id starts with `cap-`) carry
+  // marketIdWhitelist + label.
+  const inputCapsules = input.secondaryCapsules ?? []
+  const systemCapsules: InternalDiscoverySecondaryCapsuleViewModel[]
+    = DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.secondaryCapsules.map((defaultCapsule) => {
+      const override = inputCapsules.find((item) => item.id === defaultCapsule.id)
+      // Fallback chain: explicit secondaryCapsules.label → rankingCategoryLabels →
+      // default capsule label. This keeps callers that only update
+      // rankingCategoryLabels (e.g. legacy ops payloads) reflected on the
+      // capsule strip without forcing them to mirror data into both fields.
+      const baseId = defaultCapsule.baseRankingId
+      const rankingFallback = baseId ? rankingCategoryLabels[baseId] : defaultCapsule.label
+      return {
+        ...defaultCapsule,
+        label: normalizeDemoText(override?.label, rankingFallback),
+        displayOrder: typeof override?.displayOrder === 'number' ? override.displayOrder : defaultCapsule.displayOrder,
+        // System capsules cannot transition to 'deleted' to keep ranking filtering coherent.
+        pageState: normalizeDemoPageState(override?.pageState === 'deleted' ? 'hidden' : override?.pageState, defaultCapsule.pageState),
+      }
+    })
+
+  const seenCustomCapsuleIds = new Set<string>()
+  const customCapsules: InternalDiscoverySecondaryCapsuleViewModel[] = []
+  for (const entry of inputCapsules) {
+    if (DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.secondaryCapsules.some((item) => item.id === entry.id)) {
+      continue
+    }
+
+    const id = entry.id.trim()
+    if (id.length === 0 || seenCustomCapsuleIds.has(id)) {
+      continue
+    }
+    seenCustomCapsuleIds.add(id)
+
+    const marketIdWhitelist = dedupeDemoStrings(
+      (entry.marketIdWhitelist ?? []).map((marketId) => marketId.trim()).filter((marketId) => marketId.length > 0),
+    )
+
+    customCapsules.push({
+      id,
+      label: normalizeDemoText(entry.label, id),
+      displayOrder: typeof entry.displayOrder === 'number' ? entry.displayOrder : DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG.secondaryCapsules.length + customCapsules.length,
+      pageState: normalizeDemoPageState(entry.pageState, 'visible'),
+      kind: 'custom',
+      baseRankingId: null,
+      marketIdWhitelist,
+      invalidMarketIds: buildInvalidDemoMarketIds(marketIdWhitelist),
+    })
+  }
+
+  const secondaryCapsules = [...systemCapsules, ...customCapsules].sort((left, right) => left.displayOrder - right.displayOrder)
+
+  return {
+    categories,
+    rankingCategoryLabels,
+    secondaryCapsules,
+  }
+}
+
+function getDemoCategoryPublicMarketIdsBySlug(slug: string) {
+  const meta = getDemoDiscoveryCategoryMeta(slug)
+  if (!meta) {
+    return []
+  }
+
+  if (meta.kind === 'custom') {
+    return meta.marketIdWhitelist
+  }
+
+  return getCategoryDirectoryConfig(meta.pathname)?.marketIds ?? []
+}
+
+function getDemoAvailableCategoryMarkets(slug: string) {
+  const marketIdSet = new Set(getDemoCategoryPublicMarketIdsBySlug(slug))
+  return demoState.markets
+    .filter((market) => marketIdSet.has(market.marketId))
+    .map((market) => ({
+      marketId: market.marketId,
+      title: market.title,
+    }))
+}
+
+function normalizeDemoCategoryConfigInput(
+  input: InternalDiscoveryCategoryConfigInput,
+): InternalDiscoveryCategoryConfigInput {
+  return {
+    sidebarItems: input.sidebarItems
+      .map((item, index) => {
+        const label = item.label.trim()
+        if (label.length === 0) {
+          return null
+        }
+
+        return {
+          id: item.id.trim() || `sidebar-item-${index + 1}`,
+          label,
+          linkedMarketIds: dedupeDemoStrings(
+            item.linkedMarketIds.map((marketId) => marketId.trim()).filter((marketId) => marketId.length > 0),
+          ),
+        }
+      })
+      .filter((item): item is InternalDiscoverySidebarItemInput => Boolean(item)),
+  }
+}
+
+function resolveDemoSidebarItems(
+  slug: string,
+  items: InternalDiscoverySidebarItemInput[],
+) {
+  const validMarketIds = new Set(getDemoCategoryPublicMarketIdsBySlug(slug))
+  return items.map((item) => {
+    const linkedMarketIds = dedupeDemoStrings(item.linkedMarketIds)
+    const invalidLinkedMarketIds = linkedMarketIds.filter((marketId) => !validMarketIds.has(marketId))
+    return {
+      id: item.id,
+      label: item.label,
+      linkedMarketIds,
+      resolvedLinkedMarketCount: linkedMarketIds.filter((marketId) => validMarketIds.has(marketId)).length,
+      invalidLinkedMarketIds,
+    }
+  })
+}
+
+function getDemoDiscoveryCategoryConfigInput(slug: string) {
+  return demoState.discoveryCategoryConfigs[slug] ?? { sidebarItems: [] }
+}
+
+function buildDemoDiscoveryCategoryWarnings(slug: string) {
+  return resolveDemoSidebarItems(slug, getDemoDiscoveryCategoryConfigInput(slug).sidebarItems)
+    .filter((item) => item.invalidLinkedMarketIds.length > 0)
+    .map((item) => `词条“${item.label}”存在 ${item.invalidLinkedMarketIds.length} 个失效或跨分类市场绑定。`)
+}
+
+function buildDemoDiscoveryCategoryConfigViewModel(
+  slug: string,
+): InternalDiscoveryCategoryConfigViewModel {
+  const meta = getDemoDiscoveryCategoryMeta(slug)
+  if (!meta) {
+    throw new Error(`Unknown demo discovery category: ${slug}`)
+  }
+
+  const input = getDemoDiscoveryCategoryConfigInput(slug)
+
+  return {
+    slug: meta.slug,
+    pathname: meta.pathname,
+    label: meta.label,
+    title: meta.title,
+    directoryLabel: meta.directoryLabel,
+    description: meta.description,
+    configured: slug in demoState.discoveryCategoryConfigs,
+    pageState: meta.pageState,
+    kind: meta.kind,
+    availableMarkets: getDemoAvailableCategoryMarkets(slug),
+    sidebarItems: resolveDemoSidebarItems(slug, input.sidebarItems),
+    warnings: buildDemoDiscoveryCategoryWarnings(slug),
+  }
+}
+
+function buildDemoDiscoveryCategorySummaryList(): InternalDiscoveryCategoryConfigSummaryViewModel[] {
+  return getDemoDiscoveryCategoriesSorted().map((item) => ({
+    slug: item.slug,
+    pathname: item.pathname,
+    label: item.label,
+    title: item.title,
+    directoryLabel: item.directoryLabel,
+    description: item.description,
+    sidebarItemCount: getDemoDiscoveryCategoryConfigInput(item.slug).sidebarItems.length,
+    configured: item.slug in demoState.discoveryCategoryConfigs,
+    pageState: item.pageState,
+    kind: item.kind,
+  }))
+}
+
+function hasDemoDiscoveryConfigOverrides() {
+  return JSON.stringify(demoState.discoveryGlobalConfig) !== JSON.stringify(DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG)
+    || Object.keys(demoState.discoveryCategoryConfigs).length > 0
+}
+
+function mapDemoRankingCategoryId(categoryId: string) {
+  switch (categoryId) {
+    case 'all':
+      return 'all'
+    case 'politics':
+      return 'politics'
+    case 'sports':
+      return 'sports'
+    case 'tech':
+      return 'tech'
+    case 'culture':
+      return 'culture'
+    case 'crypto':
+      return 'tech'
+    case 'finance':
+    case 'global':
     default:
       return 'general'
   }
@@ -346,7 +759,7 @@ function buildDemoDrafts(): PropositionDraftRecord[] {
       optionA: '会更偏好该组合',
       optionB: '不会形成明显偏好',
       category: 'ai',
-      sampleConstraints: ['Developers', 'Workflow', 'AI Tools'],
+      sampleConstraints: ['experienced_user', 'interested_in_ai'],
       minEffectiveSample: 6,
       minBetAmount: '10',
       minDurationSeconds: 7200,
@@ -368,7 +781,7 @@ function buildDemoDrafts(): PropositionDraftRecord[] {
       optionA: 'Will continue improving',
       optionB: 'Will not continue improving',
       category: 'politics',
-      sampleConstraints: ['Policy', 'Public Service', 'Survey'],
+      sampleConstraints: ['experienced_user', 'interested_in_politics'],
       minEffectiveSample: 10,
       minBetAmount: '10',
       minDurationSeconds: 7200,
@@ -389,7 +802,7 @@ function buildDemoDrafts(): PropositionDraftRecord[] {
       optionA: 'Perplexity 更适合',
       optionB: 'ChatGPT Search 更适合',
       category: 'ai',
-      sampleConstraints: ['AI', 'Search', 'Research'],
+      sampleConstraints: ['wallet_signed', 'interested_in_ai'],
       minEffectiveSample: 5,
       minBetAmount: '10',
       minDurationSeconds: 3600,
@@ -410,7 +823,7 @@ function buildDemoDrafts(): PropositionDraftRecord[] {
       optionA: '会继续改善',
       optionB: '不会继续改善',
       category: 'politics',
-      sampleConstraints: ['Policy', 'Survey'],
+      sampleConstraints: ['wallet_signed', 'interested_in_politics'],
       minEffectiveSample: 4,
       minBetAmount: '10',
       minDurationSeconds: 7200,
@@ -446,6 +859,14 @@ function buildDemoRewards(): RespondentRewardLedgerViewModel[] {
       reversedAt: null,
       ledgerVersion: 1,
       reviewStatus: 'valid',
+      payoutStatus: 'completed',
+      payoutMethod: 'wallet_transfer',
+      payoutAmount: '42',
+      payoutAssetSymbol: 'USDC',
+      payoutDestinationAddress: '0xRewardDemo000000000000000000000000000001',
+      payoutRequestedAt: minusDays(2),
+      payoutCompletedAt: minusDays(2),
+      payoutFailureReason: null,
     },
     {
       ledgerId: 'reward-demo-2',
@@ -464,13 +885,20 @@ function buildDemoRewards(): RespondentRewardLedgerViewModel[] {
       reversedAt: null,
       ledgerVersion: 1,
       reviewStatus: 'pending_review',
+      payoutStatus: null,
+      payoutMethod: null,
+      payoutAmount: null,
+      payoutAssetSymbol: null,
+      payoutDestinationAddress: null,
+      payoutRequestedAt: null,
+      payoutCompletedAt: null,
+      payoutFailureReason: null,
     },
   ]
 }
 
 function buildDemoReputation(): RespondentReputationSummaryViewModel {
   return {
-    userId: DEMO_USER_ID,
     reputationScore: 82,
     reputationLevel: 'trusted',
     metrics: {
@@ -488,7 +916,6 @@ function buildDemoReputation(): RespondentReputationSummaryViewModel {
 
 function buildDemoTags(): RespondentTagSummaryViewModel {
   return {
-    userId: DEMO_USER_ID,
     tags: [
       {
         tagKey: 'ai_research',
@@ -508,9 +935,7 @@ function buildDemoTags(): RespondentTagSummaryViewModel {
 
 function buildDemoResultOverview(markets: ValidationMarketViewModel[]): RespondentResultOverviewViewModel {
   return {
-    userId: DEMO_USER_ID,
     settledResults: {
-      userId: DEMO_USER_ID,
       totals: {
         settledCount: 2,
         resolvedCount: 2,
@@ -714,7 +1139,6 @@ function buildDemoOverview(markets: ValidationMarketViewModel[], rewards: Respon
   }
 
   return {
-    userId: DEMO_USER_ID,
     rewards,
     rewardSummary,
     reputation: buildDemoReputation(),
@@ -725,7 +1149,6 @@ function buildDemoOverview(markets: ValidationMarketViewModel[], rewards: Respon
 
 function buildDemoPreferences(): RespondentAccountPreferencesViewModel {
   return {
-    userId: DEMO_USER_ID,
     ...structuredClone(DEFAULT_RESPONDENT_ACCOUNT_PREFERENCES),
     wallet: {
       ...structuredClone(DEFAULT_RESPONDENT_ACCOUNT_PREFERENCES.wallet),
@@ -754,7 +1177,6 @@ function buildDemoWatchlist(markets: ValidationMarketViewModel[]): RespondentWat
     }))
 
   return {
-    userId: DEMO_USER_ID,
     totalCount: items.length,
     items,
   }
@@ -1059,12 +1481,10 @@ function buildDemoTasks(markets: ValidationMarketViewModel[]): AdjudicationTaskV
 
 function buildDemoExports(): RespondentAccountExportListViewModel {
   return {
-    userId: DEMO_USER_ID,
     totalCount: 1,
     items: [
       {
         exportId: 'demo-export-1',
-        userId: DEMO_USER_ID,
         status: 'completed',
         format: 'json',
         period: '30d',
@@ -1092,7 +1512,6 @@ function buildDemoExportArtifact(
 
   return {
     exportId: latest.exportId,
-    userId: DEMO_USER_ID,
     status: latest.status,
     format: latest.format,
     period: latest.period,
@@ -1114,31 +1533,77 @@ function buildDemoExportArtifact(
 }
 
 function buildDemoDiscoveryHome(markets: ValidationMarketViewModel[]): PublicDiscoverPageViewModel {
-  return {
-    featuredMarketIds: ['public-trust', 'ai-model-review'],
-    sections: DISCOVER_PAGE_SECTION_PATHS.map((pathname) => {
+  const categorySections = getDemoVisibleDiscoveryCategoriesSorted().map((category) => ({
+    href: category.pathname,
+    label: category.label,
+    marketIds: getCategoryDirectoryConfig(category.pathname)?.marketIds ?? [],
+    moreHref: category.pathname,
+  }))
+  const topSections: PublicDiscoverPageViewModel['sections'] = DISCOVER_PAGE_SECTION_PATHS
+    .filter((pathname) => pathname === '/zh' || pathname === '/zh/breaking' || pathname === '/zh/new')
+    .map((pathname) => {
       const navItem = navItems.find((item) => item.href === pathname)
       const config = pathname === '/zh'
         ? { marketIds: HOT_PAGE_CONFIG.items.map((item) => item.href.replace('/zh/event/', '')).slice(0, 4), moreHref: '/zh/markets' }
         : pathname === '/zh/breaking'
           ? { marketIds: BREAKING_PAGE_CONFIG.items.map((item) => item.href.replace('/zh/event/', '')).slice(0, 4), moreHref: '/zh/breaking' }
-          : getCategoryDirectoryConfig(pathname)
-            ? { marketIds: getCategoryDirectoryConfig(pathname)!.marketIds, moreHref: pathname }
+          : pathname === '/zh/new'
+            ? { marketIds: markets.map((market) => market.marketId), moreHref: '/zh/new' }
             : { marketIds: markets.slice(0, 4).map((market) => market.marketId), moreHref: '/zh/markets' }
 
       return {
-        id: pathname,
         label: navItem?.label ?? pathname,
         href: pathname,
         marketIds: config.marketIds,
         moreHref: config.moreHref,
       }
-    }),
+    })
+
+  return {
+    featuredMarketIds: ['public-trust', 'ai-model-review'],
+    sections: [...topSections, ...categorySections],
   }
 }
 
 function buildDemoRanking(kind: 'hot' | 'breaking'): PublicDiscoveryRankingViewModel {
   const config = kind === 'hot' ? HOT_PAGE_CONFIG : BREAKING_PAGE_CONFIG
+  const globalConfig = getDemoDiscoveryGlobalConfigState()
+  const rankingLabels = globalConfig.rankingCategoryLabels
+  const validRankingMarketIds = new Set(config.items.map((item) => item.id))
+
+  // Build categories from server-driven secondary capsules. Visible capsules only.
+  // System capsules: derive from base ranking ids (existing categoryId-based filter).
+  // Custom capsules: include explicit marketIds for the page to filter by intersection.
+  const visibleCapsules = [...globalConfig.secondaryCapsules]
+    .filter((capsule) => capsule.pageState === 'visible')
+    .sort((left, right) => left.displayOrder - right.displayOrder)
+
+  const categories = visibleCapsules
+    .map((capsule) => {
+      if (capsule.kind === 'custom') {
+        const marketIds = capsule.marketIdWhitelist.filter((marketId) => validRankingMarketIds.has(marketId))
+        return {
+          id: capsule.id,
+          label: capsule.label,
+          marketIds,
+        }
+      }
+
+      // System capsule: only include when at least one item maps into its base ranking id
+      // (or it is the special 'all' bucket).
+      const baseId = capsule.baseRankingId
+      if (!baseId) {
+        return null
+      }
+      if (baseId !== 'all' && !config.items.some((item) => item.categoryIds.some((itemCategoryId) => mapDemoRankingCategoryId(itemCategoryId) === baseId))) {
+        return null
+      }
+      return {
+        id: baseId,
+        label: capsule.label || rankingLabels[baseId],
+      }
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 
   return {
     pageClassName: config.pageClassName,
@@ -1148,10 +1613,7 @@ function buildDemoRanking(kind: 'hot' | 'breaking'): PublicDiscoveryRankingViewM
     description: config.description,
     categoryAriaLabel: config.categoryAriaLabel,
     listAriaLabel: config.listAriaLabel,
-    categories: config.categories.map((category) => ({
-      id: category.id,
-      label: category.label,
-    })),
+    categories,
     items: config.items.map((item, index) => ({
       id: item.id,
       href: item.href,
@@ -1165,7 +1627,7 @@ function buildDemoRanking(kind: 'hot' | 'breaking'): PublicDiscoveryRankingViewM
       tileTone: item.tileTone ?? null,
       sparkline: item.sparkline,
       isVerified: item.isVerified ?? false,
-      categoryIds: item.categoryIds,
+      categoryIds: dedupeDemoStrings(item.categoryIds.map(mapDemoRankingCategoryId).filter((categoryId) => categoryId !== 'all')),
     })),
   }
 }
@@ -1225,32 +1687,65 @@ function buildDemoClosingSoon(markets: ValidationMarketViewModel[]): PublicClosi
 }
 
 function buildDemoCategoryDirectory(slug: string): PublicCategoryDirectoryViewModel | null {
-  const pathname = demoCategoryDirectoryIndexItems.find((item) => item.slug === slug)?.pathname
+  const meta = getDemoDiscoveryCategoryMeta(slug)
 
-  if (!pathname) {
+  if (!meta || meta.pageState !== 'visible') {
     return null
   }
 
-  const config = getCategoryDirectoryConfig(pathname)
+  const validMarketIds = new Set(getDemoCategoryPublicMarketIdsBySlug(slug))
+
+  // Custom directories: marketIds come straight from the whitelist; no
+  // category-directory-mock fallback because there is no static mock.
+  if (meta.kind === 'custom') {
+    const marketIds = meta.marketIdWhitelist.filter((marketId) => validMarketIds.has(marketId))
+    const sidebarItems = slug in demoState.discoveryCategoryConfigs
+      ? resolveDemoSidebarItems(slug, getDemoDiscoveryCategoryConfigInput(slug).sidebarItems).map((item) => ({
+          label: item.label,
+          count: String(item.resolvedLinkedMarketCount),
+          marketIds: item.linkedMarketIds.filter((marketId) => validMarketIds.has(marketId)),
+        }))
+      : []
+
+    return {
+      title: meta.title,
+      featuredMarketId: marketIds[0] ?? null,
+      marketIds,
+      sidebarItems,
+    }
+  }
+
+  const config = getCategoryDirectoryConfig(meta.pathname)
   if (!config) {
     return null
   }
 
   return {
-    title: config.title,
+    title: meta.title ?? config.title,
     featuredMarketId: config.featuredMarketId,
     marketIds: config.marketIds,
-    sidebarItems: config.sidebarItems.map((item) => ({
-      label: item.label,
-      count: item.count,
-    })),
+    sidebarItems: slug in demoState.discoveryCategoryConfigs
+      ? resolveDemoSidebarItems(slug, getDemoDiscoveryCategoryConfigInput(slug).sidebarItems).map((item) => ({
+          label: item.label,
+          count: String(item.resolvedLinkedMarketCount),
+          marketIds: item.linkedMarketIds.filter((marketId) => validMarketIds.has(marketId)),
+        }))
+      : config.sidebarItems.map((item) => ({
+          label: item.label,
+          count: item.count,
+        })),
   }
 }
 
 function buildDemoCategoryDirectoryIndex(): PublicCategoryDirectoryIndexViewModel {
   return {
-    items: demoCategoryDirectoryIndexItems.map((item) => ({
-      ...item,
+    items: getDemoVisibleDiscoveryCategoriesSorted().map((item) => ({
+      slug: item.slug,
+      pathname: item.pathname,
+      label: item.label,
+      title: item.title,
+      directoryLabel: item.directoryLabel,
+      description: item.description,
     })),
   }
 }
@@ -1277,7 +1772,6 @@ function createInitialState(): DemoState {
           id: comment.id,
           marketId: market.marketId,
           propositionId: market.propositionId,
-          userId: DEMO_USER_ID,
           author: comment.author,
           handle: comment.handle,
           tone: comment.tone,
@@ -1327,6 +1821,8 @@ function createInitialState(): DemoState {
     exports,
     latestExport,
     discussionThreads,
+    discoveryGlobalConfig: structuredClone(DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG),
+    discoveryCategoryConfigs: {},
   }
 }
 
@@ -1372,7 +1868,6 @@ function buildRequesterOverview(
     }))
 
   return {
-    userId: DEMO_USER_ID,
     totals: {
       totalCount: drafts.length,
       draftCount: drafts.filter((draft) => draft.submissionStatus === 'draft').length,
@@ -1592,8 +2087,6 @@ function buildDemoSubmissionDetail(
       maxDurationSeconds: draft.maxDurationSeconds,
       rewardBudget: draft.rewardBudget,
       baseResponseReward: draft.baseResponseReward,
-      createdByUserId: DEMO_USER_ID,
-      updatedByUserId: DEMO_USER_ID,
       createdAt: draft.createdAt,
       updatedAt: draft.updatedAt,
       publishedAt: isSettled ? minusDays(10) : null,
@@ -1607,7 +2100,6 @@ function buildDemoSubmissionDetail(
     submission: {
       status: draft.submissionStatus as RequesterOwnedPropositionDetailRecord['submission']['status'],
       submittedAt: draft.submittedAt,
-      submittedByUserId: DEMO_USER_ID,
       submissionReason: isSettled ? 'demo_approved_and_settled' : 'demo_review_queue',
       submissionNote: isSettled
         ? 'Seeded demo proposition already completed requester review and settlement.'
@@ -1746,7 +2238,6 @@ function buildDemoSettledRequesterReport(
       maxDurationSeconds: detail.proposition.maxDurationSeconds,
       rewardBudget: detail.proposition.rewardBudget,
       baseResponseReward: detail.proposition.baseResponseReward,
-      createdByUserId: detail.proposition.createdByUserId,
       createdAt: detail.proposition.createdAt,
       publishedAt: detail.proposition.publishedAt,
       liveAt: detail.proposition.liveAt,
@@ -1829,7 +2320,6 @@ function buildDemoRequesterExport(
     },
   ] satisfies RequesterOwnedPropositionAnalyticsViewModel['categoryHistory']
   const analytics: RequesterOwnedPropositionAnalyticsViewModel = {
-    userId: DEMO_USER_ID,
     windowDays: 30,
     now: requestedAt,
     windowStartedAt: minusDays(30),
@@ -1890,7 +2380,6 @@ function buildDemoRequesterExport(
 
   return {
     exportId,
-    userId: DEMO_USER_ID,
     status: 'completed',
     format,
     requestedAt,
@@ -1931,7 +2420,6 @@ function buildDemoRequesterExport(
             content: JSON.stringify(
               {
                 exportId,
-                userId: DEMO_USER_ID,
                 status: 'completed',
                 format,
                 requestedAt,
@@ -1955,12 +2443,10 @@ function buildDemoRequesterExport(
 
 function buildDemoRequesterComparisonSets(): RequesterComparisonSetListRecord {
   return {
-    userId: DEMO_USER_ID,
     totalCount: 1,
     items: [
       {
         comparisonSetId: 'comparison-set-demo-core',
-        userId: DEMO_USER_ID,
         name: 'Core requester mix',
         description: 'Saved comparison between settled and unresolved requester cohorts.',
         presetIds: ['preset-demo-settled', 'preset-demo-unresolved'],
@@ -1974,7 +2460,6 @@ function buildDemoRequesterComparisonDeliveryPolicies(): RequesterComparisonSetD
   return [
     {
       policyId: 'delivery-policy-demo-daily',
-      userId: DEMO_USER_ID,
       comparisonSetId: 'comparison-set-demo-core',
       name: 'Daily settled delivery',
       description: 'Materialize a reusable requester comparison export on a daily cadence.',
@@ -2000,7 +2485,6 @@ function buildDemoRequesterComparisonDeliveryRuns(): RequesterComparisonSetDeliv
   return [
     {
       runId: 'delivery-run-demo-failed',
-      userId: DEMO_USER_ID,
       comparisonSetId: 'comparison-set-demo-core',
       policyId: 'delivery-policy-demo-daily',
       retriedRunId: null,
@@ -2023,7 +2507,6 @@ function buildDemoRequesterComparisonDeliveryRuns(): RequesterComparisonSetDeliv
     },
     {
       runId: 'delivery-run-demo-latest',
-      userId: DEMO_USER_ID,
       comparisonSetId: 'comparison-set-demo-core',
       policyId: 'delivery-policy-demo-daily',
       retriedRunId: null,
@@ -2085,7 +2568,6 @@ function buildDemoRequesterComparisonAnalytics(
   }
 
   const settledAnalytics: RequesterOwnedPropositionAnalyticsViewModel = {
-    userId: DEMO_USER_ID,
     windowDays: 30,
     now: DEMO_NOW,
     windowStartedAt: minusDays(30),
@@ -2145,7 +2627,6 @@ function buildDemoRequesterComparisonAnalytics(
   }
 
   const unresolvedAnalytics: RequesterOwnedPropositionAnalyticsViewModel = {
-    userId: DEMO_USER_ID,
     windowDays: 30,
     now: DEMO_NOW,
     windowStartedAt: minusDays(30),
@@ -2205,7 +2686,6 @@ function buildDemoRequesterComparisonAnalytics(
   }
 
   return {
-    userId: DEMO_USER_ID,
     totalCount: 2,
     summary: {
       presetCount: 2,
@@ -2321,7 +2801,6 @@ function buildDemoRequesterComparisonExport(
 
   return {
     exportId,
-    userId: DEMO_USER_ID,
     status: 'completed',
     format,
     requestedAt,
@@ -2369,7 +2848,6 @@ function buildDemoRequesterComparisonExport(
             content: JSON.stringify(
               {
                 exportId,
-                userId: DEMO_USER_ID,
                 status: 'completed',
                 format,
                 requestedAt,
@@ -2503,7 +2981,6 @@ function createDemoComparisonDeliveryPolicy(
 ): RequesterComparisonSetDeliveryPolicyViewModel {
   const policy: RequesterComparisonSetDeliveryPolicyViewModel = {
     policyId: `delivery-policy-demo-${Date.now()}`,
-    userId: DEMO_USER_ID,
     comparisonSetId,
     name: input.name,
     description: input.description ?? null,
@@ -2545,7 +3022,6 @@ function deleteDemoComparisonDeliveryPolicy(
   )
 
   return {
-    userId: DEMO_USER_ID,
     comparisonSetId,
     policyId,
     deleted: true,
@@ -2665,7 +3141,6 @@ function buildDemoRequesterComparisonDeliveryRunResult(
     demoState.requesterComparisonDeliveryRuns = [
       {
         runId: `delivery-run-demo-failed-${Date.now()}`,
-        userId: DEMO_USER_ID,
         comparisonSetId,
         policyId,
         retriedRunId: null,
@@ -2702,7 +3177,6 @@ function buildDemoRequesterComparisonDeliveryRunResult(
   exportArtifact.origin.policyName = updatedPolicy.name
     const run: RequesterComparisonSetDeliveryRunViewModel = {
       runId: `delivery-run-demo-${Date.now()}`,
-      userId: DEMO_USER_ID,
       comparisonSetId,
       policyId,
       retriedRunId: null,
@@ -2791,7 +3265,6 @@ function listDemoRequesterComparisonDeliveryRuns(
     typeof filters?.limit === 'number' ? filteredItems.slice(0, filters.limit) : filteredItems
 
   return {
-    userId: DEMO_USER_ID,
     comparisonSetId,
     policyId,
     totalCount: items.length,
@@ -2862,7 +3335,6 @@ function buildDemoRequesterComparisonDeliveryRetryResult(
     demoState.requesterComparisonDeliveryRuns = [
       {
         runId: `delivery-run-demo-retry-failed-${Date.now()}`,
-        userId: DEMO_USER_ID,
         comparisonSetId,
         policyId,
         retriedRunId: previousRun.runId,
@@ -2895,7 +3367,6 @@ function buildDemoRequesterComparisonDeliveryRetryResult(
   const retryRunId = `delivery-run-demo-retry-${Date.now()}`
   const retryRun: RequesterComparisonSetDeliveryRunViewModel = {
     runId: retryRunId,
-    userId: DEMO_USER_ID,
     comparisonSetId,
     policyId,
     retriedRunId: previousRun.runId,
@@ -3120,7 +3591,6 @@ function buildDemoPublicRespondentLeaderboard(): PublicRespondentLeaderboardView
         description: '公共政策、公共服务、舆情类命题的回答率排行。',
         rows: [
           {
-            userId: '0x4f12b8fae7f2776bc6a56a7c2ef8a2cdb91ab9c3',
             handle: 'civic.signal',
             walletShort: '0x4f12…b9c3',
             responseRatePercent: 96.4,
@@ -3137,7 +3607,6 @@ function buildDemoPublicRespondentLeaderboard(): PublicRespondentLeaderboardView
         description: 'AI 工具链、模型调研、开发者工作流类命题的回答率排行。',
         rows: [
           {
-            userId: '0x82ad0ca1f41575438a743490507e610e1a3f3a14',
             handle: 'kernel.research',
             walletShort: '0x82ad…3a14',
             responseRatePercent: 94.7,
@@ -3154,7 +3623,6 @@ function buildDemoPublicRespondentLeaderboard(): PublicRespondentLeaderboardView
         description: '地缘动态、跨境观察类命题的回答率排行。',
         rows: [
           {
-            userId: '0x6e10b3f4c1987b081d34fcb2a8717f12001212bd',
             handle: 'border.brief',
             walletShort: '0x6e10…12bd',
             responseRatePercent: 95.2,
@@ -3171,7 +3639,6 @@ function buildDemoPublicRespondentLeaderboard(): PublicRespondentLeaderboardView
         description: '宏观金融、市场动态、价格趋势类命题的回答率排行。',
         rows: [
           {
-            userId: '0xf43270d1f5287334a7e1dd7be9021875db3f1198',
             handle: 'macro.scope',
             walletShort: '0xf432…1198',
             responseRatePercent: 93.6,
@@ -3188,7 +3655,6 @@ function buildDemoPublicRespondentLeaderboard(): PublicRespondentLeaderboardView
         description: '体育赛事、赛季积分、赛前共识类命题的回答率排行。',
         rows: [
           {
-            userId: '0x9d770ba9a406bdce9a1b7289f0a2bce0a7123aa0',
             handle: 'court.notes',
             walletShort: '0x9d77…3aa0',
             responseRatePercent: 92.4,
@@ -3261,7 +3727,6 @@ function saveWatchlistFromMarketIds(marketIds: string[]) {
     }))
 
   demoState.watchlist = {
-    userId: DEMO_USER_ID,
     totalCount: items.length,
     items,
   }
@@ -3270,6 +3735,9 @@ function saveWatchlistFromMarketIds(marketIds: string[]) {
 export const demoBackend = {
   isDemoToken(token: string | null | undefined) {
     return token === DEMO_SESSION_TOKEN
+  },
+  hasDiscoveryConfigOverrides() {
+    return hasDemoDiscoveryConfigOverrides()
   },
   createChallenge(walletAddress: string, chainId: number): AuthChallengeResponse {
     return {
@@ -3407,11 +3875,9 @@ export const demoBackend = {
   },
   listOwnedPropositionExports(): RequesterOwnedPropositionExportListRecord {
     return structuredClone({
-      userId: DEMO_USER_ID,
       totalCount: demoState.requesterExports.length,
       items: demoState.requesterExports.map((item) => ({
         exportId: item.exportId,
-        userId: item.userId,
         status: item.status,
         format: item.format,
         requestedAt: item.requestedAt,
@@ -3429,19 +3895,16 @@ export const demoBackend = {
   },
   listRequesterReportPresets(): RequesterReportPresetListViewModel {
     return structuredClone({
-      userId: DEMO_USER_ID,
       totalCount: 2,
       items: [
         {
           presetId: 'preset-demo-settled',
-          userId: DEMO_USER_ID,
           name: 'Settled only',
           description: 'Only settled requester propositions with completed reports.',
           updatedAt: minusHours(4),
         },
         {
           presetId: 'preset-demo-unresolved',
-          userId: DEMO_USER_ID,
           name: 'Unresolved watchlist',
           description: 'Requester propositions still moving through review and settlement.',
           updatedAt: minusHours(2),
@@ -3473,7 +3936,6 @@ export const demoBackend = {
     )
 
     return structuredClone({
-      userId: DEMO_USER_ID,
       comparisonSetId,
       totalCount: items.length,
       items,
@@ -3556,7 +4018,6 @@ export const demoBackend = {
       typeof filters?.limit === 'number' ? items.slice(0, filters.limit) : items
 
     return structuredClone({
-      userId: DEMO_USER_ID,
       comparisonSet: {
         comparisonSetId,
         name: comparisonSet.name,
@@ -3570,7 +4031,6 @@ export const demoBackend = {
       },
       items: limitedItems.map((item) => ({
         exportId: item.exportId,
-        userId: item.userId,
         status: item.status,
         format: item.format,
         requestedAt: item.requestedAt,
@@ -3628,7 +4088,6 @@ export const demoBackend = {
     }
 
     return structuredClone({
-      userId: DEMO_USER_ID,
       comparisonSetId,
       exportId,
       deleted: true,
@@ -3909,7 +4368,6 @@ export const demoBackend = {
   },
   updateAccountPreferences(body: UpdateRespondentAccountPreferencesInput): RespondentAccountPreferencesViewModel {
     demoState.preferences = {
-      userId: DEMO_USER_ID,
       ...structuredClone(body),
       updatedAt: DEMO_NOW,
     }
@@ -3932,7 +4390,6 @@ export const demoBackend = {
     return structuredClone({
       ...(demoState.latestExport ?? buildDemoExportArtifact(getOverview(), demoState.preferences, demoState.exports)),
       exportId: item.exportId,
-      userId: item.userId,
       status: item.status,
       format: item.format,
       period: item.period,
@@ -3949,7 +4406,6 @@ export const demoBackend = {
     const completedAt = plusHours(1)
     const item = {
       exportId,
-      userId: DEMO_USER_ID,
       status: 'completed' as const,
       format: 'json' as const,
       period: demoState.preferences.exports.period,
@@ -3966,14 +4422,12 @@ export const demoBackend = {
     }
 
     demoState.exports = {
-      userId: DEMO_USER_ID,
       totalCount: demoState.exports.totalCount + 1,
       items: [item, ...demoState.exports.items],
     }
 
     demoState.latestExport = {
       exportId,
-      userId: DEMO_USER_ID,
       status: 'completed',
       format: 'json',
       period: item.period,
@@ -4005,7 +4459,6 @@ export const demoBackend = {
     const market = demoState.markets.find((entry) => entry.marketId === marketId)!
 
     return {
-      userId: DEMO_USER_ID,
       marketId,
       propositionId: market.propositionId,
       isSaved: true,
@@ -4021,12 +4474,37 @@ export const demoBackend = {
     const market = demoState.markets.find((entry) => entry.marketId === marketId)
 
     return {
-      userId: DEMO_USER_ID,
       marketId,
       propositionId: market?.propositionId ?? '',
       isSaved: false,
       savedAt: null,
     }
+  },
+  getOpsDiscoveryGlobalConfig(): InternalDiscoveryGlobalConfigViewModel {
+    return structuredClone(getDemoDiscoveryGlobalConfigState())
+  },
+  updateOpsDiscoveryGlobalConfig(
+    body: InternalDiscoveryGlobalConfigInput,
+  ): InternalDiscoveryGlobalConfigViewModel {
+    demoState.discoveryGlobalConfig = normalizeDemoDiscoveryGlobalConfig(body)
+    return structuredClone(demoState.discoveryGlobalConfig)
+  },
+  getOpsDiscoveryCategoryConfigs(): InternalDiscoveryCategoryConfigSummaryViewModel[] {
+    return structuredClone(buildDemoDiscoveryCategorySummaryList())
+  },
+  getOpsDiscoveryCategoryConfig(slug: string): InternalDiscoveryCategoryConfigViewModel {
+    return structuredClone(buildDemoDiscoveryCategoryConfigViewModel(slug))
+  },
+  updateOpsDiscoveryCategoryConfig(
+    slug: string,
+    body: InternalDiscoveryCategoryConfigInput,
+  ): InternalDiscoveryCategoryConfigViewModel {
+    if (!getDemoDiscoveryCategoryMeta(slug)) {
+      throw new Error(`Unknown demo discovery category: ${slug}`)
+    }
+
+    demoState.discoveryCategoryConfigs[slug] = normalizeDemoCategoryConfigInput(body)
+    return structuredClone(buildDemoDiscoveryCategoryConfigViewModel(slug))
   },
   getDiscoveryHome(): PublicDiscoverPageViewModel {
     return structuredClone(buildDemoDiscoveryHome(demoState.markets))
@@ -4087,7 +4565,6 @@ export const demoBackend = {
       id: `demo-comment-${current.comments.length + 1}`,
       marketId,
       propositionId: body.propositionId,
-      userId: DEMO_USER_ID,
       author: 'You',
       handle: '@arena_demo',
       tone: body.optionIndex === 0 ? '演示观点 A' : body.optionIndex === 1 ? '演示观点 B' : '演示讨论',

@@ -101,7 +101,138 @@ describe('arenaApi operator demo mode', () => {
     })
 
     expect(fetch).not.toHaveBeenCalled()
-  })
+  }, 15000)
+
+  it('advances reward payout lifecycle in demo mode without live fetch', async () => {
+    const [{ arenaApi }, { demoBackend }] = await Promise.all([
+      import('./arena-api'),
+      import('../demo/demo-backend'),
+    ])
+    demoBackend.reset()
+
+    await expect(
+      arenaApi.approveOpsRewardPayout(
+        'ledger_1',
+        {
+          approvedAt: '2026-06-01T10:28:00.000Z',
+          reason: 'approve_reward_payout',
+          note: 'demo approve',
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      ledgerId: 'ledger_1',
+      payout: {
+        status: 'approved',
+        approvedAt: '2026-06-01T10:28:00.000Z',
+      },
+      auditEvents: expect.arrayContaining([
+        expect.objectContaining({
+          action: 'reward_payout_approved',
+        }),
+      ]),
+    })
+
+    await expect(
+      arenaApi.startOpsRewardPayoutExecution(
+        'ledger_1',
+        {
+          startedAt: '2026-06-01T10:29:00.000Z',
+          reason: 'start_reward_payout_execution',
+          note: 'demo start',
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      payout: {
+        status: 'executing',
+        executionStartedAt: '2026-06-01T10:29:00.000Z',
+        retryCount: 0,
+      },
+    })
+
+    await expect(
+      arenaApi.failOpsRewardPayout(
+        'ledger_1',
+        {
+          failedAt: '2026-06-01T10:30:00.000Z',
+          reason: 'reward_payout_failed',
+          note: 'demo fail',
+          errorCode: 'transfer_reverted',
+          errorMessage: 'Transfer reverted by token contract.',
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      payout: {
+        status: 'failed',
+        failedAt: '2026-06-01T10:30:00.000Z',
+        lastErrorCode: 'transfer_reverted',
+        lastErrorMessage: 'Transfer reverted by token contract.',
+      },
+    })
+
+    await expect(
+      arenaApi.approveOpsRewardPayout(
+        'ledger_1',
+        {
+          approvedAt: '2026-06-01T10:31:00.000Z',
+          reason: 'approve_reward_payout_retry',
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      payout: {
+        status: 'approved',
+        approvedAt: '2026-06-01T10:31:00.000Z',
+      },
+    })
+
+    await expect(
+      arenaApi.startOpsRewardPayoutExecution(
+        'ledger_1',
+        {
+          startedAt: '2026-06-01T10:32:00.000Z',
+          reason: 'start_reward_payout_execution_retry',
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      payout: {
+        status: 'executing',
+        executionStartedAt: '2026-06-01T10:32:00.000Z',
+        retryCount: 1,
+      },
+    })
+
+    await expect(
+      arenaApi.confirmOpsRewardPayoutExecution(
+        'ledger_1',
+        {
+          confirmedAt: '2026-06-01T10:33:00.000Z',
+          reason: 'confirm_reward_payout_execution',
+          note: 'demo confirm',
+          externalReference: 'batch-001',
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      payout: {
+        status: 'completed',
+        completedAt: '2026-06-01T10:33:00.000Z',
+        executionTxHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
+        externalReference: 'batch-001',
+        retryCount: 1,
+      },
+      auditEvents: expect.arrayContaining([
+        expect.objectContaining({
+          action: 'reward_payout_completed',
+        }),
+      ]),
+    })
+
+    expect(fetch).not.toHaveBeenCalled()
+  }, 20000)
 
   it('records rehearsal checkpoints into proposition detail in demo mode', async () => {
     const [{ arenaApi }, { demoBackend }] = await Promise.all([
@@ -137,6 +268,137 @@ describe('arenaApi operator demo mode', () => {
           txHash: '0xabc123',
         }),
       ]),
+    })
+
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps discovery-config mutations local and reflects them in public demo feeds', async () => {
+    const [{ arenaApi }, { demoBackend }] = await Promise.all([
+      import('./arena-api'),
+      import('../demo/demo-backend'),
+    ])
+    demoBackend.reset()
+
+    await expect(
+      arenaApi.updateOpsDiscoveryGlobalConfig(
+        {
+          categories: [
+        {
+          slug: 'politics',
+          pathname: '/zh/politics',
+          label: '政策雷达',
+          title: '政策',
+          directoryLabel: '政策目录',
+          description: '政策议题与公共治理追踪',
+          displayOrder: -9,
+        },
+        {
+          slug: 'sports-live',
+          pathname: '/zh/sports/live',
+          title: '体育',
+          description: '赛事结果与运动员表现',
+          displayOrder: -8,
+          pageState: 'hidden',
+        },
+        {
+          slug: 'finance',
+          pathname: '/zh/finance',
+          title: '金融',
+          description: '资产价格与宏观经济',
+          displayOrder: -7,
+          pageState: 'deleted',
+        },
+      ],
+      rankingCategoryLabels: {
+        all: '全部赛道',
+        general: '综合',
+            politics: '政策轨道',
+            sports: '竞技赛道',
+            tech: '科技',
+            research: '研究',
+            culture: '文化',
+          },
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      categories: expect.arrayContaining([
+        expect.objectContaining({
+          slug: 'politics',
+          label: '政策雷达',
+        }),
+      ]),
+      rankingCategoryLabels: expect.objectContaining({
+        politics: '政策轨道',
+      }),
+    })
+
+    await expect(
+      arenaApi.updateOpsDiscoveryCategoryConfig(
+        'politics',
+        {
+          sidebarItems: [
+            {
+              id: 'policy-focus',
+              label: '政策焦点',
+              linkedMarketIds: ['public-trust', 'missing_market'],
+            },
+          ],
+        },
+        DEMO_SESSION_TOKEN,
+      ),
+    ).resolves.toMatchObject({
+      sidebarItems: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'policy-focus',
+          resolvedLinkedMarketCount: 1,
+          invalidLinkedMarketIds: ['missing_market'],
+        }),
+      ]),
+    })
+
+    await expect(arenaApi.getCategoryDirectoryIndexFeed()).resolves.toMatchObject({
+      data: {
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            slug: 'politics',
+            label: '政策雷达',
+          }),
+        ]),
+      },
+    })
+    await expect(arenaApi.getCategoryDirectoryIndexFeed()).resolves.toSatisfy((feed) => (
+      feed.data.items.every((item) => item.slug !== 'sports-live' && item.slug !== 'finance')
+    ))
+
+    await expect(arenaApi.getCategoryDirectoryFeed('politics')).resolves.toMatchObject({
+      data: {
+        title: '政策',
+        sidebarItems: [
+          {
+            label: '政策焦点',
+            count: '1',
+          },
+        ],
+      },
+    })
+    await expect(arenaApi.getCategoryDirectoryFeed('sports-live')).resolves.toMatchObject({
+      data: null,
+    })
+    await expect(arenaApi.getCategoryDirectoryFeed('finance')).resolves.toMatchObject({
+      data: null,
+    })
+
+    await expect(arenaApi.getDiscoveryRankingFeed('hot')).resolves.toMatchObject({
+      data: {
+        categories: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'politics',
+            label: '政策轨道',
+          }),
+        ]),
+      },
     })
 
     expect(fetch).not.toHaveBeenCalled()

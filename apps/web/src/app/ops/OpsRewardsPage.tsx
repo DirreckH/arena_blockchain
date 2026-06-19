@@ -216,6 +216,186 @@ export function OpsRewardsPage({
     })
   }
 
+  function approvePayout(ledgerIdValue: string) {
+    setPendingAction({
+      title: opsCopy.rewards.dialogApproveTitle,
+      description: opsCopy.rewards.ledgerIdLabel(ledgerIdValue),
+      withNote: true,
+      withReason: true,
+      requireReason: true,
+      reasonLabel: opsCopy.rewards.payoutReasonLabel,
+      reasonPlaceholder: 'approve_reward_payout',
+      reasonDefaultValue: 'approve_reward_payout',
+      successMessage: opsCopy.rewards.approveSuccess,
+      run: async ({ note, reason }) => {
+        const result = await arenaApi.approveOpsRewardPayout(
+          ledgerIdValue,
+          {
+            approvedAt: new Date().toISOString(),
+            reason,
+            note: note || undefined,
+          },
+          token,
+        )
+        list.refresh()
+        detail.refresh()
+        return result
+      },
+    })
+  }
+
+  function startPayoutExecution(ledgerIdValue: string) {
+    setPendingAction({
+      title: opsCopy.rewards.dialogStartExecutionTitle,
+      description: opsCopy.rewards.ledgerIdLabel(ledgerIdValue),
+      withNote: true,
+      withReason: true,
+      requireReason: true,
+      reasonLabel: opsCopy.rewards.payoutReasonLabel,
+      reasonPlaceholder: 'start_reward_payout_execution',
+      reasonDefaultValue: 'start_reward_payout_execution',
+      successMessage: opsCopy.rewards.startExecutionSuccess,
+      run: async ({ note, reason }) => {
+        const result = await arenaApi.startOpsRewardPayoutExecution(
+          ledgerIdValue,
+          {
+            startedAt: new Date().toISOString(),
+            reason,
+            note: note || undefined,
+          },
+          token,
+        )
+        list.refresh()
+        detail.refresh()
+        return result
+      },
+    })
+  }
+
+  function completePayout(ledgerIdValue: string) {
+    setPendingAction({
+      title: opsCopy.rewards.dialogCompleteTitle,
+      description: opsCopy.rewards.ledgerIdLabel(ledgerIdValue),
+      withNote: true,
+      withReason: true,
+      requireReason: true,
+      reasonLabel: opsCopy.rewards.payoutReasonLabel,
+      reasonPlaceholder: 'complete_reward_payout',
+      reasonDefaultValue: 'complete_reward_payout',
+      extraFields: [
+        {
+          key: 'executionTxHash',
+          label: opsCopy.rewards.payoutExecutionTxHashLabel,
+          placeholder: '0x...',
+          required: true,
+        },
+        {
+          key: 'externalReference',
+          label: opsCopy.rewards.payoutExternalReferenceLabel,
+          placeholder: 'batch-001',
+        },
+      ],
+      successMessage: opsCopy.rewards.completeSuccess,
+      run: async ({ note, reason, fields }) => {
+        const result = await arenaApi.completeOpsRewardPayout(
+          ledgerIdValue,
+          {
+            completedAt: new Date().toISOString(),
+            reason,
+            note: note || undefined,
+            executionTxHash: fields?.executionTxHash?.trim() || undefined,
+            externalReference: fields?.externalReference?.trim() || undefined,
+          },
+          token,
+        )
+        list.refresh()
+        detail.refresh()
+        return result
+      },
+    })
+  }
+
+  function confirmPayoutExecution(ledgerIdValue: string) {
+    setPendingAction({
+      title: opsCopy.rewards.dialogConfirmExecutionTitle,
+      description: opsCopy.rewards.ledgerIdLabel(ledgerIdValue),
+      withNote: true,
+      withReason: true,
+      requireReason: true,
+      reasonLabel: opsCopy.rewards.payoutReasonLabel,
+      reasonPlaceholder: 'confirm_reward_payout_execution',
+      reasonDefaultValue: 'confirm_reward_payout_execution',
+      extraFields: [
+        {
+          key: 'externalReference',
+          label: opsCopy.rewards.payoutExternalReferenceLabel,
+          placeholder: 'batch-001',
+        },
+      ],
+      successMessage: opsCopy.rewards.confirmExecutionSuccess,
+      run: async ({ note, reason, fields }) => {
+        const result = await arenaApi.confirmOpsRewardPayoutExecution(
+          ledgerIdValue,
+          {
+            confirmedAt: new Date().toISOString(),
+            reason,
+            note: note || undefined,
+            externalReference: fields?.externalReference?.trim() || undefined,
+          },
+          token,
+        )
+        list.refresh()
+        detail.refresh()
+        return result
+      },
+    })
+  }
+
+  function failPayout(ledgerIdValue: string) {
+    setPendingAction({
+      title: opsCopy.rewards.dialogFailTitle,
+      description: opsCopy.rewards.ledgerIdLabel(ledgerIdValue),
+      danger: true,
+      withNote: true,
+      withReason: true,
+      requireReason: true,
+      reasonLabel: opsCopy.rewards.payoutReasonLabel,
+      reasonPlaceholder: 'reward_payout_failed',
+      reasonDefaultValue: 'reward_payout_failed',
+      extraFields: [
+        {
+          key: 'errorCode',
+          label: opsCopy.rewards.payoutErrorCodeLabel,
+          placeholder: 'transfer_reverted',
+          required: true,
+        },
+        {
+          key: 'errorMessage',
+          label: opsCopy.rewards.payoutErrorMessageLabel,
+          placeholder: '代币合约拒绝了本次转账。',
+          required: true,
+        },
+      ],
+      successMessage: opsCopy.rewards.failSuccess,
+      run: async ({ note, reason, fields }) => {
+        const result = await arenaApi.failOpsRewardPayout(
+          ledgerIdValue,
+          {
+            failedAt: new Date().toISOString(),
+            reason,
+            note: note || undefined,
+            errorCode: fields?.errorCode?.trim() ?? '',
+            errorMessage: fields?.errorMessage?.trim() ?? '',
+          },
+          token,
+        )
+        list.refresh()
+        detail.refresh()
+        return result
+      },
+    })
+  }
+
   return (
     <>
       <div className="detail-layout">
@@ -448,6 +628,71 @@ export function OpsRewardsPage({
                     <span className="ops-cmd-chip">retrigger-review-resolution</span>
                   </button>
                 </div>
+                <div className="ops-section">
+                  <p className="ops-section-title">{opsCopy.rewards.payoutTitle}</p>
+                  {detailData.payout ? (
+                    <>
+                      <div className="ops-kv-grid">
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutStatus}</span>
+                        <span>
+                          <span className={`ops-badge ${fmtBadgeClass(detailData.payout.status)}`}>
+                            {statusLabel('payout', detailData.payout.status)}
+                          </span>
+                        </span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutMethod}</span><span>{detailData.payout.method}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutAmount}</span><span>{`${detailData.payout.amount} ${detailData.payout.assetSymbol}`}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutDestination}</span><span>{detailData.payout.destinationAddress}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutRequestedAt}</span><span>{fmtDate(detailData.payout.requestedAt)}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutApprovedAt}</span><span>{fmtDate(detailData.payout.approvedAt)}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutCompletedAt}</span><span>{fmtDate(detailData.payout.completedAt)}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutFailedAt}</span><span>{fmtDate(detailData.payout.failedAt)}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutRetryCount}</span><span>{detailData.payout.retryCount}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutTxHash}</span><span>{detailData.payout.executionTxHash ?? '-'}</span>
+                        <span className="ops-kv-label">{opsCopy.rewards.kv.payoutError}</span>
+                        <span>{[detailData.payout.lastErrorCode, detailData.payout.lastErrorMessage].filter(Boolean).join(': ') || '-'}</span>
+                      </div>
+                      <div className="ops-actions">
+                        {(detailData.payout.status === 'requested' || detailData.payout.status === 'failed') ? (
+                          <button className="ops-btn ops-btn-primary" disabled={busy} onClick={() => approvePayout(detailData.ledgerId)} type="button">
+                            <span className="ops-cmd-label">{opsCopy.rewards.approveCmdLabel}</span>
+                            <span className="ops-cmd-chip">approve-payout</span>
+                          </button>
+                        ) : null}
+                        {detailData.payout.status === 'approved' ? (
+                          <button className="ops-btn ops-btn-primary" disabled={busy} onClick={() => startPayoutExecution(detailData.ledgerId)} type="button">
+                            <span className="ops-cmd-label">{opsCopy.rewards.startExecutionCmdLabel}</span>
+                            <span className="ops-cmd-chip">start-payout-execution</span>
+                          </button>
+                        ) : null}
+                        {detailData.payout.status === 'approved' ? (
+                          <button className="ops-btn ops-btn-primary" disabled={busy} onClick={() => completePayout(detailData.ledgerId)} type="button">
+                            <span className="ops-cmd-label">{opsCopy.rewards.completeCmdLabel}</span>
+                            <span className="ops-cmd-chip">complete-payout</span>
+                          </button>
+                        ) : null}
+                        {detailData.payout.status === 'executing' ? (
+                          <button
+                            className="ops-btn ops-btn-primary"
+                            disabled={busy}
+                            onClick={() => confirmPayoutExecution(detailData.ledgerId)}
+                            type="button"
+                          >
+                            <span className="ops-cmd-label">{opsCopy.rewards.confirmExecutionCmdLabel}</span>
+                            <span className="ops-cmd-chip">confirm-payout-execution</span>
+                          </button>
+                        ) : null}
+                        {(detailData.payout.status === 'approved' || detailData.payout.status === 'executing') ? (
+                          <button className="ops-btn ops-btn-danger" disabled={busy} onClick={() => failPayout(detailData.ledgerId)} type="button">
+                            <span className="ops-cmd-label">{opsCopy.rewards.failCmdLabel}</span>
+                            <span className="ops-cmd-chip">fail-payout</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="ops-muted">{opsCopy.rewards.noPayout}</p>
+                  )}
+                </div>
                 <OpsAuditList
                   emptyMessage={opsCopy.rewards.auditEmpty}
                   items={detailData.auditEvents}
@@ -483,6 +728,7 @@ export function OpsRewardsPage({
           reasonLabel={pendingAction.reasonLabel}
           reasonPlaceholder={pendingAction.reasonPlaceholder}
           requireReason={pendingAction.requireReason}
+          extraFields={pendingAction.extraFields}
           title={pendingAction.title}
           withNote={pendingAction.withNote}
           withReason={pendingAction.withReason}

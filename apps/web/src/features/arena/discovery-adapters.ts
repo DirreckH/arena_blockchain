@@ -11,8 +11,9 @@ export function toRankedMarketPageConfig(
   view: PublicDiscoveryRankingViewModel,
 ): RankedMarketPageConfig {
   const categories: RankedMarketCategory[] = view.categories.map((category) => ({
-    id: category.id as RankedMarketCategory['id'],
+    id: category.id,
     label: category.label,
+    marketIds: category.marketIds,
   }))
 
   const items: RankedMarketPageItem[] = view.items.map((item) => ({

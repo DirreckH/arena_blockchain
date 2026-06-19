@@ -11,7 +11,6 @@ type FilterStripMode = 'route' | 'local'
 const MORE_DROPDOWN_GAP = 4
 const MORE_DROPDOWN_VIEWPORT_PADDING = 12
 const PRIMARY_FILTER_HREFS = new Set(['/zh', '/zh/breaking', '/zh/new'])
-const navItemByHref = new Map(navItems.map((item) => [item.href, item] as const))
 
 type FilterStripProps = {
   className?: string
@@ -39,12 +38,12 @@ export function FilterStrip({
   const filterItems = useMemo(
     () => [
       ...navItems.filter((item) => PRIMARY_FILTER_HREFS.has(item.href)),
-      ...Array.from(discovery?.categoryIndex?.values() ?? []).map((item) => (
-        navItemByHref.get(item.pathname) ?? {
-          label: item.title || item.label,
-          href: item.pathname,
-        }
-      )),
+      ...Array.from(discovery?.categoryIndex?.values() ?? []).map((item) => ({
+        label: item.label || item.title,
+        href: item.pathname,
+        icon: undefined,
+        exact: false,
+      })),
     ],
     [discovery?.categoryIndex],
   )
@@ -131,7 +130,7 @@ export function FilterStrip({
           ref={moreRef}
           type="button"
           className={`filter arrow${moreOpen ? ' active' : ''}`}
-          aria-label="More categories"
+          aria-label="更多分类"
           aria-haspopup="menu"
           aria-expanded={moreOpen}
           onClick={() => setMoreOpen((value) => !value)}

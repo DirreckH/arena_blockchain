@@ -7,6 +7,7 @@ import {
   buildDraftReferenceLink,
   buildDraftTags,
   computeDraftCompletion,
+  formatSampleConstraintLabel,
   formatCategoryLabel,
   formatRelativeTime,
 } from '../features/arena/arena-ui-mappers'
@@ -379,11 +380,17 @@ export function DraftsPage() {
               </div>
 
               <div className="drafts-tags-row">
-                {selectedDraft.tags.map((tag) => (
-                  <span key={`${selectedDraft.id}-${tag}`} className="drafts-tag">
-                    {tag}
+                {selectedDraft.tags.length > 0 ? (
+                  selectedDraft.tags.map((tag) => (
+                    <span key={`${selectedDraft.id}-${tag}`} className="drafts-tag">
+                      {formatSampleConstraintLabel(tag)}
+                    </span>
+                  ))
+                ) : (
+                  <span className="drafts-tag drafts-tag--empty" data-testid="draft-sample-constraints-empty">
+                    暂无样本约束
                   </span>
-                ))}
+                )}
               </div>
             </article>
           </section>

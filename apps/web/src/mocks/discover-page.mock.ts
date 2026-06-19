@@ -34,7 +34,7 @@ const TOP_DISCOVER_SECTION_CONFIGS: Record<string, DiscoverPageSectionConfig> = 
     moreHref: '/zh/breaking',
   },
   '/zh/new': {
-    marketIds: uniqueMarketIds(LATEST_TOPIC_ITEMS[0]?.marketIds ?? []),
+    marketIds: uniqueMarketIds(LATEST_TOPIC_ITEMS.flatMap((item) => item.marketIds)),
     moreHref: '/zh/new',
   },
 }

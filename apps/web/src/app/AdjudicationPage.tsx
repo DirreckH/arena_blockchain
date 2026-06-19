@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import type { AdjudicationTaskViewModel, PropositionCategory } from '@arena/shared'
 import { RightRail } from '../components/market/RightRail'
 import { AuthRequiredBlankGate } from '../components/shared/AuthRequiredBlankGate'
+import { useRulesIntro } from '../components/shared/RulesIntroContext'
 import { arenaApi } from '../features/api/arena-api'
 import {
   formatCountdown,
@@ -175,6 +176,7 @@ function formatScheduleLabel(isoTimestamp: string | null | undefined) {
 
 export function AdjudicationPage() {
   const { token, isAuthenticated } = useAuthSession()
+  const { openRulesIntro } = useRulesIntro()
   const { rawMarkets, refresh: refreshMarkets } = useValidationMarketData()
   const [tasks, setTasks] = useState<AdjudicationTaskViewModel[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -402,20 +404,6 @@ export function AdjudicationPage() {
     return <AuthRequiredBlankGate className="adjudication-route" ariaLabel="裁决" />
   }
 
-  if (!isAuthenticated) {
-    return (
-      <section className="adjudication-route" aria-label="裁决层">
-        <div className="adjudication-main">
-          <article className="adjudication-task-card">
-            <h2>请先登录</h2>
-            <p>仲裁任务卡片已接入真实 `/arena/adjudication/tasks`，需要有效 Arena 会话才能读取。</p>
-          </article>
-        </div>
-        <RightRail className="right-rail adjudication-side" />
-      </section>
-    )
-  }
-
   const topSlot = leadTask && highlightPreviewTask ? (
     <section className="featured-panel adjudication-highlight-panel adjudication-top-slot" aria-label="近期热门待裁决事件">
       <div className="adjudication-highlight-head">
@@ -539,7 +527,19 @@ export function AdjudicationPage() {
       ) : (
         <>
           <h2>暂无待裁决任务</h2>
-          <p>当前账户下没有可领取的仲裁任务，稍后可刷新查看。</p>
+          <p>当前账户下没有可领取的仲裁任务，稍后可刷新查看。第一次参与裁决，可以先了解玩法再开始。</p>
+          <div className="adjudication-empty-actions">
+            <button
+              className="secondary-action adjudication-link-button"
+              type="button"
+              onClick={openRulesIntro}
+            >
+              <span>了解裁决玩法</span>
+            </button>
+            <Link className="secondary-action adjudication-link-button" to="/zh">
+              <span>浏览公开命题</span>
+            </Link>
+          </div>
         </>
       )}
     </article>

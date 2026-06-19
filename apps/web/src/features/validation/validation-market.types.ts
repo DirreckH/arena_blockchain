@@ -21,6 +21,8 @@ export type PublicValidationOption = {
 
 export type PublicValidationMarketCard = {
   id: string
+  renderKey?: string
+  previewHref?: string
   title: string
   category: string
   status: ValidationMarketStatus

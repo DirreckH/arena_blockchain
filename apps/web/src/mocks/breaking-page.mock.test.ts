@@ -17,7 +17,16 @@ describe('breaking page mock', () => {
       'tech',
       'culture',
     ])
-    expect(BREAKING_PAGE_CONFIG.items.length).toBeGreaterThanOrEqual(6)
+
+    const coveredCategoryIds = new Set(
+      BREAKING_PAGE_CONFIG.items.flatMap((item) => item.categoryIds),
+    )
+
+    BREAKING_PAGE_CONFIG.categories
+      .filter((item) => item.id !== 'all')
+      .forEach((item) => {
+        expect(coveredCategoryIds.has(item.id)).toBe(true)
+      })
   })
 
   it('filters items by the selected category', () => {

@@ -42,7 +42,6 @@ function buildRespondentLeaderboard(): PublicRespondentLeaderboardViewModel {
         description: '公共政策、公共服务、舆情类命题的回答率排行。',
         rows: [
           {
-            userId: '0x1111111111111111111111111111111111111111',
             handle: 'respondent-1111',
             walletShort: '0x1111…1111',
             responseRatePercent: 100,
@@ -59,7 +58,6 @@ function buildRespondentLeaderboard(): PublicRespondentLeaderboardViewModel {
         description: 'AI 工具链、模型调研、开发者工作流类命题的回答率排行。',
         rows: [
           {
-            userId: '0x2222222222222222222222222222222222222222',
             handle: 'respondent-2222',
             walletShort: '0x2222…2222',
             responseRatePercent: 96.5,

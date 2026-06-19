@@ -215,6 +215,7 @@ export const ACCOUNT_RECORDS: AccountRecordRow[] = [
 
 export const ACCOUNT_MENU_PRIMARY_LINKS: AccountShortcutLink[] = [
   { label: '主页总览', caption: '查看账户总览与最近结算动态', href: '/zh/results?tab=overview' },
+  { label: '钱包', caption: '钱包与市场之间的资金划转、最近转账流水', href: '/zh/results?tab=wallet' },
   { label: '收益表现', caption: '继续查看累计收益、回撤与热力分布', href: '/zh/results?tab=performance' },
   { label: '持仓明细', caption: '进入重点仓位、暴露分布与持仓表格', href: '/zh/results?tab=positions' },
   { label: '账户记录', caption: '回看近 30 天结算、充值、提现与奖励流水', href: '/zh/results?tab=records' },

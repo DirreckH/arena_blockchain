@@ -14,7 +14,14 @@ describe('hot page mock', () => {
       'tech',
       'culture',
     ])
-    expect(HOT_PAGE_CONFIG.items.length).toBeGreaterThanOrEqual(8)
+
+    const coveredCategoryIds = new Set(HOT_PAGE_CONFIG.items.flatMap((item) => item.categoryIds))
+
+    HOT_PAGE_CONFIG.categories
+      .filter((item) => item.id !== 'all')
+      .forEach((item) => {
+        expect(coveredCategoryIds.has(item.id)).toBe(true)
+      })
   })
 
   it('filters items by the selected category', () => {

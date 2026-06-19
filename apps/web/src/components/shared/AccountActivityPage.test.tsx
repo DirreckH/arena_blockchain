@@ -62,7 +62,6 @@ function buildRulesIntro() {
 
 function buildOverview(): RespondentAccountOverviewViewModel {
   return {
-    userId: 'live_user_1',
     rewards: [],
     rewardSummary: {
       currentCount: 0,
@@ -72,9 +71,7 @@ function buildOverview(): RespondentAccountOverviewViewModel {
     reputation: null,
     tags: null,
     resultOverview: {
-      userId: 'live_user_1',
       settledResults: {
-        userId: 'live_user_1',
         totals: {
           settledCount: 0,
           resolvedCount: 0,
@@ -159,7 +156,6 @@ function buildOverview(): RespondentAccountOverviewViewModel {
 
 function buildPreferences(): RespondentAccountPreferencesViewModel {
   return {
-    userId: 'live_user_1',
     updatedAt: '2026-05-29T00:00:00.000Z',
     ...structuredClone(DEFAULT_RESPONDENT_ACCOUNT_PREFERENCES),
   }
@@ -167,12 +163,10 @@ function buildPreferences(): RespondentAccountPreferencesViewModel {
 
 function buildExportList(): RespondentAccountExportListViewModel {
   return {
-    userId: 'live_user_1',
     totalCount: 2,
     items: [
       {
         exportId: 'account_export_1',
-        userId: 'live_user_1',
         status: 'completed',
         format: 'json',
         period: '90d',
@@ -189,7 +183,6 @@ function buildExportList(): RespondentAccountExportListViewModel {
       },
       {
         exportId: 'account_export_older',
-        userId: 'live_user_1',
         status: 'completed',
         format: 'json',
         period: '30d',
@@ -213,7 +206,6 @@ function buildLatestExportArtifact(): RespondentAccountExportArtifactViewModel {
 
   return {
     exportId: 'account_export_1',
-    userId: 'live_user_1',
     status: 'completed',
     format: 'json',
     period: '90d',
@@ -243,6 +235,14 @@ function buildLatestExportArtifact(): RespondentAccountExportArtifactViewModel {
           reversedAt: null,
           ledgerVersion: 1,
           isCurrent: true,
+          payoutStatus: 'completed',
+          payoutMethod: 'wallet_transfer',
+          payoutAmount: '42.00',
+          payoutAssetSymbol: 'USDC',
+          payoutDestinationAddress: '0xRewardLive000000000000000000000000000001',
+          payoutRequestedAt: '2026-05-21T08:00:00.000Z',
+          payoutCompletedAt: '2026-05-21T09:00:00.000Z',
+          payoutFailureReason: null,
         },
       ],
       resultOverview: {
@@ -287,7 +287,6 @@ function buildHistoricalExportArtifact(): RespondentAccountExportArtifactViewMod
 
   return {
     exportId: 'account_export_older',
-    userId: 'live_user_1',
     status: 'completed',
     format: 'json',
     period: '30d',
@@ -317,6 +316,14 @@ function buildHistoricalExportArtifact(): RespondentAccountExportArtifactViewMod
           reversedAt: null,
           ledgerVersion: 1,
           isCurrent: true,
+          payoutStatus: 'completed',
+          payoutMethod: 'wallet_transfer',
+          payoutAmount: '8.00',
+          payoutAssetSymbol: 'USDC',
+          payoutDestinationAddress: '0xRewardLive000000000000000000000000000002',
+          payoutRequestedAt: '2026-05-19T08:00:00.000Z',
+          payoutCompletedAt: '2026-05-19T09:00:00.000Z',
+          payoutFailureReason: null,
         },
       ],
       resultOverview: {

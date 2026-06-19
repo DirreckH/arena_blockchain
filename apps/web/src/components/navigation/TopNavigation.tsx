@@ -97,12 +97,12 @@ export function TopNavigation() {
   return (
     <header className="top-shell">
       <div className="topbar layout-container">
-        <NavLink className="brand-button" to="/zh" aria-label="Arena home">
+        <NavLink className="brand-button" to="/zh" aria-label="Arena 首页">
           <img src={ARENA_LOGO_SRC} alt="Arena" className="brand-logo" />
           <span className="brand-name">Arena</span>
         </NavLink>
 
-        <nav className="category-nav" aria-label="Primary navigation">
+        <nav className="category-nav" aria-label="主导航">
           {productNavItems.map((item) => (
             <NavLink
               key={item.label}
@@ -117,7 +117,7 @@ export function TopNavigation() {
             ref={moreChipRef}
             type="button"
             className={`nav-chip more-chip${moreOpen ? ' open' : ''}`}
-            aria-label="More pages"
+            aria-label="更多页面"
             aria-haspopup="menu"
             aria-expanded={moreOpen}
             onClick={() => setMoreOpen((value) => !value)}
@@ -175,7 +175,7 @@ export function TopNavigation() {
               className={isMobileMenuOpen ? 'icon-button mobile-only active' : 'icon-button mobile-only'}
               onClick={() => toggleQuickMenu('mobile-nav', mobileMenuTriggerRef.current)}
               type="button"
-              aria-label="Menu and language"
+              aria-label="菜单与语言"
               aria-haspopup="dialog"
               aria-expanded={isMobileMenuOpen}
               aria-controls={QUICK_MENU_POPOVER_ID}

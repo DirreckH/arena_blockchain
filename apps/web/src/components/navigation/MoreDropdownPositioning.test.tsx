@@ -71,7 +71,7 @@ describe('more dropdown positioning', () => {
       </MemoryRouter>,
     )
     const user = userEvent.setup()
-    const moreButton = screen.getByRole('button', { name: 'More pages' })
+    const moreButton = screen.getByRole('button', { name: '更多页面' })
 
     Object.defineProperty(moreButton, 'getBoundingClientRect', {
       configurable: true,
@@ -108,7 +108,7 @@ describe('more dropdown positioning', () => {
     )
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('button', { name: 'More pages' }))
+    await user.click(screen.getByRole('button', { name: '更多页面' }))
 
     expect(screen.getAllByRole('menuitem')).toHaveLength(1)
     expect(screen.getByRole('menuitem', { name: '排行榜' })).toBeInTheDocument()
@@ -121,7 +121,7 @@ describe('more dropdown positioning', () => {
       </MemoryRouter>,
     )
     const user = userEvent.setup()
-    const moreButton = screen.getByRole('button', { name: 'More categories' })
+    const moreButton = screen.getByRole('button', { name: '更多分类' })
 
     Object.defineProperty(moreButton, 'getBoundingClientRect', {
       configurable: true,
@@ -158,7 +158,7 @@ describe('more dropdown positioning', () => {
     )
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('button', { name: 'More categories' }))
+    await user.click(screen.getByRole('button', { name: '更多分类' }))
 
     expect(screen.getAllByRole('menuitem')).toHaveLength(3)
     expect(screen.getByRole('menuitem', { name: '公开结果' })).toBeInTheDocument()

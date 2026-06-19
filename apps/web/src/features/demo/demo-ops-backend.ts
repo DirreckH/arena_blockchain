@@ -773,17 +773,32 @@ function createInitialState(): DemoOpsState {
         responseId: 'response_ops_1',
         userId: 'respondent_1',
         sourceType: 'response',
-        status: 'pending',
-        reviewStatus: 'pending_review',
+        status: 'finalized',
+        reviewStatus: 'valid',
         pendingAmount: '20',
-        finalAmount: null,
+        finalAmount: '20',
         ledgerVersion: 1,
         reasonCode: null,
         reversalOfLedgerId: null,
         createdAt: '2026-06-01T10:05:05.000Z',
-        finalizedAt: null,
+        finalizedAt: '2026-06-01T10:06:00.000Z',
         voidedAt: null,
         reversedAt: null,
+        payoutId: 'payout_1',
+        payoutStatus: 'requested',
+        payoutMethod: 'wallet_transfer',
+        payoutAmount: '20',
+        payoutAssetSymbol: 'USDC',
+        payoutDestinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+        payoutRequestedAt: '2026-06-01T10:06:00.000Z',
+        payoutApprovedAt: null,
+        payoutCompletedAt: null,
+        payoutFailedAt: null,
+        payoutCancelledAt: null,
+        payoutExecutionTxHash: null,
+        payoutRetryCount: 0,
+        payoutLastErrorCode: null,
+        payoutLastErrorMessage: null,
       },
       {
         ledgerId: 'ledger_2',
@@ -792,17 +807,32 @@ function createInitialState(): DemoOpsState {
         responseId: 'response_ops_2',
         userId: 'respondent_2',
         sourceType: 'response',
-        status: 'pending',
-        reviewStatus: 'pending_review',
+        status: 'finalized',
+        reviewStatus: 'valid',
         pendingAmount: '30',
-        finalAmount: null,
+        finalAmount: '30',
         ledgerVersion: 1,
         reasonCode: null,
         reversalOfLedgerId: null,
         createdAt: '2026-06-01T10:06:05.000Z',
-        finalizedAt: null,
+        finalizedAt: '2026-06-01T10:07:00.000Z',
         voidedAt: null,
         reversedAt: null,
+        payoutId: 'payout_2',
+        payoutStatus: 'requested',
+        payoutMethod: 'wallet_transfer',
+        payoutAmount: '30',
+        payoutAssetSymbol: 'USDC',
+        payoutDestinationAddress: '0xRewardOpsDemo000000000000000000000000000002',
+        payoutRequestedAt: '2026-06-01T10:07:00.000Z',
+        payoutApprovedAt: null,
+        payoutCompletedAt: null,
+        payoutFailedAt: null,
+        payoutCancelledAt: null,
+        payoutExecutionTxHash: null,
+        payoutRetryCount: 0,
+        payoutLastErrorCode: null,
+        payoutLastErrorMessage: null,
       },
     ],
     rewardDetails: {
@@ -820,12 +850,32 @@ function createInitialState(): DemoOpsState {
           submittedAt: '2026-06-01T10:05:00.000Z',
         },
         currentReview: {
-          status: 'pending_review',
+          status: 'valid',
           qualityScore: 0.8,
           flags: [],
           reasonCodes: [],
-          reviewedByUserId: null,
-          reviewedAt: null,
+          reviewedByUserId: DEMO_OPERATOR_ID,
+          reviewedAt: '2026-06-01T10:05:50.000Z',
+        },
+        payout: {
+          payoutId: 'payout_1',
+          status: 'requested',
+          method: 'wallet_transfer',
+          amount: '20',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+          requestedAt: '2026-06-01T10:06:00.000Z',
+          approvedAt: null,
+          approvedByUserId: null,
+          executionStartedAt: null,
+          completedAt: null,
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: null,
+          externalReference: null,
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
         },
         chain: [
           {
@@ -835,17 +885,32 @@ function createInitialState(): DemoOpsState {
             responseId: 'response_ops_1',
             userId: 'respondent_1',
             sourceType: 'response',
-            status: 'pending',
-            reviewStatus: 'pending_review',
+            status: 'finalized',
+            reviewStatus: 'valid',
             pendingAmount: '20',
-            finalAmount: null,
+            finalAmount: '20',
             ledgerVersion: 1,
             reasonCode: null,
             reversalOfLedgerId: null,
             createdAt: '2026-06-01T10:05:05.000Z',
-            finalizedAt: null,
+            finalizedAt: '2026-06-01T10:06:00.000Z',
             voidedAt: null,
             reversedAt: null,
+            payoutId: 'payout_1',
+            payoutStatus: 'requested',
+            payoutMethod: 'wallet_transfer',
+            payoutAmount: '20',
+            payoutAssetSymbol: 'USDC',
+            payoutDestinationAddress: '0xRewardOpsDemo000000000000000000000000000001',
+            payoutRequestedAt: '2026-06-01T10:06:00.000Z',
+            payoutApprovedAt: null,
+            payoutCompletedAt: null,
+            payoutFailedAt: null,
+            payoutCancelledAt: null,
+            payoutExecutionTxHash: null,
+            payoutRetryCount: 0,
+            payoutLastErrorCode: null,
+            payoutLastErrorMessage: null,
           },
         ],
         auditEvents: [
@@ -875,15 +940,81 @@ function createInitialState(): DemoOpsState {
           submittedAt: '2026-06-01T10:06:00.000Z',
         },
         currentReview: {
-          status: 'pending_review',
+          status: 'valid',
           qualityScore: 0.75,
           flags: [],
           reasonCodes: [],
-          reviewedByUserId: null,
-          reviewedAt: null,
+          reviewedByUserId: DEMO_OPERATOR_ID,
+          reviewedAt: '2026-06-01T10:06:50.000Z',
         },
-        chain: [],
-        auditEvents: [],
+        payout: {
+          payoutId: 'payout_2',
+          status: 'requested',
+          method: 'wallet_transfer',
+          amount: '30',
+          assetSymbol: 'USDC',
+          destinationAddress: '0xRewardOpsDemo000000000000000000000000000002',
+          requestedAt: '2026-06-01T10:07:00.000Z',
+          approvedAt: null,
+          approvedByUserId: null,
+          executionStartedAt: null,
+          completedAt: null,
+          failedAt: null,
+          cancelledAt: null,
+          executionTxHash: null,
+          externalReference: null,
+          retryCount: 0,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        },
+        chain: [
+          {
+            ledgerId: 'ledger_2',
+            propositionId: 'prop_list_1',
+            propositionTitle: 'Ops proposition list item',
+            responseId: 'response_ops_2',
+            userId: 'respondent_2',
+            sourceType: 'response',
+            status: 'finalized',
+            reviewStatus: 'valid',
+            pendingAmount: '30',
+            finalAmount: '30',
+            ledgerVersion: 1,
+            reasonCode: null,
+            reversalOfLedgerId: null,
+            createdAt: '2026-06-01T10:06:05.000Z',
+            finalizedAt: '2026-06-01T10:07:00.000Z',
+            voidedAt: null,
+            reversedAt: null,
+            payoutId: 'payout_2',
+            payoutStatus: 'requested',
+            payoutMethod: 'wallet_transfer',
+            payoutAmount: '30',
+            payoutAssetSymbol: 'USDC',
+            payoutDestinationAddress: '0xRewardOpsDemo000000000000000000000000000002',
+            payoutRequestedAt: '2026-06-01T10:07:00.000Z',
+            payoutApprovedAt: null,
+            payoutCompletedAt: null,
+            payoutFailedAt: null,
+            payoutCancelledAt: null,
+            payoutExecutionTxHash: null,
+            payoutRetryCount: 0,
+            payoutLastErrorCode: null,
+            payoutLastErrorMessage: null,
+          },
+        ],
+        auditEvents: [
+          createAuditEvent({
+            id: 'reward_detail_2',
+            entityType: 'reward',
+            entityId: 'ledger_2',
+            action: 'reward_payout_requested',
+            actorUserId: DEMO_OPERATOR_ID,
+            reason: 'Reward payout is awaiting operator approval.',
+            note: null,
+            metadata: { propositionId: 'prop_list_1', responseId: 'response_ops_2' },
+          }),
+        ],
       },
     },
     respondentReputation: {
@@ -1059,6 +1190,84 @@ function updateResponseWorkflow(
   }
 
   return next
+}
+
+function updateRewardDetail(
+  ledgerId: string,
+  updater: (current: InternalRewardAuditDetailViewModel) => InternalRewardAuditDetailViewModel,
+) {
+  const current = demoOpsState.rewardDetails[ledgerId]
+  if (!current) {
+    throw new Error(`Demo reward ${ledgerId} unavailable`)
+  }
+
+  const next = updater(current)
+  demoOpsState.rewardDetails = {
+    ...demoOpsState.rewardDetails,
+    [ledgerId]: next,
+  }
+  demoOpsState.rewardItems = demoOpsState.rewardItems.map((item) =>
+    item.ledgerId === ledgerId
+      ? {
+          ...item,
+          status: next.chain[0]?.status ?? item.status,
+          reviewStatus: next.chain[0]?.reviewStatus ?? item.reviewStatus,
+          finalAmount: next.chain[0]?.finalAmount ?? item.finalAmount,
+          finalizedAt: next.chain[0]?.finalizedAt ?? item.finalizedAt,
+          voidedAt: next.chain[0]?.voidedAt ?? item.voidedAt,
+          reversedAt: next.chain[0]?.reversedAt ?? item.reversedAt,
+          payoutId: next.payout?.payoutId ?? null,
+          payoutStatus: next.payout?.status ?? null,
+          payoutMethod: next.payout?.method ?? null,
+          payoutAmount: next.payout?.amount ?? null,
+          payoutAssetSymbol: next.payout?.assetSymbol ?? null,
+          payoutDestinationAddress: next.payout?.destinationAddress ?? null,
+          payoutRequestedAt: next.payout?.requestedAt ?? null,
+          payoutApprovedAt: next.payout?.approvedAt ?? null,
+          payoutCompletedAt: next.payout?.completedAt ?? null,
+          payoutFailedAt: next.payout?.failedAt ?? null,
+          payoutCancelledAt: next.payout?.cancelledAt ?? null,
+          payoutExecutionTxHash: next.payout?.executionTxHash ?? null,
+          payoutRetryCount: next.payout?.retryCount ?? 0,
+          payoutLastErrorCode: next.payout?.lastErrorCode ?? null,
+          payoutLastErrorMessage: next.payout?.lastErrorMessage ?? null,
+        }
+      : item,
+  )
+
+  return next
+}
+
+function applyRewardPayoutSnapshot(
+  detail: InternalRewardAuditDetailViewModel,
+  payout: NonNullable<InternalRewardAuditDetailViewModel['payout']>,
+): InternalRewardAuditDetailViewModel {
+  return {
+    ...detail,
+    payout,
+    chain: detail.chain.map((entry) =>
+      entry.ledgerId === detail.ledgerId
+        ? {
+            ...entry,
+            payoutId: payout.payoutId,
+            payoutStatus: payout.status,
+            payoutMethod: payout.method,
+            payoutAmount: payout.amount,
+            payoutAssetSymbol: payout.assetSymbol,
+            payoutDestinationAddress: payout.destinationAddress,
+            payoutRequestedAt: payout.requestedAt,
+            payoutApprovedAt: payout.approvedAt,
+            payoutCompletedAt: payout.completedAt,
+            payoutFailedAt: payout.failedAt,
+            payoutCancelledAt: payout.cancelledAt,
+            payoutExecutionTxHash: payout.executionTxHash,
+            payoutRetryCount: payout.retryCount,
+            payoutLastErrorCode: payout.lastErrorCode,
+            payoutLastErrorMessage: payout.lastErrorMessage,
+          }
+        : entry,
+    ),
+  }
 }
 
 function buildValidationCommandResult(
@@ -1703,11 +1912,6 @@ export const demoOpsBackend = {
     ledgerId: string,
     body: { resolvedAt: string; reason: string; note?: string },
   ): InternalRewardAuditDetailViewModel {
-    const current = demoOpsState.rewardDetails[ledgerId]
-    if (!current) {
-      throw new Error(`Demo reward ${ledgerId} unavailable`)
-    }
-
     const audit = createAuditEvent({
       entityType: 'reward',
       entityId: ledgerId,
@@ -1718,14 +1922,235 @@ export const demoOpsBackend = {
       metadata: { ledgerId, resolvedAt: body.resolvedAt },
     })
 
-    const next = {
+    const next = updateRewardDetail(ledgerId, (current) => ({
       ...current,
       auditEvents: [audit, ...current.auditEvents],
-    }
-    demoOpsState.rewardDetails = {
-      ...demoOpsState.rewardDetails,
-      [ledgerId]: next,
-    }
+    }))
+    prependAuditEvent(audit)
+    return clone(next)
+  },
+
+  approveOpsRewardPayout(
+    ledgerId: string,
+    body: { approvedAt: string; reason: string; note?: string },
+  ): InternalRewardAuditDetailViewModel {
+    const audit = createAuditEvent({
+      entityType: 'reward',
+      entityId: ledgerId,
+      action: 'reward_payout_approved',
+      actorUserId: DEMO_OPERATOR_ID,
+      reason: body.reason,
+      note: body.note ?? null,
+      metadata: { ledgerId, approvedAt: body.approvedAt },
+      createdAt: body.approvedAt,
+    })
+
+    const next = updateRewardDetail(ledgerId, (current) => {
+      if (!current.payout) {
+        throw new Error(`Demo reward payout ${ledgerId} unavailable`)
+      }
+
+      return {
+        ...applyRewardPayoutSnapshot(current, {
+          ...current.payout,
+          status: 'approved',
+          approvedAt: body.approvedAt,
+          approvedByUserId: DEMO_OPERATOR_ID,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        }),
+        auditEvents: [audit, ...current.auditEvents],
+      }
+    })
+    prependAuditEvent(audit)
+    return clone(next)
+  },
+
+  startOpsRewardPayoutExecution(
+    ledgerId: string,
+    body: { startedAt: string; reason: string; note?: string },
+  ): InternalRewardAuditDetailViewModel {
+    const audit = createAuditEvent({
+      entityType: 'reward',
+      entityId: ledgerId,
+      action: 'reward_payout_execution_started',
+      actorUserId: DEMO_OPERATOR_ID,
+      reason: body.reason,
+      note: body.note ?? null,
+      metadata: { ledgerId, startedAt: body.startedAt },
+      createdAt: body.startedAt,
+    })
+
+    const next = updateRewardDetail(ledgerId, (current) => {
+      if (!current.payout) {
+        throw new Error(`Demo reward payout ${ledgerId} unavailable`)
+      }
+
+      return {
+        ...applyRewardPayoutSnapshot(current, {
+          ...current.payout,
+          status: 'executing',
+          executionStartedAt: body.startedAt,
+          executionTxHash:
+            current.payout.executionTxHash ??
+            '0x0000000000000000000000000000000000000000000000000000000000000001',
+          failedAt: null,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          retryCount:
+            current.payout.status === 'failed' || current.payout.failedAt
+              ? current.payout.retryCount + 1
+              : current.payout.retryCount,
+        }),
+        auditEvents: [audit, ...current.auditEvents],
+      }
+    })
+    prependAuditEvent(audit)
+    return clone(next)
+  },
+
+  completeOpsRewardPayout(
+    ledgerId: string,
+    body: {
+      completedAt: string
+      reason: string
+      note?: string
+      executionTxHash?: string
+      externalReference?: string
+    },
+  ): InternalRewardAuditDetailViewModel {
+    const audit = createAuditEvent({
+      entityType: 'reward',
+      entityId: ledgerId,
+      action: 'reward_payout_completed',
+      actorUserId: DEMO_OPERATOR_ID,
+      reason: body.reason,
+      note: body.note ?? null,
+      metadata: {
+        ledgerId,
+        completedAt: body.completedAt,
+        executionTxHash: body.executionTxHash ?? null,
+        externalReference: body.externalReference ?? null,
+      },
+      createdAt: body.completedAt,
+    })
+
+    const next = updateRewardDetail(ledgerId, (current) => {
+      if (!current.payout) {
+        throw new Error(`Demo reward payout ${ledgerId} unavailable`)
+      }
+
+      return {
+        ...applyRewardPayoutSnapshot(current, {
+          ...current.payout,
+          status: 'completed',
+          completedAt: body.completedAt,
+          executionStartedAt: current.payout.executionStartedAt ?? body.completedAt,
+          executionTxHash: body.executionTxHash ?? null,
+          externalReference: body.externalReference ?? null,
+          failedAt: null,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        }),
+        auditEvents: [audit, ...current.auditEvents],
+      }
+    })
+    prependAuditEvent(audit)
+    return clone(next)
+  },
+
+  confirmOpsRewardPayoutExecution(
+    ledgerId: string,
+    body: {
+      confirmedAt: string
+      reason: string
+      note?: string
+      externalReference?: string
+    },
+  ): InternalRewardAuditDetailViewModel {
+    const audit = createAuditEvent({
+      entityType: 'reward',
+      entityId: ledgerId,
+      action: 'reward_payout_completed',
+      actorUserId: DEMO_OPERATOR_ID,
+      reason: body.reason,
+      note: body.note ?? null,
+      metadata: {
+        ledgerId,
+        completedAt: body.confirmedAt,
+        externalReference: body.externalReference ?? null,
+        confirmationMode: 'recorded_execution_tx_hash',
+      },
+      createdAt: body.confirmedAt,
+    })
+
+    const next = updateRewardDetail(ledgerId, (current) => {
+      if (!current.payout) {
+        throw new Error(`Demo reward payout ${ledgerId} unavailable`)
+      }
+      if (!current.payout.executionTxHash) {
+        throw new Error(`Demo reward payout ${ledgerId} has no recorded execution transaction`)
+      }
+
+      return {
+        ...applyRewardPayoutSnapshot(current, {
+          ...current.payout,
+          status: 'completed',
+          completedAt: body.confirmedAt,
+          executionStartedAt: current.payout.executionStartedAt ?? body.confirmedAt,
+          externalReference: body.externalReference ?? null,
+          failedAt: null,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+        }),
+        auditEvents: [audit, ...current.auditEvents],
+      }
+    })
+    prependAuditEvent(audit)
+    return clone(next)
+  },
+
+  failOpsRewardPayout(
+    ledgerId: string,
+    body: {
+      failedAt: string
+      reason: string
+      note?: string
+      errorCode: string
+      errorMessage: string
+    },
+  ): InternalRewardAuditDetailViewModel {
+    const audit = createAuditEvent({
+      entityType: 'reward',
+      entityId: ledgerId,
+      action: 'reward_payout_failed',
+      actorUserId: DEMO_OPERATOR_ID,
+      reason: body.reason,
+      note: body.note ?? null,
+      metadata: {
+        ledgerId,
+        failedAt: body.failedAt,
+        errorCode: body.errorCode,
+      },
+      createdAt: body.failedAt,
+    })
+
+    const next = updateRewardDetail(ledgerId, (current) => {
+      if (!current.payout) {
+        throw new Error(`Demo reward payout ${ledgerId} unavailable`)
+      }
+
+      return {
+        ...applyRewardPayoutSnapshot(current, {
+          ...current.payout,
+          status: 'failed',
+          failedAt: body.failedAt,
+          lastErrorCode: body.errorCode,
+          lastErrorMessage: body.errorMessage,
+        }),
+        auditEvents: [audit, ...current.auditEvents],
+      }
+    })
     prependAuditEvent(audit)
     return clone(next)
   },

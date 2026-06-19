@@ -14,6 +14,7 @@ import { PrismaService } from "../../database/prisma.service";
 import { ArenaNotFoundError } from "../arena.errors";
 import { ArenaIdService } from "../arena-id.service";
 import type { ArenaDbClient } from "../prisma.types";
+import { ArenaUserRepository } from "../repositories/arena-user.repository";
 import { SystemKeyValueRepository } from "../repositories/system-key-value.repository";
 import { AccountPreferencesService } from "./account-preferences.service";
 import { AccountViewService } from "./account-view.service";
@@ -77,7 +78,6 @@ function toExportListItem(
 ): RespondentAccountExportItemViewModel {
   return {
     exportId: record.exportId,
-    userId: record.userId,
     status: record.status,
     format: record.format,
     period: record.period,
@@ -99,7 +99,6 @@ function toArtifact(
 ): RespondentAccountExportArtifactViewModel {
   return {
     exportId: record.exportId,
-    userId: record.userId,
     status: record.status,
     format: record.format,
     period: record.period,
@@ -123,6 +122,7 @@ export class AccountExportService {
     private readonly prisma: PrismaService,
     private readonly ids: ArenaIdService,
     private readonly systemKeyValues: SystemKeyValueRepository,
+    private readonly users: ArenaUserRepository,
     private readonly accountViews: AccountViewService,
     private readonly accountPreferences: AccountPreferencesService,
   ) {}
@@ -138,7 +138,6 @@ export class AccountExportService {
     const storedExports = parseStoredExports(record?.valueJson ?? null);
 
     return {
-      userId,
       totalCount: storedExports.length,
       items: storedExports.map(toExportListItem),
     };
@@ -171,16 +170,20 @@ export class AccountExportService {
     input: CreateRespondentAccountExportInput,
     db: ArenaDbClient = this.prisma,
   ): Promise<RespondentAccountExportArtifactViewModel> {
-    const [overview, preferences] = await Promise.all([
+    const [overview, preferences, user] = await Promise.all([
       this.accountViews.getAccountOverviewForUser(userId),
       this.accountPreferences.getAccountPreferencesForUser(userId, db),
+      this.users.findById(userId, db),
     ]);
 
     const requestedAt = new Date().toISOString();
     const exportId = this.ids.next("account_export");
     const period = input.format ? preferences.exports.period : preferences.exports.period;
     const walletAddress = preferences.wallet.walletConnected
-      ? this.maskWalletAddress(userId, preferences.exports.maskWalletAddress)
+      ? this.formatWalletAddress(
+          user?.primaryWalletAddress ?? null,
+          preferences.exports.maskWalletAddress,
+        )
       : null;
     const record: StoredAccountExportRecord = {
       exportId,
@@ -243,15 +246,20 @@ export class AccountExportService {
     return `arena-account-${userId}-${period}-${compactTimestamp}.json`;
   }
 
-  private maskWalletAddress(userId: string, mask: boolean): string {
-    const normalized = userId.replace(/[^a-zA-Z0-9]/g, "").slice(-8).padStart(8, "0");
-    const full = `wallet_${normalized}`;
-    if (!mask) {
-      return full;
+  private formatWalletAddress(
+    walletAddress: string | null,
+    mask: boolean,
+  ): string | null {
+    if (!walletAddress) {
+      return null;
     }
 
-    const head = full.slice(0, 6);
-    const tail = full.slice(-4);
+    if (!mask) {
+      return walletAddress;
+    }
+
+    const head = walletAddress.slice(0, 6);
+    const tail = walletAddress.slice(-4);
     return `${head}...${tail}`;
   }
 }

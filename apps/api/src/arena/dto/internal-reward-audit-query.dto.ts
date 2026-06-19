@@ -1,7 +1,12 @@
-import { IsEnum, IsNumberString, IsOptional, IsString } from "class-validator";
-import type { RewardLedgerSourceType, RewardLedgerStatus } from "@prisma/client";
+import { IsBooleanString, IsEnum, IsNumberString, IsOptional, IsString } from "class-validator";
+import type {
+  RewardLedgerSourceType,
+  RewardLedgerStatus,
+  RewardPayoutStatus,
+} from "@prisma/client";
 import type {
   InternalListSortDirection,
+  RewardAuditActionQueue,
   RewardAuditListSortBy,
 } from "../internal-ops.types";
 
@@ -28,6 +33,40 @@ export class InternalRewardAuditQueryDto {
     } satisfies Record<RewardLedgerStatus, RewardLedgerStatus>,
   )
   status?: RewardLedgerStatus;
+
+  @IsOptional()
+  @IsEnum(
+    {
+      requested: "requested",
+      approved: "approved",
+      executing: "executing",
+      completed: "completed",
+      failed: "failed",
+      cancelled: "cancelled",
+    } satisfies Record<RewardPayoutStatus, RewardPayoutStatus>,
+  )
+  payoutStatus?: RewardPayoutStatus;
+
+  @IsOptional()
+  @IsBooleanString()
+  missingPayoutOnly?: string;
+
+  @IsOptional()
+  @IsBooleanString()
+  staleExecutionOnly?: string;
+
+  @IsOptional()
+  @IsEnum(
+    {
+      missing_payout: "missing_payout",
+      approval: "approval",
+      execution_start: "execution_start",
+      execution_confirm: "execution_confirm",
+      execution_recover: "execution_recover",
+      retry: "retry",
+    } satisfies Record<RewardAuditActionQueue, RewardAuditActionQueue>,
+  )
+  actionQueue?: RewardAuditActionQueue;
 
   @IsOptional()
   @IsEnum(

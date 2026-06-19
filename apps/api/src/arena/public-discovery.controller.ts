@@ -1,21 +1,14 @@
 import { Controller, Get, Param } from "@nestjs/common";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import { PublicDiscoveryService } from "./services/public-discovery.service";
 
+@ArenaSurfaceBoundary("public")
 @Public()
 @Controller("arena/public/discovery")
 export class ArenaPublicDiscoveryController {
   constructor(private readonly discovery: PublicDiscoveryService) {}
-
-  private toCategoryPathname(slug: string) {
-    switch (slug) {
-      case "sports-live":
-        return "/zh/sports/live";
-      default:
-        return `/zh/${slug}`;
-    }
-  }
 
   @Get("home")
   getHome() {
@@ -44,6 +37,6 @@ export class ArenaPublicDiscoveryController {
 
   @Get("categories/:slug")
   getCategoryDirectory(@Param("slug") slug: string) {
-    return this.discovery.getCategoryDirectory(this.toCategoryPathname(slug));
+    return this.discovery.getCategoryDirectory(slug);
   }
 }

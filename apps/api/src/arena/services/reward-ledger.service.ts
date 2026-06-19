@@ -10,12 +10,15 @@ import type {
 } from "../arena.types";
 import { withArenaTransaction } from "../arena-transaction.utils";
 import { ArenaIdService } from "../arena-id.service";
+import { ArenaValidationError } from "../arena.errors";
 import { toDate } from "../arena.utils";
 import { toSharedProposition, toSharedResponse, toSharedRewardLedger } from "../arena-view.mapper";
 import type { ArenaDbClient } from "../prisma.types";
 import { PropositionRepository } from "../repositories/proposition.repository";
 import { ResponseRepository } from "../repositories/response.repository";
 import { RewardLedgerRepository } from "../repositories/reward-ledger.repository";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
+import { RewardPayoutService } from "./reward-payout.service";
 
 const toNullableDate = (value: string | null): Date | null =>
   value ? toDate(value) : null;
@@ -71,6 +74,8 @@ export class RewardLedgerService {
     private readonly propositions: PropositionRepository,
     private readonly responses: ResponseRepository,
     private readonly ledgers: RewardLedgerRepository,
+    private readonly payouts: RewardPayoutService,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async recordSubmission(
@@ -82,9 +87,10 @@ export class RewardLedgerService {
     },
     db?: ArenaDbClient,
   ): Promise<SharedRewardLedger> {
-    return withArenaTransaction(this.prisma, db, async (tx) =>
-      this.buildEngine(tx).recordSubmission(input),
-    );
+    return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
+      return this.buildEngine(tx).recordSubmission(input);
+    });
   }
 
   async createPendingRewardForResponse(
@@ -111,9 +117,24 @@ export class RewardLedgerService {
     },
     db?: ArenaDbClient,
   ): Promise<SharedRewardLedger> {
-    return withArenaTransaction(this.prisma, db, async (tx) =>
-      this.buildEngine(tx).rebindToLatestResponse(input),
-    );
+    return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
+      const previousLatest = await this.ledgers.findByPropositionAndUser(
+        input.propositionId,
+        input.userId,
+        tx,
+      );
+      const nextLedger = await this.buildEngine(tx).rebindToLatestResponse(input);
+
+      await this.syncPayoutLifecycle({
+        previousLatestLedger: toSharedRewardLedger(previousLatest),
+        nextLedger,
+        changedAt: input.reboundAt,
+        db: tx,
+      });
+
+      return nextLedger;
+    });
   }
 
   async resolveFromReview(
@@ -129,9 +150,22 @@ export class RewardLedgerService {
       reasonCodes: [...(input.reasonCodes ?? [])],
     };
 
-    return withArenaTransaction(this.prisma, db, async (tx) =>
-      this.buildEngine(tx).resolveFromReview(resolution),
-    );
+    return withArenaTransaction(this.prisma, db, async (tx) => {
+      const previousLatest = await this.ledgers.findLatestByResponseId(
+        input.responseId,
+        tx,
+      );
+      const nextLedger = await this.buildEngine(tx).resolveFromReview(resolution);
+
+      await this.syncPayoutLifecycle({
+        previousLatestLedger: toSharedRewardLedger(previousLatest),
+        nextLedger,
+        changedAt: String(input.resolvedAt),
+        db: tx,
+      });
+
+      return nextLedger;
+    });
   }
 
   async getByPropositionAndUser(
@@ -151,6 +185,58 @@ export class RewardLedgerService {
     return withArenaTransaction(this.prisma, db, async (tx) =>
       this.buildEngine(tx).listByUser(userId),
     );
+  }
+
+  async listPayoutsByUser(
+    userId: string,
+    db?: ArenaDbClient,
+  ) {
+    return this.payouts.listByUser(userId, db);
+  }
+
+  private async syncPayoutLifecycle(input: {
+    previousLatestLedger: SharedRewardLedger | null;
+    nextLedger: SharedRewardLedger;
+    changedAt: string;
+    db: ArenaDbClient;
+  }): Promise<void> {
+    const previous = input.previousLatestLedger;
+    if (
+      previous &&
+      previous.id !== input.nextLedger.id &&
+      previous.status !== "reversed" &&
+      input.nextLedger.reversalOfLedgerId === previous.id
+    ) {
+      await this.payouts.cancelPayoutForLedger(
+        {
+          ledgerId: previous.id,
+          cancelledAt: input.changedAt,
+          reasonCode: input.nextLedger.reasonCode ?? "reward_ledger_reversed",
+          reasonMessage: `Reward ledger ${previous.id} was reversed in favor of ${input.nextLedger.id}`,
+        },
+        input.db,
+      );
+    }
+
+    const nextAmount = input.nextLedger.finalAmount ?? input.nextLedger.pendingAmount;
+    if (
+      input.nextLedger.status === "finalized" &&
+      nextAmount !== null &&
+      nextAmount !== "0"
+    ) {
+      try {
+        await this.payouts.ensurePayoutForLedger(input.nextLedger.id, input.db);
+      } catch (error) {
+        if (
+          error instanceof ArenaValidationError &&
+          error.code === "reward_payout.destination_missing"
+        ) {
+          return;
+        }
+
+        throw error;
+      }
+    }
   }
 
   private buildEngine(db: ArenaDbClient): RewardEngine {

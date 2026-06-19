@@ -10,6 +10,7 @@ import { PrismaService } from "../../database/prisma.service";
 import { ArenaIdService } from "../arena-id.service";
 import { ArenaNotFoundError, ArenaValidationError } from "../arena.errors";
 import type { ArenaDbClient } from "../prisma.types";
+import { ArenaUserRepository } from "../repositories/arena-user.repository";
 import { MarketRepository } from "../repositories/market.repository";
 import { PropositionRepository } from "../repositories/proposition.repository";
 import { SystemKeyValueRepository } from "../repositories/system-key-value.repository";
@@ -77,6 +78,35 @@ function buildHandle(userId: string): string {
   return `@${userId.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(-10)}`;
 }
 
+function isWalletAddress(value: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/u.test(value);
+}
+
+function resolvePublicIdentity(
+  userId: string,
+  primaryWalletAddress: string | null,
+): Pick<StoredDiscussionComment, "author" | "handle"> {
+  const walletAddress =
+    typeof primaryWalletAddress === "string" &&
+    isWalletAddress(primaryWalletAddress)
+      ? primaryWalletAddress.toLowerCase()
+      : isWalletAddress(userId)
+        ? userId.toLowerCase()
+        : null;
+
+  if (!walletAddress) {
+    return {
+      author: buildAuthorLabel(userId),
+      handle: buildHandle(userId),
+    };
+  }
+
+  return {
+    author: `Arena ${walletAddress.slice(-4)}`,
+    handle: `@${walletAddress.slice(-10)}`,
+  };
+}
+
 function buildTone(optionIndex: 0 | 1 | null): string {
   if (optionIndex === 0) {
     return "结算后观点";
@@ -115,7 +145,6 @@ function toCommentViewModel(
     id: comment.id,
     marketId: comment.marketId,
     propositionId: comment.propositionId,
-    userId: comment.userId,
     author: comment.author,
     handle: comment.handle,
     tone: comment.tone,
@@ -138,6 +167,7 @@ export class DiscussionService {
     private readonly systemKeyValues: SystemKeyValueRepository,
     private readonly markets: MarketRepository,
     private readonly propositions: PropositionRepository,
+    private readonly users: ArenaUserRepository,
   ) {}
 
   async getDiscussionThread(
@@ -234,13 +264,18 @@ export class DiscussionService {
     const key = this.buildStorageKey(input.marketId);
     const existing = await this.systemKeyValues.findByKey(key, db);
     const currentComments = parseStoredComments(existing?.valueJson ?? null);
+    const user = await this.users.findById(input.userId, db);
+    const publicIdentity = resolvePublicIdentity(
+      input.userId,
+      user?.primaryWalletAddress ?? null,
+    );
     const nextComment: StoredDiscussionComment = {
       id: this.ids.next("discussion_comment"),
       marketId: input.marketId,
       propositionId: input.propositionId,
       userId: input.userId,
-      author: buildAuthorLabel(input.userId),
-      handle: buildHandle(input.userId),
+      author: publicIdentity.author,
+      handle: publicIdentity.handle,
       tone: buildTone(input.optionIndex ?? null),
       optionIndex: input.optionIndex ?? null,
       body,
@@ -275,4 +310,3 @@ export class DiscussionService {
     return `${DISCUSSION_NAMESPACE}.${marketId}`;
   }
 }
-

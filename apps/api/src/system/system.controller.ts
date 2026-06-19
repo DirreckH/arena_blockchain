@@ -9,6 +9,7 @@ import {
 } from "@arena/shared";
 
 import { BlockchainService } from "../blockchain/blockchain.service";
+import { ArenaRateLimit } from "../common/decorators/arena-rate-limit.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
@@ -29,6 +30,7 @@ export class SystemController {
   }
 
   @Post("jobs/ping")
+  @ArenaRateLimit("internal")
   enqueuePing(@Req() request: RequestWithUser): Promise<EnqueuedJobSnapshot> {
     return this.queueService.enqueueSystemPing({
       requestedBy: request.user?.walletAddress,
@@ -40,6 +42,7 @@ export class SystemController {
 
   @Roles(SystemRole.Admin, SystemRole.System)
   @Post("jobs/demo-failure")
+  @ArenaRateLimit("internal")
   enqueueDemoFailure(
     @Req() request: RequestWithUser,
     @Body() body: DemoFailureJobDto,
@@ -56,12 +59,14 @@ export class SystemController {
 
   @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
   @Get("queues/overview")
+  @ArenaRateLimit("internal")
   getQueueOverview(): Promise<QueueOverviewSnapshot> {
     return this.queueService.getQueueOverview();
   }
 
   @Roles(SystemRole.Admin, SystemRole.System)
   @Post("queues/:queueName/requeue-failed")
+  @ArenaRateLimit("internal")
   requeueFailedJobs(
     @Param("queueName") queueName: string,
   ): Promise<QueueFailedJobRequeueResultSnapshot> {
@@ -70,6 +75,7 @@ export class SystemController {
 
   @Roles(SystemRole.Admin, SystemRole.System)
   @Get("admin/ping")
+  @ArenaRateLimit("internal")
   getAdminPing(@Req() request: RequestWithUser) {
     return {
       status: "ok" as const,

@@ -48,6 +48,7 @@ import { InternalAuditService } from "./internal-audit.service";
 import { InternalMonitoringService } from "./internal-monitoring.service";
 import { PropositionEngineService } from "./proposition-engine.service";
 import { PropositionStateService } from "./proposition-state.service";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 import { ValidationRehearsalCheckpointService } from "./validation-rehearsal-checkpoint.service";
 import { assertPropositionTransition } from "../state-machines/proposition-state.machine";
 import { ValidationChainIdService } from "../validation-chain/validation-chain-id.service";
@@ -206,6 +207,7 @@ export class InternalPropositionOpsService {
     private readonly propositionState: PropositionStateService,
     private readonly freezeReveal: FreezeRevealOrchestratorService,
     private readonly audits: InternalAuditService,
+    private readonly userIdentity: ArenaUserIdentityService,
     private readonly monitoring: InternalMonitoringService,
     private readonly validationRehearsalCheckpoints: ValidationRehearsalCheckpointService,
     private readonly validationChainIds: ValidationChainIdService,
@@ -411,6 +413,7 @@ export class InternalPropositionOpsService {
     db?: ArenaDbClient,
   ): Promise<InternalPropositionDetailViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.actorUserId, undefined, tx);
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       const audits = await this.audits.listByEntity(
         INTERNAL_AUDIT_ENTITY_TYPES.proposition,

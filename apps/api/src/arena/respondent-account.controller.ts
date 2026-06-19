@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from "@nestjs/common";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { CreateAccountExportDto } from "./dto/create-account-export.dto";
 import { UpdateAccountPreferencesDto } from "./dto/update-account-preferences.dto";
@@ -9,6 +10,7 @@ import { AccountPreferencesService } from "./services/account-preferences.servic
 import { AccountViewService } from "./services/account-view.service";
 import { WatchlistService } from "./services/watchlist.service";
 
+@ArenaSurfaceBoundary("adjudication")
 @Controller("arena/adjudication/account")
 export class ArenaRespondentAccountController {
   constructor(

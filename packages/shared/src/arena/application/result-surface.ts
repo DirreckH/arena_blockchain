@@ -208,7 +208,6 @@ export class ResultSurface implements ResultSurfaceContract {
     );
 
     return {
-      userId,
       totals: {
         settledCount: items.length,
         resolvedCount: items.filter((item) => item.resultKind === "resolved").length,
@@ -369,7 +368,6 @@ export class ResultSurface implements ResultSurfaceContract {
     });
 
     return {
-      userId,
       settledResults,
       openPositions: {
         totalCount: openPositions.length,

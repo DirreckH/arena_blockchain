@@ -16,6 +16,7 @@ import { DispatchTaskRepository } from "../repositories/dispatch-task.repository
 import { ResponseReviewRepository } from "../repositories/response-review.repository";
 import { UserReputationRepository } from "../repositories/user-reputation.repository";
 import { toDate, type TimestampInput } from "../arena.utils";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 
 const CLOSED_TASK_STATUSES = new Set([
   "submitted",
@@ -36,6 +37,7 @@ export class ReputationService {
     private readonly tasks: DispatchTaskRepository,
     private readonly reviews: ResponseReviewRepository,
     private readonly reputations: UserReputationRepository,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async refreshForUser(
@@ -44,6 +46,7 @@ export class ReputationService {
     db?: ArenaDbClient,
   ): Promise<SharedUserReputation> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(userId, undefined, tx);
       const [tasks, reviews, existing] = await Promise.all([
         this.tasks.listByUser(userId, tx),
         this.reviews.listFinalizedByUserId(userId, tx),
@@ -117,7 +120,6 @@ export class ReputationService {
     const reputation = await this.getByUserId(userId, db);
 
     return {
-      userId: reputation.userId,
       reputationScore: reputation.reputationScore,
       reputationLevel: reputation.reputationLevel,
       metrics: {

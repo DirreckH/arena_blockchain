@@ -77,6 +77,17 @@ export const REWARD_LEDGER_REASON_CODES = [
   "fraud_suspected_review",
 ] as const;
 
+export const REWARD_PAYOUT_STATUSES = [
+  "requested",
+  "approved",
+  "executing",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+export const REWARD_PAYOUT_METHODS = ["wallet_transfer"] as const;
+
 export const POSITION_SETTLEMENT_OUTCOMES = [
   "won",
   "lost",
@@ -144,6 +155,10 @@ export type RewardLedgerStatus =
   (typeof REWARD_LEDGER_STATUSES)[number];
 export type RewardLedgerReasonCode =
   (typeof REWARD_LEDGER_REASON_CODES)[number];
+export type RewardPayoutStatus =
+  (typeof REWARD_PAYOUT_STATUSES)[number];
+export type RewardPayoutMethod =
+  (typeof REWARD_PAYOUT_METHODS)[number];
 export type PositionSettlementOutcome =
   (typeof POSITION_SETTLEMENT_OUTCOMES)[number];
 export type FrontendSurface = (typeof FRONTEND_SURFACES)[number];

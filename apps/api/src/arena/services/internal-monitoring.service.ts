@@ -8,6 +8,7 @@ import {
   type BackendRuntimeContractChecklistItemViewModel,
   type BackendRuntimeContractCommandSetViewModel,
   type BackendRuntimeContractReleaseReadinessViewModel,
+  type BackendValidationProofRecordViewModel,
   type BackendValidationRehearsalViewModel,
   type BackendRuntimeContractViewModel,
   type InternalAuditEventViewModel,
@@ -53,6 +54,7 @@ import {
 import { ValidationContractMarketState } from "../validation-chain/validation-chain.types";
 import { EffectiveSampleCounterService } from "./effective-sample-counter.service";
 import { InternalAuditService } from "./internal-audit.service";
+import { ValidationProofRecordService } from "./validation-proof-record.service";
 
 const DEFAULT_DEADLINE_WINDOW_MINUTES = 60;
 const VALIDATION_REQUIRED_ENV_KEYS = [
@@ -76,12 +78,16 @@ const VALIDATION_OPTIONAL_ENV_KEYS = [
   "ARENA_VALIDATION_ORACLE_ADDRESS",
   "ARENA_VALIDATION_PAUSER_ADDRESS",
 ] as const;
+const REWARD_PAYOUT_REQUIRED_ENV_KEYS = [
+  "ARENA_REWARD_PAYOUT_ERC20_ADDRESS",
+  "ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY",
+] as const;
 const VALIDATION_PREFLIGHT_COMMANDS = [
-  "pnpm run validation:env:check",
-  "pnpm run validation:deps:check",
-  "pnpm run validation:chain:check",
-  "pnpm run validation:db:deploy",
-  "pnpm run validation:db:status",
+  "pnpm run validation:env:check -- --env-file <path-to-release-env>",
+  "pnpm run validation:deps:check -- --env-file <path-to-release-env>",
+  "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
+  "pnpm run validation:db:deploy -- --env-file <path-to-release-env>",
+  "pnpm run validation:db:status -- --env-file <path-to-release-env>",
 ] as const;
 const LOCAL_VALIDATION_PREFLIGHT_COMMANDS = [
   "pnpm run validation:prepare:local",
@@ -99,14 +105,16 @@ const RUNTIME_CONTRACT_COMMANDS: BackendRuntimeContractCommandSetViewModel = {
   productionBuild: ["pnpm run backend:build"],
   validationLocalPrepare: ["pnpm run validation:prepare:local"],
   databaseMigrate: [
-    "pnpm run api:prisma:deploy",
-    "pnpm run validation:db:deploy",
-    "pnpm run validation:db:status",
+    "pnpm run api:prisma:deploy -- --env-file <path-to-release-env>",
+    "pnpm run validation:db:deploy -- --env-file <path-to-release-env>",
+    "pnpm run validation:db:status -- --env-file <path-to-release-env>",
   ],
   preflight: ["pnpm run validation:preflight"],
 };
 const VALIDATION_REHEARSAL_TARGET_OUTCOME =
   "One proposition completes publish -> local bet -> on-chain placeBet -> manual or scheduled sync -> projection -> settlement against deployed validation infrastructure.";
+const VALIDATION_PROOF_RUNBOOK_PATH =
+  "docs/contracts/arena-backend-release-runbook.md";
 const toIso = (value: Date): string => value.toISOString();
 
 const buildTopFlags = (
@@ -145,6 +153,8 @@ export class InternalMonitoringService {
     private readonly validationContract?: ValidationChainContractService,
     @Optional()
     private readonly validationChainAlerts?: ValidationChainAlertService,
+    @Optional()
+    private readonly proofRecords?: ValidationProofRecordService,
   ) {}
 
   async listSampleShortage(
@@ -459,6 +469,7 @@ export class InternalMonitoringService {
     dependencies.push(this.checkValidationArtifactDependency());
     dependencies.push(await this.checkValidationContractDependency());
     dependencies.push(...(await this.checkValidationDeploymentDependencies()));
+    dependencies.push(...this.getRewardPayoutReadinessDependencies());
 
     return {
       status: dependencies.every((item) => item.status === "up") ? "ok" : "degraded",
@@ -469,7 +480,7 @@ export class InternalMonitoringService {
       arenaContractAddress: this.config.arenaContractAddress,
       validationContractAddress: this.config.validationContractAddress,
       dependencies,
-      requiredEnvKeys: [...VALIDATION_REQUIRED_ENV_KEYS],
+      requiredEnvKeys: this.getValidationRequiredEnvKeys(),
       optionalEnvKeys: [...VALIDATION_OPTIONAL_ENV_KEYS],
       preflightCommands: this.getValidationPreflightCommands(),
       runbookPath: VALIDATION_RUNBOOK_PATH,
@@ -479,16 +490,20 @@ export class InternalMonitoringService {
 
   async getRuntimeContract(): Promise<BackendRuntimeContractViewModel> {
     const generatedAt = new Date().toISOString();
-    const [readiness, queues, validationChain] = await Promise.all([
+    const validationProofRecordPromise =
+      this.proofRecords?.getLatestProof() ?? Promise.resolve(null);
+    const [readiness, queues, validationChain, validationProofRecord] = await Promise.all([
       this.health.getReadinessSnapshot(),
       this.queue.getQueueOverview(),
       this.getValidationChainRuntimeReadiness(),
+      validationProofRecordPromise,
     ]);
 
     const releaseChecklist = this.buildRuntimeContractChecklist({
       readiness,
       queues,
       validationChain,
+      validationProofRecord,
     });
     const releaseReadiness = this.buildRuntimeReleaseReadiness(releaseChecklist);
     const validationRehearsal = this.buildValidationRehearsalContract({
@@ -526,6 +541,7 @@ export class InternalMonitoringService {
       },
       validationChain,
       validationRehearsal,
+      validationProofRecord,
       commands: structuredClone(RUNTIME_CONTRACT_COMMANDS),
       releaseReadiness,
       releaseChecklist,
@@ -838,6 +854,64 @@ export class InternalMonitoringService {
     }
   }
 
+  private getRewardPayoutReadinessDependencies(): ValidationChainRuntimeReadinessViewModel["dependencies"] {
+    if (!this.shouldRequireRewardPayoutReadiness()) {
+      return [];
+    }
+
+    return [
+      this.checkRewardPayoutTokenDependency(),
+      this.checkRewardPayoutOperatorSignerDependency(),
+    ];
+  }
+
+  private checkRewardPayoutTokenDependency(): ValidationChainRuntimeReadinessViewModel["dependencies"][number] {
+    const tokenAddress = (this.config.rewardPayoutErc20Address ?? "").trim();
+    const issues: string[] = [];
+
+    if (!tokenAddress) {
+      issues.push("ARENA_REWARD_PAYOUT_ERC20_ADDRESS is not configured");
+    } else if (!/^0x[a-fA-F0-9]{40}$/u.test(tokenAddress)) {
+      issues.push("ARENA_REWARD_PAYOUT_ERC20_ADDRESS must be a 20-byte hex address");
+    }
+
+    return issues.length === 0
+      ? {
+          name: "reward_payout_token",
+          status: "up",
+        }
+      : {
+          name: "reward_payout_token",
+          status: "down",
+          details: issues.join("; "),
+        };
+  }
+
+  private checkRewardPayoutOperatorSignerDependency(): ValidationChainRuntimeReadinessViewModel["dependencies"][number] {
+    const privateKey = (this.config.rewardPayoutOperatorPrivateKey ?? "").trim();
+    if (!privateKey) {
+      return {
+        name: "reward_payout_operator_signer",
+        status: "down",
+        details: "ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY is not configured",
+      };
+    }
+
+    if (!/^0x[a-fA-F0-9]{64}$/u.test(privateKey)) {
+      return {
+        name: "reward_payout_operator_signer",
+        status: "down",
+        details:
+          "ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY must be a 32-byte hex private key prefixed with 0x",
+      };
+    }
+
+    return {
+      name: "reward_payout_operator_signer",
+      status: "up",
+    };
+  }
+
   private buildRuntimeReadinessActions(
     dependencies: ValidationChainRuntimeReadinessViewModel["dependencies"],
   ): ValidationChainRuntimeReadinessViewModel["operatorActions"] {
@@ -862,7 +936,7 @@ export class InternalMonitoringService {
                 "pnpm run validation:prepare:local",
                 "pnpm run validation:env:check",
               ]
-            : ["pnpm run validation:env:check"],
+            : ["pnpm run validation:env:check -- --env-file <path-to-release-env>"],
         };
       case "database":
         return {
@@ -879,9 +953,9 @@ export class InternalMonitoringService {
                 "pnpm run validation:deps:check",
               ]
             : [
-                "pnpm run validation:deps:check",
-                "pnpm run validation:db:deploy",
-                "pnpm run validation:db:status",
+                "pnpm run validation:deps:check -- --env-file <path-to-release-env>",
+                "pnpm run validation:db:deploy -- --env-file <path-to-release-env>",
+                "pnpm run validation:db:status -- --env-file <path-to-release-env>",
               ],
         };
       case "redis":
@@ -893,7 +967,7 @@ export class InternalMonitoringService {
           envKeys: ["REDIS_URL"],
           commands: isLocal
             ? ["pnpm run validation:prepare:local", "pnpm run validation:deps:check"]
-            : ["pnpm run validation:deps:check"],
+            : ["pnpm run validation:deps:check -- --env-file <path-to-release-env>"],
         };
       case "rpc":
         return {
@@ -907,8 +981,8 @@ export class InternalMonitoringService {
                 "pnpm run validation:chain:check",
               ]
             : [
-                "pnpm run validation:deps:check",
-                "pnpm run validation:chain:check",
+                "pnpm run validation:deps:check -- --env-file <path-to-release-env>",
+                "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
               ],
         };
       case "arena_artifact":
@@ -935,7 +1009,9 @@ export class InternalMonitoringService {
                 "pnpm run validation:deploy -- --network localhost",
                 "pnpm run validation:chain:check",
               ]
-            : ["pnpm run validation:chain:check"],
+            : [
+                "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
+              ],
         };
       case "validation_contract_code":
         return {
@@ -949,8 +1025,8 @@ export class InternalMonitoringService {
                 "pnpm run validation:chain:check",
               ]
             : [
-                "pnpm run validation:deploy -- --network <network>",
-                "pnpm run validation:chain:check",
+                "pnpm run validation:deploy -- --env-file <path-to-release-env> --network validation",
+                "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
               ],
         };
       case "validation_contract_bytecode":
@@ -966,8 +1042,8 @@ export class InternalMonitoringService {
               ]
             : [
                 "pnpm exec hardhat compile",
-                "pnpm run validation:deploy -- --network <network>",
-                "pnpm run validation:chain:check",
+                "pnpm run validation:deploy -- --env-file <path-to-release-env> --network validation",
+                "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
               ],
         };
       case "validation_operator_signer":
@@ -983,7 +1059,9 @@ export class InternalMonitoringService {
                 "pnpm run validation:deploy -- --network localhost",
                 "pnpm run validation:chain:check",
               ]
-            : ["pnpm run validation:chain:check"],
+            : [
+                "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
+              ],
         };
       case "validation_oracle_signer":
         return {
@@ -998,7 +1076,9 @@ export class InternalMonitoringService {
                 "pnpm run validation:deploy -- --network localhost",
                 "pnpm run validation:chain:check",
               ]
-            : ["pnpm run validation:chain:check"],
+            : [
+                "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
+              ],
         };
       case "validation_pauser_signer":
         return {
@@ -1013,7 +1093,26 @@ export class InternalMonitoringService {
                 "pnpm run validation:deploy -- --network localhost",
                 "pnpm run validation:chain:check",
               ]
-            : ["pnpm run validation:chain:check"],
+            : [
+                "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
+              ],
+        };
+      case "reward_payout_token":
+        return {
+          dependency,
+          summary: "Configure the reward payout asset symbol and ERC20 token address before enabling automatic payout execution.",
+          envKeys: [
+            "ARENA_REWARD_PAYOUT_ASSET_SYMBOL",
+            "ARENA_REWARD_PAYOUT_ERC20_ADDRESS",
+          ],
+          commands: ["pnpm run validation:env:check", "GET /arena/internal/rewards"],
+        };
+      case "reward_payout_operator_signer":
+        return {
+          dependency,
+          summary: "Configure the reward payout operator signer before enabling automatic payout execution.",
+          envKeys: ["ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY"],
+          commands: ["pnpm run validation:env:check", "GET /arena/internal/rewards"],
         };
       default:
         return {
@@ -1029,6 +1128,7 @@ export class InternalMonitoringService {
     readiness: BackendRuntimeContractViewModel["health"]["readiness"];
     queues: QueueOverviewSnapshot;
     validationChain: ValidationChainRuntimeReadinessViewModel;
+    validationProofRecord: BackendValidationProofRecordViewModel | null;
   }): BackendRuntimeContractChecklistItemViewModel[] {
     const readinessCommands = ["GET /health/ready"];
     const readinessOperatorActions = ["GET /health/ready"];
@@ -1042,8 +1142,21 @@ export class InternalMonitoringService {
       .filter((queue) => queue.status !== "up" || queue.paused)
       .map((queue) => `${queue.name}_queue`);
     const validationBlockingDependencies = input.validationChain.dependencies
-      .filter((dependency) => dependency.status !== "up")
+      .filter(
+        (dependency) =>
+          dependency.status !== "up" &&
+          this.isValidationRuntimeDependency(dependency.name),
+      )
       .map((dependency) => dependency.name);
+    const rewardPayoutBlockingDependencies = input.validationChain.dependencies
+      .filter(
+        (dependency) =>
+          dependency.status !== "up" &&
+          this.isRewardPayoutDependency(dependency.name),
+      )
+      .map((dependency) => dependency.name);
+    const validationProofBlockingDependencies =
+      this.getValidationProofBlockingDependencies(input.validationProofRecord);
 
     if (schedulerQueue?.status !== "up" || schedulerQueue?.paused) {
       readinessCommands.push("GET /system/queues/overview");
@@ -1144,7 +1257,7 @@ export class InternalMonitoringService {
       },
     ];
 
-    if (input.validationChain.status !== "ok") {
+    if (validationBlockingDependencies.length > 0) {
       checklist.push({
         id: "validation-runtime",
         status: "blocked",
@@ -1162,6 +1275,48 @@ export class InternalMonitoringService {
             ...input.validationChain.operatorActions.flatMap((item) => item.commands),
           ]),
         ),
+      });
+    }
+
+    if (this.shouldRequireRewardPayoutReadiness()) {
+      checklist.push({
+        id: "reward-payout",
+        status:
+          rewardPayoutBlockingDependencies.length === 0 ? "ready" : "blocked",
+        summary:
+          "Configure automatic reward payout token routing and signer readiness before approving release traffic.",
+        blockingDependencies: rewardPayoutBlockingDependencies,
+        commands: [
+          "pnpm run validation:env:check",
+          "GET /arena/internal/rewards",
+          "GET /arena/internal/monitoring/runtime-contract",
+        ],
+        operatorActions: [
+          "GET /arena/internal/rewards",
+          "GET /arena/internal/monitoring/runtime-contract",
+        ],
+      });
+    }
+
+    if (this.shouldRequireExternalValidationProof()) {
+      checklist.push({
+        id: "validation-proof",
+        status:
+          validationProofBlockingDependencies.length === 0 ? "ready" : "blocked",
+        summary:
+          "Capture and register one external staging or production validation proof before approving non-local release traffic.",
+        blockingDependencies: validationProofBlockingDependencies,
+        commands: [
+          "pnpm run validation:proof:capture -- --proposition-id <id> --env-file <path-to-release-env> --base-url <url> --auth-token <operator-token>",
+          "POST /arena/internal/validation-chain/proof-record",
+          "GET /arena/internal/monitoring/runtime-contract",
+        ],
+        operatorActions: [
+          VALIDATION_PROOF_RUNBOOK_PATH,
+          "pnpm run validation:proof:capture -- --proposition-id <id> --env-file <path-to-release-env> --base-url <url> --auth-token <operator-token>",
+          "POST /arena/internal/validation-chain/proof-record",
+          "GET /arena/internal/monitoring/runtime-contract",
+        ],
       });
     }
 
@@ -1237,7 +1392,11 @@ export class InternalMonitoringService {
       .filter((queue) => queue.status !== "up" || queue.paused)
       .map((queue) => `${queue.name}_queue`);
     const validationBlockingDependencies = input.validationChain.dependencies
-      .filter((dependency) => dependency.status !== "up")
+      .filter(
+        (dependency) =>
+          dependency.status !== "up" &&
+          this.isValidationRuntimeDependency(dependency.name),
+      )
       .map((dependency) => dependency.name);
     const blockingDependencies = Array.from(
       new Set([
@@ -1325,6 +1484,83 @@ export class InternalMonitoringService {
     };
   }
 
+  private shouldRequireExternalValidationProof(): boolean {
+    return this.config.validationEnvironment !== "local";
+  }
+
+  private getValidationProofBlockingDependencies(
+    proofRecord: BackendValidationProofRecordViewModel | null,
+  ): string[] {
+    if (!this.shouldRequireExternalValidationProof()) {
+      return [];
+    }
+
+    if (!proofRecord) {
+      return ["validation_proof_missing"];
+    }
+
+    const blocking = new Set<string>();
+    if (!proofRecord.proofComplete) {
+      blocking.add("validation_proof_incomplete");
+    }
+
+    if (proofRecord.releaseReadinessStatus !== "ready") {
+      blocking.add("validation_proof_release_blocked");
+    }
+
+    if (!proofRecord.publicSettledResultVisible) {
+      blocking.add("validation_proof_public_result_missing");
+    }
+
+    if (!proofRecord.publicIntegrityOverviewVisible) {
+      blocking.add("validation_proof_public_integrity_missing");
+    }
+
+    if (!this.isRewardPayoutProofComplete(proofRecord)) {
+      blocking.add("validation_proof_reward_payout_incomplete");
+    }
+
+    return Array.from(blocking);
+  }
+
+  private isRewardPayoutProofComplete(
+    proofRecord: BackendValidationProofRecordViewModel,
+  ): boolean {
+    if (proofRecord.rewardPayoutLedgerEntryCount <= 0) {
+      return true;
+    }
+
+    if (proofRecord.rewardPayoutFinalizedWithoutPayoutCount > 0) {
+      return false;
+    }
+
+    if (proofRecord.rewardPayoutExecutingWithoutTxHashCount > 0) {
+      return false;
+    }
+
+    if (proofRecord.rewardPayoutStatusCounts.requested > 0) {
+      return false;
+    }
+
+    if (proofRecord.rewardPayoutStatusCounts.approved > 0) {
+      return false;
+    }
+
+    if (proofRecord.rewardPayoutStatusCounts.executing > 0) {
+      return false;
+    }
+
+    if (proofRecord.rewardPayoutStatusCounts.failed > 0) {
+      return false;
+    }
+
+    if (proofRecord.rewardPayoutStatusCounts.cancelled > 0) {
+      return false;
+    }
+
+    return true;
+  }
+
   private async listRecentRuntimeContractAlerts(
     _nowIso: string,
     releaseStatus: BackendRuntimeContractViewModel["releaseReadiness"]["status"],
@@ -1378,9 +1614,37 @@ export class InternalMonitoringService {
     return this.config.validationEnvironment === "local";
   }
 
+  private shouldRequireRewardPayoutReadiness(): boolean {
+    return !this.isLocalValidationEnvironment();
+  }
+
+  private isRewardPayoutDependency(
+    dependency: ValidationChainRuntimeReadinessDependencyViewModel["name"],
+  ): boolean {
+    return (
+      dependency === "reward_payout_token" ||
+      dependency === "reward_payout_operator_signer"
+    );
+  }
+
+  private isValidationRuntimeDependency(
+    dependency: ValidationChainRuntimeReadinessDependencyViewModel["name"],
+  ): boolean {
+    return !this.isRewardPayoutDependency(dependency);
+  }
+
+  private getValidationRequiredEnvKeys(): string[] {
+    return this.shouldRequireRewardPayoutReadiness()
+      ? [...VALIDATION_REQUIRED_ENV_KEYS, ...REWARD_PAYOUT_REQUIRED_ENV_KEYS]
+      : [...VALIDATION_REQUIRED_ENV_KEYS];
+  }
+
   private getValidationPreflightCommands(): string[] {
     return this.isLocalValidationEnvironment()
       ? [...LOCAL_VALIDATION_PREFLIGHT_COMMANDS]
-      : [...VALIDATION_PREFLIGHT_COMMANDS, "pnpm run validation:preflight"];
+      : [
+          ...VALIDATION_PREFLIGHT_COMMANDS,
+          "pnpm run validation:preflight -- --env-file <path-to-release-env>",
+        ];
   }
 }

@@ -36,6 +36,8 @@ test("adjudication surface lists only the user's tasks and blocks non-owner task
   assert.equal(views[0].publicProgress.propositionId, proposition.id);
   assert.equal("marketStatus" in views[0], false);
   assert.equal("odds" in views[0], false);
+  assert.equal("currentUserPosition" in views[0], false);
+  assert.equal("executionReadiness" in views[0], false);
 
   const ownerView = await harness.adjudicationSurface.getTaskForUser(
     userOneTask.id,
@@ -125,6 +127,10 @@ test("validation surface returns progress-only market views and placeBetForUser 
   assert.equal("totalPool" in listViews[0], false);
   assert.equal("odds" in listViews[0], false);
   assert.equal("winningOption" in listViews[0], false);
+  assert.equal("latestResponseStatus" in listViews[0], false);
+  assert.equal("rewardStatus" in listViews[0], false);
+  assert.equal("rewardPendingAmount" in listViews[0], false);
+  assert.equal("rewardFinalAmount" in listViews[0], false);
 
   const prepared = await harness.validationSurface.prepareBetForUser({
     propositionId: proposition.id,
@@ -164,10 +170,18 @@ test("validation surface returns progress-only market views and placeBetForUser 
   assert.equal(placed.execution.stage, "position_recorded");
   assert.equal(placed.execution.chainId, TEST_CHAIN_ID);
   assert.equal(placed.execution.txHash, null);
+  assert.equal("latestResponseStatus" in placed.marketView, false);
+  assert.equal("rewardStatus" in placed.marketView, false);
+  assert.equal("rewardPendingAmount" in placed.marketView, false);
+  assert.equal("rewardFinalAmount" in placed.marketView, false);
 
   const singleMarket = await harness.validationSurface.getMarket(market.id, "user-1");
   assert.equal(singleMarket?.currentUserPosition?.stakeAmount, "150");
   assert.equal(singleMarket?.currentUserPosition?.grossPayout, null);
+  assert.equal("latestResponseStatus" in (singleMarket ?? {}), false);
+  assert.equal("rewardStatus" in (singleMarket ?? {}), false);
+  assert.equal("rewardPendingAmount" in (singleMarket ?? {}), false);
+  assert.equal("rewardFinalAmount" in (singleMarket ?? {}), false);
 
   await assert.rejects(
     () =>

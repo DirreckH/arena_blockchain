@@ -22,7 +22,6 @@ export interface RequesterComparisonSetDeliveryPolicyErrorViewModel {
 
 export interface RequesterComparisonSetDeliveryPolicyViewModel {
   policyId: string;
-  userId: string;
   comparisonSetId: string;
   name: string;
   description: string | null;
@@ -39,14 +38,12 @@ export interface RequesterComparisonSetDeliveryPolicyViewModel {
 }
 
 export interface RequesterComparisonSetDeliveryPolicyListViewModel {
-  userId: string;
   comparisonSetId: string;
   totalCount: number;
   items: RequesterComparisonSetDeliveryPolicyViewModel[];
 }
 
 export interface DeleteRequesterComparisonSetDeliveryPolicyResult {
-  userId: string;
   comparisonSetId: string;
   policyId: string;
   deleted: true;
@@ -73,7 +70,9 @@ export interface UpdateRequesterComparisonSetDeliveryPolicyInput {
 }
 
 type StoredRequesterComparisonSetDeliveryPolicyRecord =
-  RequesterComparisonSetDeliveryPolicyViewModel;
+  RequesterComparisonSetDeliveryPolicyViewModel & {
+    userId: string;
+  };
 
 const REQUESTER_COMPARISON_SET_DELIVERY_POLICY_NAMESPACE =
   "arena.requester.comparison_set_delivery_policies";
@@ -191,6 +190,27 @@ function parseStoredPolicies(
     );
 }
 
+function toPublicDeliveryPolicy(
+  record: StoredRequesterComparisonSetDeliveryPolicyRecord,
+): RequesterComparisonSetDeliveryPolicyViewModel {
+  return {
+    policyId: record.policyId,
+    comparisonSetId: record.comparisonSetId,
+    name: record.name,
+    description: record.description,
+    cadence: record.cadence,
+    nextRunAt: record.nextRunAt,
+    lastRunAt: record.lastRunAt,
+    lastRunStatus: record.lastRunStatus,
+    lastRunError: cloneValue(record.lastRunError),
+    enabled: record.enabled,
+    retainedExportCount: record.retainedExportCount,
+    transport: cloneValue(record.transport),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
 @Injectable()
 export class RequesterComparisonSetDeliveryPolicyService {
   constructor(
@@ -212,10 +232,9 @@ export class RequesterComparisonSetDeliveryPolicyService {
     );
     const items = await this.listStoredPolicies(userId, comparisonSetId, db);
     return {
-      userId,
       comparisonSetId,
       totalCount: items.length,
-      items: items.map(cloneValue),
+      items: items.map((item) => toPublicDeliveryPolicy(item)),
     };
   }
 
@@ -255,7 +274,7 @@ export class RequesterComparisonSetDeliveryPolicyService {
 
     const current = await this.listStoredPolicies(userId, comparisonSetId, db);
     await this.persistPolicies(userId, comparisonSetId, [record, ...current], db);
-    return cloneValue(record);
+    return toPublicDeliveryPolicy(record);
   }
 
   async getPolicyForUser(
@@ -282,7 +301,7 @@ export class RequesterComparisonSetDeliveryPolicyService {
       );
     }
 
-    return cloneValue(matched);
+    return toPublicDeliveryPolicy(matched);
   }
 
   async updatePolicyForUser(
@@ -426,11 +445,10 @@ export class RequesterComparisonSetDeliveryPolicyService {
         tx,
       );
 
-      return {
-        userId,
-        comparisonSetId,
-        policyId,
-        deleted: true,
+    return {
+      comparisonSetId,
+      policyId,
+      deleted: true,
       };
     });
   }
@@ -460,6 +478,7 @@ export class RequesterComparisonSetDeliveryPolicyService {
     ).then((updated) => {
       const finalPolicy = {
         ...updated,
+        userId,
         lastRunAt: runAt,
         lastRunStatus: "completed" as const,
         lastRunError: null,
@@ -489,6 +508,7 @@ export class RequesterComparisonSetDeliveryPolicyService {
     );
     const updatedPolicy: StoredRequesterComparisonSetDeliveryPolicyRecord = {
       ...policy,
+      userId,
       lastRunStatus: "failed",
       lastRunError: cloneValue(error),
       updatedAt: new Date().toISOString(),
@@ -506,7 +526,7 @@ export class RequesterComparisonSetDeliveryPolicyService {
   async listDuePolicies(
     now: string,
     db: ArenaDbClient = this.prisma,
-  ): Promise<RequesterComparisonSetDeliveryPolicyViewModel[]> {
+  ): Promise<StoredRequesterComparisonSetDeliveryPolicyRecord[]> {
     const all = await this.listAllStoredPolicies(db);
     const nowTime = Date.parse(now);
     return all.filter(

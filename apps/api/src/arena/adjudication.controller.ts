@@ -4,6 +4,8 @@ import type {
   SubmitAdjudicationResponseResult,
 } from "@arena/shared";
 
+import { ArenaRateLimit } from "../common/decorators/arena-rate-limit.decorator";
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { SkipAdjudicationTaskDto } from "./dto/skip-adjudication-task.dto";
 import { StartAdjudicationTaskDto } from "./dto/start-adjudication-task.dto";
@@ -13,6 +15,7 @@ import { DispatchEngineService } from "./services/dispatch-engine.service";
 import { EffectiveSampleCounterService } from "./services/effective-sample-counter.service";
 import { ResponseService } from "./services/response.service";
 
+@ArenaSurfaceBoundary("adjudication")
 @Controller("arena/adjudication")
 export class ArenaAdjudicationController {
   constructor(
@@ -71,6 +74,7 @@ export class ArenaAdjudicationController {
   }
 
   @Post("tasks/:taskId/responses")
+  @ArenaRateLimit("adjudication_response_submit")
   async submitResponse(
     @Param("taskId") taskId: string,
     @Body() body: SubmitTaskResponseDto,

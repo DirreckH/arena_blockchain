@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from "@nestjs/common";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import { PublicMarketSearchQueryDto } from "./dto/public-market-search-query.dto";
 import { EffectiveSampleCounterService } from "./services/effective-sample-counter.service";
@@ -7,6 +8,7 @@ import { PublicIntegrityViewService } from "./services/public-integrity-view.ser
 import { PublicResultViewService } from "./services/public-result-view.service";
 import { ValidationViewService } from "./services/validation-view.service";
 
+@ArenaSurfaceBoundary("public")
 @Public()
 @Controller("arena/public")
 export class ArenaPublicController {

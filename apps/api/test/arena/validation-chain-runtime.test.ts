@@ -21,6 +21,7 @@ import { ValidationChainIdService } from "../../src/arena/validation-chain/valid
 import { ValidationChainCommandRuntimeService } from "../../src/arena/validation-chain/validation-chain-command-runtime.service";
 import { ValidationRehearsalCheckpointService } from "../../src/arena/services/validation-rehearsal-checkpoint.service";
 import { PropositionLifecycleAutomationService } from "../../src/arena/services/proposition-lifecycle-automation.service";
+import { RewardPayoutAutomationService } from "../../src/arena/services/reward-payout-automation.service";
 import { RequesterComparisonSetDeliveryAutomationService } from "../../src/arena/services/requester-comparison-set-delivery-automation.service";
 import {
   VALIDATION_CHAIN_STREAM_KEY,
@@ -1102,6 +1103,15 @@ function createQueuedRehearsal(
         };
       },
     } as never,
+    {
+      async runDuePayouts() {
+        return {
+          processedAt: new Date().toISOString(),
+          processedCount: 0,
+          items: [],
+        };
+      },
+    } as RewardPayoutAutomationService,
     alerts as never,
     {
       async recordJobProcessed() {},

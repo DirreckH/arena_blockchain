@@ -209,4 +209,52 @@ describe("validation chain config and contract service", () => {
       retry_delivery: "token_two",
     });
   });
+
+  it("fails env validation when ops alert webhook target mappings are malformed", () => {
+    assert.throws(
+      () =>
+        validateEnv({
+          NODE_ENV: "test",
+          PORT: 4000,
+          DATABASE_URL:
+            "postgresql://arena:arena@127.0.0.1:5432/arena?schema=public",
+          REDIS_URL: "redis://127.0.0.1:6379/0",
+          JWT_SECRET: "replace-with-a-long-random-secret",
+          AUTH_CHALLENGE_TTL: 300,
+          RPC_URL: "http://127.0.0.1:8545",
+          CHAIN_ID: 1337,
+          ARENA_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000001",
+          ARENA_VALIDATION_ENVIRONMENT: "local",
+          ARENA_VALIDATION_CONTRACT_ADDRESS:
+            "0x0000000000000000000000000000000000000002",
+          ARENA_VALIDATION_SYNC_CONFIRMATIONS: 1,
+          ARENA_VALIDATION_SYNC_BATCH_SIZE: 500,
+          ARENA_OPS_ALERT_WEBHOOK_TARGETS: "pagerduty-no-separator",
+          OPERATOR_WALLET_ADDRESSES: "",
+          ADMIN_WALLET_ADDRESSES: "",
+          SYSTEM_WALLET_ADDRESSES: "",
+        }),
+      /ARENA_OPS_ALERT_WEBHOOK_TARGETS/i,
+    );
+  });
+
+  it("parses ops alert webhook config from AppConfigService", () => {
+    const config = createConfigService({
+      ARENA_OPS_ALERT_WEBHOOK_TARGETS:
+        "pager=https://alerts.example.test/runtime, ops=https://alerts.example.test/validation ",
+      ARENA_OPS_ALERT_WEBHOOK_BEARER_TOKENS:
+        "pager:token_one, ops:token_two ",
+      ARENA_OPS_ALERT_WEBHOOK_TIMEOUT_MS: 9000,
+    });
+
+    assert.deepEqual(config.opsAlertWebhookTargets, {
+      pager: "https://alerts.example.test/runtime",
+      ops: "https://alerts.example.test/validation",
+    });
+    assert.deepEqual(config.opsAlertWebhookBearerTokens, {
+      pager: "token_one",
+      ops: "token_two",
+    });
+    assert.equal(config.opsAlertWebhookTimeoutMs, 9000);
+  });
 });

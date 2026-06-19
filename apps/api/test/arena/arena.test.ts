@@ -14,6 +14,7 @@ import { ArenaInternalRewardsController } from "../../src/arena/internal-rewards
 import { ArenaInternalTagsController } from "../../src/arena/internal-tags.controller";
 import { ArenaInternalValidationChainController } from "../../src/arena/internal-validation-chain.controller";
 import { ArenaDiscussionController } from "../../src/arena/discussion.controller";
+import { ArenaIdService } from "../../src/arena/arena-id.service";
 import { ArenaPublicController } from "../../src/arena/public.controller";
 import { ArenaPublicDiscoveryController } from "../../src/arena/public-discovery.controller";
 import { ArenaRespondentAccountController } from "../../src/arena/respondent-account.controller";
@@ -30,6 +31,7 @@ import { assertResponseReviewTransition } from "../../src/arena/state-machines/r
 import { assertRewardLedgerTransition } from "../../src/arena/state-machines/reward-ledger-state.machine";
 import { AdjudicationViewService } from "../../src/arena/services/adjudication-view.service";
 import { AccountViewService } from "../../src/arena/services/account-view.service";
+import { DiscoveryConfigService } from "../../src/arena/services/discovery-config.service";
 import { PublicDiscoveryService } from "../../src/arena/services/public-discovery.service";
 import { PublicRespondentLeaderboardService } from "../../src/arena/services/public-respondent-leaderboard.service";
 import { PublicIntegrityViewService } from "../../src/arena/services/public-integrity-view.service";
@@ -68,6 +70,7 @@ const propositionDraftInput = {
   minBetAmount: "10",
   minDurationSeconds: 60,
   maxDurationSeconds: 3600,
+  sampleConstraints: [] as string[],
   rewardBudget: "1000",
   baseResponseReward: "20",
   marketEnabled: false,
@@ -108,6 +111,47 @@ const defaultReasonCodesByStatus = {
   invalid: ["integrity_violation"],
   fraud_suspected: ["fraud_signal_detected"],
 } as const;
+
+const INTERNAL_IDENTITY_KEYS = [
+  "userId",
+  "createdByUserId",
+  "updatedByUserId",
+  "reviewedByUserId",
+] as const;
+
+const assertKeyAbsentRecursively = (
+  value: unknown,
+  key: string,
+  path = "$",
+): void => {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      assertKeyAbsentRecursively(item, key, `${path}[${index}]`),
+    );
+    return;
+  }
+
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(record, key),
+    false,
+    `${path} unexpectedly exposes ${key}`,
+  );
+
+  for (const [childKey, nested] of Object.entries(record)) {
+    assertKeyAbsentRecursively(nested, key, `${path}.${childKey}`);
+  }
+};
+
+const assertInternalIdentityAbsentRecursively = (value: unknown): void => {
+  for (const key of INTERNAL_IDENTITY_KEYS) {
+    assertKeyAbsentRecursively(value, key);
+  }
+};
 
 function createValidationChainRuntimeRecorder() {
   const createOpenCalls: Array<Record<string, unknown>> = [];
@@ -474,6 +518,63 @@ test("createProposition accepts a legal binary non_rolling single-question propo
   assert.equal(proposition.structure, "binary");
   assert.equal(proposition.rollingMode, "non_rolling");
   assert.equal(proposition.marketEnabled, true);
+});
+
+test("createProposition and scheduling provision creator and operator identities", async () => {
+  const harness = createArenaHarness();
+
+  const proposition = await harness.propositionEngineService.createProposition({
+    ...propositionDraftInput,
+    createdByUserId: "creator_identity_1",
+  });
+
+  assert.equal(
+    (await harness.userRepository.findById("creator_identity_1"))?.id,
+    "creator_identity_1",
+  );
+
+  await harness.propositionEngineService.approveOrScheduleProposition({
+    propositionId: proposition.id,
+    publishedAt: "2026-04-18T10:00:00.000Z",
+    updatedByUserId: "operator_identity_1",
+  });
+
+  assert.equal(
+    (await harness.userRepository.findById("operator_identity_1"))?.id,
+    "operator_identity_1",
+  );
+});
+
+test("internal proposition rejection provisions missing operator identity", async () => {
+  const harness = createArenaHarness();
+  const controller = new ArenaInternalPropositionsController(
+    harness.internalPropositionOpsService,
+  );
+
+  const draft = await harness.propositionEngineService.createProposition({
+    ...propositionDraftInput,
+    createdByUserId: "creator_reject_identity",
+  });
+  await harness.propositionDraftService.submitDraft({
+    propositionId: draft.id,
+    userId: "creator_reject_identity",
+    note: "ready_for_rejection",
+  });
+
+  await controller.rejectProposition(
+    draft.id,
+    {
+      rejectedAt: "2026-04-18T10:01:00.000Z",
+      reason: "duplicate_scope",
+      note: "identity_backfill_guard",
+    } as any,
+    { user: { sub: "reject_operator_identity_1" } } as any,
+  );
+
+  assert.equal(
+    (await harness.userRepository.findById("reject_operator_identity_1"))?.id,
+    "reject_operator_identity_1",
+  );
 });
 
 test("createProposition rejects invalid option counts", async () => {
@@ -959,6 +1060,54 @@ test("response review workflow can be claimed, released, and reclaimed without f
   assert.equal(pendingReward?.status, "pending");
   assert.equal(progress.progress.currentEffectiveSample, 0);
   assert.equal(progress.progress.reviewedCount, 0);
+});
+
+test("response review workflow provisions operator identities for claim release and finalization", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness);
+  const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+    propositionId: proposition.id,
+    userIds: ["review_identity_user"],
+    assignedAt: "2026-04-18T10:06:00.000Z",
+    expiresAt: "2026-04-18T10:16:00.000Z",
+  });
+
+  const response = await harness.responseService.submitResponse({
+    propositionId: proposition.id,
+    taskId: task.id,
+    userId: "review_identity_user",
+    selectedOption: 0,
+    confirmationOption: 0,
+    clientStartedAt: "2026-04-18T10:06:10.000Z",
+    clientSubmittedAt: "2026-04-18T10:06:20.000Z",
+    submittedAt: "2026-04-18T10:06:20.000Z",
+    understandingAck: true,
+  });
+
+  await harness.responseReviewService.claimPendingReview({
+    responseId: response.id,
+    claimedAt: "2026-04-18T10:07:00.000Z",
+    claimedByUserId: "review_operator_1",
+  });
+  await harness.responseReviewService.releasePendingReview({
+    responseId: response.id,
+    releasedAt: "2026-04-18T10:08:00.000Z",
+    releasedByUserId: "review_operator_1",
+  });
+  await harness.qualityEngineService.reviewPendingResponse({
+    responseId: response.id,
+    reviewedAt: "2026-04-18T10:09:00.000Z",
+    reviewedByUserId: "review_operator_2",
+  });
+
+  assert.equal(
+    (await harness.userRepository.findById("review_operator_1"))?.id,
+    "review_operator_1",
+  );
+  assert.equal(
+    (await harness.userRepository.findById("review_operator_2"))?.id,
+    "review_operator_2",
+  );
 });
 
 test("response review workflow exposes stale ownership and allows takeover", async () => {
@@ -1465,6 +1614,120 @@ test("effective sample counter rebuild counts finalized reviews, skips pending r
   assert.equal(snapshot.effectiveSampleCount, 2);
   assert.equal(snapshot.currentProgress, 2 / 3);
   assert.equal(snapshot.hasReachedMinEffectiveSample, false);
+});
+
+test("effective sample counter rebuild stays correct after concurrent multi-respondent submissions and review finalization", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    minEffectiveSample: 5,
+  });
+  const userIds = [
+    "counter_concurrent_valid_1",
+    "counter_concurrent_valid_2",
+    "counter_concurrent_valid_3",
+    "counter_concurrent_partial_1",
+    "counter_concurrent_partial_2",
+    "counter_concurrent_invalid_1",
+    "counter_concurrent_invalid_2",
+  ];
+  const tasks = await harness.dispatchEngineService.createDispatchTasksForProposition({
+    propositionId: proposition.id,
+    userIds,
+    assignedAt: arenaTime(2),
+    expiresAt: arenaTime(12),
+  });
+  const taskByUserId = new Map(tasks.map((task) => [task.userId, task] as const));
+
+  const responses = await Promise.all(
+    userIds.map((userId, index) =>
+      harness.responseService.submitResponse({
+        propositionId: proposition.id,
+        taskId: taskByUserId.get(userId)!.id,
+        userId,
+        selectedOption: index % 2 === 0 ? 0 : 1,
+        confirmationOption: index === 3 || index === 4 ? 1 : index % 2 === 0 ? 0 : 1,
+        clientStartedAt: arenaTime(2, index),
+        clientSubmittedAt: arenaTime(2, index + 10),
+        submittedAt: arenaTime(2, index + 10),
+        understandingAck: true,
+      }),
+    ),
+  );
+  const responseByUserId = new Map(
+    responses.map((response) => [response.userId, response] as const),
+  );
+
+  await Promise.all([
+    harness.responseReviewService.reviewValid({
+      responseId: responseByUserId.get("counter_concurrent_valid_1")!.id,
+      reviewedAt: arenaTime(3, 0),
+      reviewedByUserId: "reviewer_1",
+      qualityScore: 100,
+      reasonCodes: ["passes_quality_checks"],
+    }),
+    harness.responseReviewService.reviewValid({
+      responseId: responseByUserId.get("counter_concurrent_valid_2")!.id,
+      reviewedAt: arenaTime(3, 1),
+      reviewedByUserId: "reviewer_1",
+      qualityScore: 100,
+      reasonCodes: ["passes_quality_checks"],
+    }),
+    harness.responseReviewService.reviewValid({
+      responseId: responseByUserId.get("counter_concurrent_valid_3")!.id,
+      reviewedAt: arenaTime(3, 2),
+      reviewedByUserId: "reviewer_1",
+      qualityScore: 100,
+      reasonCodes: ["passes_quality_checks"],
+    }),
+    harness.responseReviewService.reviewPartialValid({
+      responseId: responseByUserId.get("counter_concurrent_partial_1")!.id,
+      reviewedAt: arenaTime(3, 3),
+      reviewedByUserId: "reviewer_1",
+      qualityScore: 60,
+      flags: ["confirmation_mismatch"],
+      reasonCodes: ["confirmation_mismatch"],
+    }),
+    harness.responseReviewService.reviewPartialValid({
+      responseId: responseByUserId.get("counter_concurrent_partial_2")!.id,
+      reviewedAt: arenaTime(3, 4),
+      reviewedByUserId: "reviewer_1",
+      qualityScore: 60,
+      flags: ["suspicious_latency"],
+      reasonCodes: ["time_too_short"],
+    }),
+    harness.responseReviewService.reviewInvalid({
+      responseId: responseByUserId.get("counter_concurrent_invalid_1")!.id,
+      reviewedAt: arenaTime(3, 5),
+      reviewedByUserId: "reviewer_1",
+      qualityScore: 0,
+      flags: ["integrity_violation"],
+      reasonCodes: ["integrity_violation"],
+    }),
+    harness.responseReviewService.reviewInvalid({
+      responseId: responseByUserId.get("counter_concurrent_invalid_2")!.id,
+      reviewedAt: arenaTime(3, 6),
+      reviewedByUserId: "reviewer_1",
+      qualityScore: 0,
+      flags: ["fraud_signal_detected"],
+      reasonCodes: ["fraud_signal_detected"],
+    }),
+  ]);
+
+  const [firstSnapshot, secondSnapshot] = await Promise.all([
+    harness.counterService.rebuildCounterForProposition(proposition.id),
+    harness.counterService.rebuildCounterForProposition(proposition.id),
+  ]);
+
+  for (const snapshot of [firstSnapshot, secondSnapshot]) {
+    assert.equal(snapshot.totalResponses, 7);
+    assert.equal(snapshot.reviewedResponses, 7);
+    assert.equal(snapshot.validCount, 3);
+    assert.equal(snapshot.partialValidCount, 2);
+    assert.equal(snapshot.invalidCount, 2);
+    assert.equal(snapshot.effectiveSampleCount, 5);
+    assert.equal(snapshot.currentProgress, 1);
+    assert.equal(snapshot.hasReachedMinEffectiveSample, true);
+  }
 });
 
 test("effective sample counter is latest-only across response revisions", async () => {
@@ -2934,7 +3197,7 @@ test("respondent reward endpoint only returns the current user's ledger view and
   assert.equal(rewards[0]?.status, "finalized");
   assert.equal(rewards[0]?.propositionTitle, proposition.title);
   assert.equal(rewards[0]?.isCurrent, true);
-  assert.equal("userId" in (rewards[0] ?? {}), false);
+  assertInternalIdentityAbsentRecursively(rewards[0]);
   assert.equal("updatedAt" in (rewards[0] ?? {}), false);
 });
 
@@ -3428,6 +3691,226 @@ test("public discovery controller serves home ranking latest topics and category
   );
 });
 
+test("public discovery merges persisted discovery-config overrides into public outputs", async () => {
+  const harness = createArenaHarness();
+
+  const politics = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Config politics proposition",
+    category: "politics",
+  });
+  const sports = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 1,
+    title: "Config sports proposition",
+    category: "sports",
+  });
+
+  await createReviewedResponseForProposition(harness, {
+    propositionId: politics.id,
+    userId: "config_politics_user",
+    minuteOffset: 330,
+    reviewStatus: "valid",
+  });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: sports.id,
+    userId: "config_sports_user",
+    minuteOffset: 331,
+    reviewStatus: "valid",
+  });
+
+  await harness.counterService.rebuildCounterForProposition(politics.id);
+  await harness.counterService.rebuildCounterForProposition(sports.id);
+
+  const validationViews = new ValidationViewService(
+    harness.config as any,
+    harness.propositionRepository as any,
+    harness.counterRepository as any,
+    harness.marketRepository as any,
+    harness.betRepository as any,
+  );
+  const discoveryConfig = new DiscoveryConfigService(
+    new ArenaIdService(),
+    harness.systemKeyValueRepository as any,
+    validationViews,
+  );
+
+  const politicsMarket = (
+    await harness.marketRepository.findByPropositionId(politics.id)
+  )!;
+  const sportsMarket = (
+    await harness.marketRepository.findByPropositionId(sports.id)
+  )!;
+
+
+  await discoveryConfig.updateGlobalConfig({
+    categories: [
+      {
+        slug: "sports-live",
+        label: "竞技快讯",
+        title: "竞技",
+        directoryLabel: "竞技结果",
+        description: "赛事结果与竞技热度",
+        displayOrder: -10,
+      },
+      {
+        slug: "politics",
+        label: "政策雷达",
+        title: "政策",
+        directoryLabel: "政策目录",
+        description: "政策议题与公共治理追踪",
+        displayOrder: -9,
+      },
+      {
+        slug: "crypto",
+        title: "加密",
+        description: "区块链与数字资产市场",
+        displayOrder: -8,
+        pageState: "hidden",
+      },
+      {
+        slug: "finance",
+        title: "金融",
+        description: "资产价格与宏观经济",
+        displayOrder: -7,
+        pageState: "deleted",
+      },
+    ],
+    rankingCategoryLabels: {
+      all: "全部赛道",
+      general: "综合",
+      politics: "政策",
+      sports: "竞技",
+      tech: "科技",
+      research: "研究",
+      culture: "文化",
+    },
+  });
+
+  const configuredPolitics = await discoveryConfig.updateCategoryConfig(
+    "politics",
+    {
+      sidebarItems: [
+        {
+          id: "policy-focus",
+          label: "政策焦点",
+          linkedMarketIds: [
+            politicsMarket.id,
+            politicsMarket.id,
+            "missing_market",
+          ],
+        },
+        {
+          id: "cross-category",
+          label: "跨类绑定",
+          linkedMarketIds: [sportsMarket.id],
+        },
+      ],
+    },
+  );
+
+  assert.deepEqual(
+    configuredPolitics.sidebarItems.map((item) => ({
+      id: item.id,
+      resolvedLinkedMarketCount: item.resolvedLinkedMarketCount,
+      invalidLinkedMarketIds: item.invalidLinkedMarketIds,
+    })),
+    [
+      {
+        id: "policy-focus",
+        resolvedLinkedMarketCount: 1,
+        invalidLinkedMarketIds: ["missing_market"],
+      },
+      {
+        id: "cross-category",
+        resolvedLinkedMarketCount: 0,
+        invalidLinkedMarketIds: [sportsMarket.id],
+      },
+    ],
+  );
+
+  const discoveryService = new PublicDiscoveryService(
+    validationViews,
+    discoveryConfig,
+  );
+
+  const home = await discoveryService.getHome();
+  const hot = await discoveryService.getRanking("hot");
+  const categoryIndex = await discoveryService.getCategoryDirectoryIndex();
+  const politicsDirectory = await discoveryService.getCategoryDirectory(
+    "/zh/politics",
+  );
+  const cryptoDirectory = await discoveryService.getCategoryDirectory(
+    "/zh/crypto",
+  );
+  const financeDirectory = await discoveryService.getCategoryDirectory(
+    "/zh/finance",
+  );
+
+  const sportsIndex = categoryIndex.items.findIndex(
+    (item) => item.slug === "sports-live",
+  );
+  const politicsIndex = categoryIndex.items.findIndex(
+    (item) => item.slug === "politics",
+  );
+
+  assert.equal(sportsIndex >= 0, true);
+  assert.equal(politicsIndex >= 0, true);
+  assert.equal(sportsIndex < politicsIndex, true);
+  assert.equal(
+    categoryIndex.items.find((item) => item.slug === "politics")?.label,
+    "政策雷达",
+  );
+  assert.equal(
+    categoryIndex.items.find((item) => item.slug === "politics")
+      ?.description,
+    "政策议题与公共治理追踪",
+  );
+  assert.equal(
+    categoryIndex.items.some((item) => item.slug === "crypto"),
+    false,
+  );
+  assert.equal(
+    categoryIndex.items.some((item) => item.slug === "finance"),
+    false,
+  );
+  assert.equal(
+    home.sections.find((section) => section.href === "/zh/politics")?.label,
+    "政策雷达",
+  );
+  assert.equal(
+    home.sections.some((section) => section.href === "/zh/crypto"),
+    false,
+  );
+  assert.equal(
+    home.sections.some((section) => section.href === "/zh/finance"),
+    false,
+  );
+  assert.equal(
+    hot.categories.find((category) => category.id === "politics")?.label,
+    "政策",
+  );
+  assert.equal(
+    hot.items.some((item) => item.title === "Config sports proposition"),
+    true,
+  );
+  assert.deepEqual(politicsDirectory?.sidebarItems, [
+    {
+      label: "政策焦点",
+      count: "1",
+      marketIds: [politicsMarket.id],
+    },
+    {
+      label: "跨类绑定",
+      count: "0",
+      marketIds: [],
+    },
+  ]);
+  assert.equal(cryptoDirectory, null);
+  assert.equal(financeDirectory, null);
+});
+
 test("public discovery closing-soon buckets are ordered by nearest reveal window and exclude settled or expired markets", async () => {
   const harness = createArenaHarness();
   const now = new Date();
@@ -3586,9 +4069,17 @@ test("public respondent leaderboard only includes indexing-enabled public respon
     category: "ai",
   });
 
-  const publicUser = "0x1111111111111111111111111111111111111111";
+  const publicUser = "leaderboard_public_user";
   const memberOnlyUser = "0x2222222222222222222222222222222222222222";
   const notIndexedUser = "0x3333333333333333333333333333333333333333";
+
+  await harness.userRepository.create({
+    id: publicUser,
+    primaryWalletAddress: "0x1111111111111111111111111111111111111111",
+    normalizedPrimaryWalletAddress:
+      "0x1111111111111111111111111111111111111111",
+    status: "active",
+  });
 
   await createReviewedResponseForProposition(harness, {
     propositionId: politicsA.id,
@@ -3677,6 +4168,7 @@ test("public respondent leaderboard only includes indexing-enabled public respon
     harness.userTagRepository as any,
     harness.accountPreferencesService as any,
     harness.systemKeyValueRepository as any,
+    harness.userRepository as any,
   );
 
   const leaderboard = await service.getLeaderboard();
@@ -3687,22 +4179,14 @@ test("public respondent leaderboard only includes indexing-enabled public respon
   assert.ok(aiCategory);
   assert.equal(politicsCategory!.rows.length, 1);
   assert.equal(aiCategory!.rows.length, 1);
-  assert.equal(politicsCategory!.rows[0]!.userId, publicUser);
+  assertInternalIdentityAbsentRecursively(politicsCategory!.rows[0]!);
   assert.equal(politicsCategory!.rows[0]!.handle, "respondent-1111");
   assert.equal(politicsCategory!.rows[0]!.walletShort, "0x1111…1111");
   assert.equal(politicsCategory!.rows[0]!.reviewedCount, 2);
   assert.equal(politicsCategory!.rows[0]!.acceptedCount, 2);
   assert.equal(politicsCategory!.rows[0]!.responseRatePercent, 100);
   assert.equal(politicsCategory!.rows[0]!.topTag.length > 0, true);
-  assert.equal(aiCategory!.rows[0]!.userId, publicUser);
-  assert.equal(
-    politicsCategory!.rows.some((row) => row.userId === memberOnlyUser),
-    false,
-  );
-  assert.equal(
-    politicsCategory!.rows.some((row) => row.userId === notIndexedUser),
-    false,
-  );
+  assertInternalIdentityAbsentRecursively(aiCategory!.rows[0]!);
 });
 
 test("reputation snapshot persists explainable metrics across valid partial invalid and fraud outcomes", async () => {
@@ -3965,7 +4449,7 @@ test("respondent reputation self view only returns the caller summary while inte
   const internalView =
     await internalController.getRespondentReputation("rep_reader_1");
 
-  assert.equal(selfView.userId, "rep_reader_1");
+  assertInternalIdentityAbsentRecursively(selfView);
   assert.equal(selfView.metrics.reviewedResponseCount, 1);
   assert.equal("ruleVersion" in selfView, false);
   assert.equal("validCount" in selfView.metrics, false);
@@ -4192,7 +4676,7 @@ test("respondent tag self view only returns safe summary while internal view kee
     (tag) => tag.tagKey === "interested_in_ai",
   );
 
-  assert.equal(selfView.userId, "tag_reader_1");
+  assertInternalIdentityAbsentRecursively(selfView);
   assert.deepEqual(
     selfView.tags
       .filter((tag) => tag.tagType === "interest")
@@ -4244,6 +4728,136 @@ test("dispatch excludes explicitly risky respondents while keeping safe candidat
     preview.candidates.find((candidate) => candidate.userId === "dispatch_risky_user")
       ?.blockReason,
     "risky_reputation_guard",
+  );
+});
+
+test("dispatch enforces sample constraints using wallet binding history and active tags", async () => {
+  const harness = createArenaHarness();
+
+  await createReviewedHistory(harness, {
+    userId: "dispatch_experienced_wallet_tagged",
+    category: "sports",
+    count: 3,
+    startMinuteOffset: 0,
+    reviewStatus: "valid",
+  });
+
+  await harness.userRepository.updatePrimaryWalletAddress(
+    "dispatch_experienced_wallet_tagged",
+    "0x00000000000000000000000000000000000000c1",
+  );
+  await harness.userTagRepository.upsertByUserIdAndTagKey(
+    "dispatch_experienced_wallet_tagged",
+    "interested_in_sports",
+    {
+      id: "user_tag_dispatch_interested_in_sports",
+      userId: "dispatch_experienced_wallet_tagged",
+      tagKey: "interested_in_sports",
+      tagType: "interest",
+      tagValue: "active",
+      confidenceScore: 100,
+      sourceType: "participation",
+      ruleVersion: "respondent-tags-v1",
+      metadataJson: {},
+      activatedAt: new Date(arenaTime(15)),
+      expiresAt: null,
+    },
+    {
+      expiresAt: null,
+      confidenceScore: 100,
+      updatedAt: new Date(arenaTime(15)),
+    },
+  );
+
+  await createReviewedHistory(harness, {
+    userId: "dispatch_wallet_missing",
+    category: "sports",
+    count: 3,
+    startMinuteOffset: 20,
+    reviewStatus: "valid",
+  });
+  await harness.userTagRepository.upsertByUserIdAndTagKey(
+    "dispatch_wallet_missing",
+    "interested_in_sports",
+    {
+      id: "user_tag_dispatch_wallet_missing_interested_in_sports",
+      userId: "dispatch_wallet_missing",
+      tagKey: "interested_in_sports",
+      tagType: "interest",
+      tagValue: "active",
+      confidenceScore: 100,
+      sourceType: "participation",
+      ruleVersion: "respondent-tags-v1",
+      metadataJson: {},
+      activatedAt: new Date(arenaTime(35)),
+      expiresAt: null,
+    },
+    {
+      expiresAt: null,
+      confidenceScore: 100,
+      updatedAt: new Date(arenaTime(35)),
+    },
+  );
+
+  await harness.userRepository.create({
+    id: "dispatch_tag_missing",
+    primaryWalletAddress: "0x00000000000000000000000000000000000000c2",
+    normalizedPrimaryWalletAddress: "0x00000000000000000000000000000000000000c2",
+    status: "active",
+  });
+  await createReviewedHistory(harness, {
+    userId: "dispatch_tag_missing",
+    category: "general",
+    count: 3,
+    startMinuteOffset: 40,
+    reviewStatus: "valid",
+  });
+
+  const proposition = await createLiveProposition(harness, {
+    category: "general",
+    sampleConstraints: [
+      "experienced_user",
+      "wallet_signed",
+      "interested_in_sports",
+    ],
+  });
+  const preview = await harness.dispatchEngineService.previewDispatchCandidates({
+    propositionId: proposition.id,
+    userIds: [
+      "dispatch_experienced_wallet_tagged",
+      "dispatch_wallet_missing",
+      "dispatch_tag_missing",
+    ],
+    assignedAt: arenaTime(60),
+    maxAssignments: 3,
+  });
+  const created = await harness.dispatchEngineService.createDispatchTasksForProposition({
+    propositionId: proposition.id,
+    userIds: [
+      "dispatch_experienced_wallet_tagged",
+      "dispatch_wallet_missing",
+      "dispatch_tag_missing",
+    ],
+    assignedAt: arenaTime(60),
+    expiresAt: arenaTime(70),
+    maxAssignments: 3,
+  });
+
+  assert.deepEqual(created.map((task) => task.userId), [
+    "dispatch_experienced_wallet_tagged",
+  ]);
+  assert.equal(preview.selectedUserIds[0], "dispatch_experienced_wallet_tagged");
+  assert.equal(
+    preview.candidates.find(
+      (candidate) => candidate.userId === "dispatch_wallet_missing",
+    )?.blockReason,
+    "sample_constraints_mismatch",
+  );
+  assert.equal(
+    preview.candidates.find(
+      (candidate) => candidate.userId === "dispatch_tag_missing",
+    )?.blockReason,
+    "sample_constraints_mismatch",
   );
 });
 
@@ -5930,6 +6544,7 @@ test("internal validation chain controller exposes manual command controls with 
         };
       },
     } as any,
+    {} as any,
     harness.validationRehearsalCheckpointService,
   );
 
@@ -6260,6 +6875,7 @@ test("projection replay automatic rehearsal checkpoint stays blocked until local
       },
     } as any,
     {} as any,
+    {} as any,
     harness.validationRehearsalCheckpointService,
   );
 
@@ -6413,6 +7029,7 @@ test("internal validation chain cancel requires explicit actor and valid chain s
         };
       },
     } as any,
+    {} as any,
     harness.validationRehearsalCheckpointService,
   );
 
@@ -7290,6 +7907,7 @@ test("batch validation bet reconciliation persists proposition-scoped rehearsal 
     } as any,
     {} as any,
     {} as any,
+    {} as any,
     harness.validationRehearsalCheckpointService,
   );
 
@@ -7837,7 +8455,7 @@ test("respondent result summary exposes settled outcome for the current user onl
   assert.equal(typeof summary.settledAt, "string");
   assert.equal(summary.currentUserRewardStatus, "finalized");
   assert.equal(summary.currentUserSettlementOutcome, "won");
-  assert.equal("userId" in summary, false);
+  assertInternalIdentityAbsentRecursively(summary);
 });
 
 test("respondent result summary rejects unresolved propositions", async () => {
@@ -7960,7 +8578,7 @@ test("respondent result list aggregates settled outcomes reward amounts and posi
     user: { sub: "result_list_user" },
   } as any);
 
-  assert.equal(resultList.userId, "result_list_user");
+  assertInternalIdentityAbsentRecursively(resultList);
   assert.equal(resultList.totals.settledCount, 2);
   assert.equal(resultList.totals.resolvedCount, 1);
   assert.equal(resultList.totals.voidCount, 1);
@@ -8069,7 +8687,7 @@ test("respondent result overview includes settled results open positions and rec
     user: { sub: "result_overview_user" },
   } as any);
 
-  assert.equal(overview.userId, "result_overview_user");
+  assertInternalIdentityAbsentRecursively(overview);
   assert.equal(overview.settledResults.totals.settledCount, 1);
   assert.equal(overview.openPositions.totalCount, 1);
   assert.equal(overview.openPositions.totalStakeAmount, "40.00");
@@ -8241,18 +8859,18 @@ test("respondent account overview aggregates rewards reputation tags and result 
     user: { sub: "account_overview_user" },
   } as any);
 
-  assert.equal(overview.userId, "account_overview_user");
+  assertInternalIdentityAbsentRecursively(overview);
   assert.equal(overview.rewardSummary.currentCount, 1);
   assert.equal(overview.rewardSummary.pendingAmount, "0.00");
   assert.equal(overview.rewardSummary.finalizedAmount, "20.00");
   assert.equal(overview.rewards.length >= 1, true);
-  assert.equal(overview.reputation.userId, "account_overview_user");
+  assertInternalIdentityAbsentRecursively(overview.reputation);
   assert.equal(
     overview.reputation.metrics.reviewedResponseCount >= 1,
     true,
   );
-  assert.equal(overview.tags.userId, "account_overview_user");
-  assert.equal(overview.resultOverview.userId, "account_overview_user");
+  assertInternalIdentityAbsentRecursively(overview.tags);
+  assertInternalIdentityAbsentRecursively(overview.resultOverview);
   assert.equal(overview.resultOverview.settledResults.totals.settledCount, 1);
   assert.equal(overview.resultOverview.openPositions.totalCount, 1);
   assert.equal(overview.resultOverview.summary.trackedEntryCount, 2);
@@ -8301,7 +8919,7 @@ test("respondent account preferences return defaults and persist updates", async
   } as any;
 
   const initial = await controller.getOwnAccountPreferences(request);
-  assert.equal(initial.userId, "account_preferences_user");
+  assertInternalIdentityAbsentRecursively(initial);
   assert.equal(initial.notificationPreferences.emailSettlement, false);
   assert.equal(initial.profile.avatarStyle, "initial");
   assert.equal(initial.wallet.metricView, "usdc");
@@ -8489,6 +9107,12 @@ test("respondent account exports create and list real export records for the cur
     },
   } as any;
 
+  await harness.userIdentityService.ensureUserExists("account_export_user");
+  await harness.userRepository.updatePrimaryWalletAddress(
+    "account_export_user",
+    "0x1234567890abcdef1234567890abcdef1234abcd",
+  );
+
   await createReviewedResponse(harness, {
     userId: "account_export_user",
     category: "ai",
@@ -8523,14 +9147,14 @@ test("respondent account exports create and list real export records for the cur
   );
 
   const exported = await controller.createOwnAccountExport({}, request);
-  assert.equal(exported.userId, "account_export_user");
+  assertInternalIdentityAbsentRecursively(exported);
   assert.equal(exported.status, "completed");
   assert.equal(exported.format, "json");
   assert.equal(exported.period, "90d");
-  assert.equal(exported.overview.userId, "account_export_user");
-  assert.equal(exported.preferences.userId, "account_export_user");
+  assertInternalIdentityAbsentRecursively(exported.overview);
+  assertInternalIdentityAbsentRecursively(exported.preferences);
   assert.equal(exported.fileName.endsWith(".json"), true);
-  assert.equal(exported.walletAddress?.includes("..."), true);
+  assert.equal(exported.walletAddress, "0x1234...abcd");
   assert.equal(exported.settlementAttachment?.openPositionCount, 0);
   assert.equal(exported.overview.rewards.length >= 1, true);
 
@@ -8570,6 +9194,33 @@ test("respondent account exports return stored artifact detail for the current u
     },
   } as any;
 
+  await harness.userIdentityService.ensureUserExists("account_export_detail_user");
+  await harness.userRepository.updatePrimaryWalletAddress(
+    "account_export_detail_user",
+    "0xabcdefabcdefabcdefabcdefabcdefabcdef4321",
+  );
+
+  const currentPreferences = await controller.getOwnAccountPreferences(request);
+  await controller.updateOwnAccountPreferences(
+    {
+      notificationPreferences: currentPreferences.notificationPreferences,
+      profile: currentPreferences.profile,
+      privacy: currentPreferences.privacy,
+      security: currentPreferences.security,
+      devices: currentPreferences.devices,
+      wallet: {
+        ...currentPreferences.wallet,
+        walletConnected: true,
+      },
+      exports: {
+        ...currentPreferences.exports,
+        maskWalletAddress: true,
+      },
+      developer: currentPreferences.developer,
+    },
+    request,
+  );
+
   await createReviewedResponse(harness, {
     userId: "account_export_detail_user",
     category: "ai",
@@ -8585,9 +9236,10 @@ test("respondent account exports return stored artifact detail for the current u
 
   assert.equal(detail.exportId, exported.exportId);
   assert.equal(detail.fileName, exported.fileName);
-  assert.equal(detail.overview.userId, "account_export_detail_user");
-  assert.equal(detail.preferences.userId, "account_export_detail_user");
+  assertInternalIdentityAbsentRecursively(detail.overview);
+  assertInternalIdentityAbsentRecursively(detail.preferences);
   assert.equal(detail.status, "completed");
+  assert.equal(detail.walletAddress, "0xabcd...4321");
 });
 
 test("discussion stays hidden before settlement and opens after settlement", async () => {
@@ -8696,6 +9348,14 @@ test("discussion controller persists settled comments newest-first", async () =>
     settledAt: arenaTime(305),
   });
 
+  await harness.userRepository.create({
+    id: "discussion_author_a",
+    primaryWalletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    normalizedPrimaryWalletAddress:
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    status: "active",
+  });
+
   const controller = new ArenaDiscussionController(harness.discussionService);
   const firstThread = await controller.createComment(
     market.id,
@@ -8714,6 +9374,10 @@ test("discussion controller persists settled comments newest-first", async () =>
 
   assert.equal(firstThread.totalCount, 1);
   assert.equal(firstThread.comments[0]?.optionIndex, 0);
+  assert.equal(firstThread.comments[0]?.author, "Arena aaaa");
+  assert.equal(firstThread.comments[0]?.handle, "@aaaaaaaaaa");
+  assert.equal(firstThread.comments[0]?.author, "Arena aaaa");
+  assert.equal(firstThread.comments[0]?.handle, "@aaaaaaaaaa");
   assert.equal(
     firstThread.comments[0]?.body,
     "结算后我更认同 A，因为有效样本已经闭环。",
@@ -8748,6 +9412,7 @@ test("internal controllers remain protected by role guard while public controlle
   const guard = new RolesGuard(new Reflector());
   const internalController = new ArenaInternalPropositionsController({} as any);
   const internalValidationChainController = new ArenaInternalValidationChainController(
+    {} as any,
     {} as any,
     {} as any,
     {} as any,

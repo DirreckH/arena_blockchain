@@ -14,3 +14,5 @@ export const DISPATCH_TASK_EXPIRY_AUTOMATION_JOB =
   "automation.dispatch-task-expiry";
 export const REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB =
   "automation.requester-comparison-set-delivery";
+export const REWARD_PAYOUT_AUTOMATION_JOB =
+  "automation.reward-payout";

@@ -400,6 +400,58 @@ test("runtime contract route exposes current operator summary in a focused smoke
               },
             ],
           },
+          validationProofRecord: {
+            environment: "staging",
+            chainId: 8453,
+            propositionId: "prop_runtime_contract",
+            proofComplete: false,
+            failures: ["reward_payout_follow_through_incomplete"],
+            releaseReadinessStatus: "blocked",
+            releaseBlockingDependencies: [
+              "validation_proof_reward_payout_incomplete",
+            ],
+            validationRehearsalStatus: "ready",
+            validationCurrentStepId: null,
+            validationCurrentStepStatus: null,
+            completedStepCount: 5,
+            remainingStepCount: 0,
+            latestCheckpointStepId: "projection_and_settlement",
+            latestCheckpointStatus: "complete",
+            latestCheckpointAt: "2026-05-24T00:34:00.000Z",
+            publicSettledResultVisible: true,
+            publicIntegrityOverviewVisible: true,
+            rewardPayoutLedgerEntryCount: 3,
+            rewardPayoutRecordCount: 2,
+            rewardPayoutFinalizedWithoutPayoutCount: 1,
+            rewardPayoutExecutingWithoutTxHashCount: 0,
+            rewardPayoutStaleExecutingCount: 1,
+            rewardPayoutStaleExecutingWithoutTxHashCount: 1,
+            rewardPayoutStaleExecutingAwaitingConfirmationCount: 0,
+            rewardPayoutCompletedWithExecutionTxHashCount: 1,
+            rewardPayoutStatusCounts: {
+              requested: 0,
+              approved: 1,
+              executing: 0,
+              completed: 1,
+              failed: 0,
+              cancelled: 0,
+              none: 1,
+            },
+            summaryArtifactPath:
+              "validation-rehearsal/prop_runtime_contract/proof-summary.json",
+            evidenceArtifactPath:
+              "validation-rehearsal/prop_runtime_contract/evidence-bundle.json",
+            publicResultArtifactPath:
+              "validation-rehearsal/prop_runtime_contract/public-settled-result.json",
+            rewardPayoutArtifactPath:
+              "validation-rehearsal/prop_runtime_contract/reward-payout-summary.json",
+            publicIntegrityArtifactPath:
+              "validation-rehearsal/prop_runtime_contract/public-integrity-overview.json",
+            note: "staging proof pending payout follow-through",
+            recordedByUserId: "operator_validation_chain",
+            checkedAt: "2026-05-24T00:35:00.000Z",
+            recordedAt: "2026-05-24T00:36:00.000Z",
+          },
           commands: {
             install: ["pnpm install", "pnpm run deps:up"],
             dev: ["pnpm run api:dev"],
@@ -500,6 +552,14 @@ test("runtime contract route exposes current operator summary in a focused smoke
       assert.equal(response.body.operatorSummary.status, "action_required");
       assert.equal(response.body.operatorSummary.requiresActionNow, true);
       assert.equal(response.body.operatorSummary.focusArea, "readiness");
+      assert.equal(
+        response.body.validationProofRecord.rewardPayoutArtifactPath,
+        "validation-rehearsal/prop_runtime_contract/reward-payout-summary.json",
+      );
+      assert.equal(
+        response.body.validationProofRecord.rewardPayoutStaleExecutingCount,
+        1,
+      );
       assert.equal(
         response.body.operatorSummary.latestRelevantEvidence.action,
         "runtime_contract.alert.release_blocked",

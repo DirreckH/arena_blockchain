@@ -1,8 +1,10 @@
 import { Controller, Get, Param, Req } from "@nestjs/common";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { ResultViewService } from "./services/result-view.service";
 
+@ArenaSurfaceBoundary("adjudication")
 @Controller("arena/adjudication/results")
 export class ArenaRespondentResultsController {
   constructor(private readonly resultViews: ResultViewService) {}

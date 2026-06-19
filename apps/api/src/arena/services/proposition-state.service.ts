@@ -28,6 +28,7 @@ import {
   assertBinaryOption,
   toDate,
 } from "../arena.utils";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 import { MarketService } from "./market.service";
 
 @Injectable()
@@ -40,6 +41,7 @@ export class PropositionStateService {
     private readonly ids: ArenaIdService,
     private readonly propositions: PropositionRepository,
     private readonly markets: MarketService,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async createDraft(
@@ -47,6 +49,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.createdByUserId,
+        undefined,
+        tx,
+      );
       try {
         assertSupportedMvpPropositionConfig({
           type: "consensus",
@@ -99,6 +106,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.updatedByUserId,
+        undefined,
+        tx,
+      );
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       assertPropositionTransition(proposition.status, "scheduled", "schedule");
 
@@ -119,6 +131,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.updatedByUserId,
+        undefined,
+        tx,
+      );
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       assertPropositionTransition(proposition.status, "live", "activateLive");
 
@@ -142,6 +159,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.updatedByUserId,
+        undefined,
+        tx,
+      );
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       assertPropositionTransition(proposition.status, "frozen", "freeze");
 
@@ -176,6 +198,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.updatedByUserId,
+        undefined,
+        tx,
+      );
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       assertPropositionTransition(proposition.status, "revealing", "startReveal");
 
@@ -209,6 +236,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.updatedByUserId,
+        undefined,
+        tx,
+      );
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       if (proposition.status !== "revealing") {
         throw new ArenaValidationError(
@@ -290,6 +322,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.updatedByUserId,
+        undefined,
+        tx,
+      );
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       assertPropositionTransition(proposition.status, "settled", "markSettled");
 
@@ -329,6 +366,11 @@ export class PropositionStateService {
     db?: ArenaDbClient,
   ) {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.updatedByUserId,
+        undefined,
+        tx,
+      );
       const proposition = await this.getRequiredProposition(input.propositionId, tx);
       assertPropositionTransition(proposition.status, "closed", "close");
 

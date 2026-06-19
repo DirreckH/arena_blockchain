@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { RedisService } from "../queue/redis.service";
 
-interface StoredChallenge {
+export interface StoredChallenge {
   walletAddress: string;
   chainId: number;
   nonce: string;

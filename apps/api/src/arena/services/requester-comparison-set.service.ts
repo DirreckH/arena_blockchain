@@ -11,7 +11,6 @@ import { RequesterReportPresetService } from "./requester-report-preset.service"
 
 export interface RequesterComparisonSetViewModel {
   comparisonSetId: string;
-  userId: string;
   name: string;
   description: string | null;
   presetIds: string[];
@@ -21,7 +20,6 @@ export interface RequesterComparisonSetViewModel {
 
 export interface RequesterComparisonSetListItemViewModel {
   comparisonSetId: string;
-  userId: string;
   name: string;
   description: string | null;
   presetIds: string[];
@@ -29,7 +27,6 @@ export interface RequesterComparisonSetListItemViewModel {
 }
 
 export interface RequesterComparisonSetListViewModel {
-  userId: string;
   totalCount: number;
   items: RequesterComparisonSetListItemViewModel[];
 }
@@ -47,12 +44,13 @@ export interface UpdateRequesterComparisonSetInput {
 }
 
 export interface DeleteRequesterComparisonSetResult {
-  userId: string;
   comparisonSetId: string;
   deleted: true;
 }
 
-type StoredRequesterComparisonSetRecord = RequesterComparisonSetViewModel;
+type StoredRequesterComparisonSetRecord = RequesterComparisonSetViewModel & {
+  userId: string;
+};
 
 const REQUESTER_COMPARISON_SET_NAMESPACE = "arena.requester.comparison_sets";
 const REQUESTER_COMPARISON_SET_EXPORT_NAMESPACE =
@@ -120,6 +118,19 @@ function parseStoredComparisonSets(
     );
 }
 
+function toPublicComparisonSet(
+  record: StoredRequesterComparisonSetRecord,
+): RequesterComparisonSetViewModel {
+  return {
+    comparisonSetId: record.comparisonSetId,
+    name: record.name,
+    description: record.description,
+    presetIds: cloneValue(record.presetIds),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
 @Injectable()
 export class RequesterComparisonSetService {
   constructor(
@@ -135,7 +146,6 @@ export class RequesterComparisonSetService {
   ): Promise<RequesterComparisonSetListViewModel> {
     const items = await this.listStoredComparisonSets(userId, db);
     return {
-      userId,
       totalCount: items.length,
       items: items.map((item) => this.toListItem(item)),
     };
@@ -164,7 +174,7 @@ export class RequesterComparisonSetService {
     const current = await this.listStoredComparisonSets(userId, db);
     await this.persistComparisonSets(userId, [record, ...current], db);
 
-    return cloneValue(record);
+    return toPublicComparisonSet(record);
   }
 
   async getComparisonSetForUser(
@@ -180,7 +190,7 @@ export class RequesterComparisonSetService {
       );
     }
 
-    return cloneValue(matched);
+    return toPublicComparisonSet(matched);
   }
 
   async updateComparisonSetForUser(
@@ -223,7 +233,7 @@ export class RequesterComparisonSetService {
       db,
     );
 
-    return cloneValue(updated);
+    return toPublicComparisonSet(updated);
   }
 
   async deleteComparisonSetForUser(
@@ -253,7 +263,6 @@ export class RequesterComparisonSetService {
       );
 
       return {
-        userId,
         comparisonSetId,
         deleted: true,
       };
@@ -389,7 +398,6 @@ export class RequesterComparisonSetService {
   ): RequesterComparisonSetListItemViewModel {
     return {
       comparisonSetId: record.comparisonSetId,
-      userId: record.userId,
       name: record.name,
       description: record.description,
       presetIds: cloneValue(record.presetIds),

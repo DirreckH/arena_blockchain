@@ -193,7 +193,6 @@ interface CreateOwnedComparisonSetExportInput {
 }
 
 interface DeleteOwnedComparisonSetExportResult {
-  userId: string;
   comparisonSetId: string;
   exportId: string;
   deleted: true;
@@ -329,7 +328,6 @@ interface RequesterPropositionBudgetLedgerViewModel {
 }
 
 interface RequesterOwnedPropositionOverviewViewModel {
-  userId: string;
   totals: {
     totalCount: number;
     draftCount: number;
@@ -381,7 +379,6 @@ interface RequesterOwnedPropositionOverviewViewModel {
 }
 
 interface RequesterOwnedPropositionAnalyticsViewModel {
-  userId: string;
   windowDays: number;
   now: string;
   windowStartedAt: string;
@@ -437,7 +434,6 @@ interface RequesterOwnedPropositionAnalyticsViewModel {
 }
 
 interface RequesterOwnedPropositionAnalyticsComparisonViewModel {
-  userId: string;
   totalCount: number;
   summary: {
     presetCount: number;
@@ -483,7 +479,6 @@ interface RequesterOwnedPropositionAnalyticsComparisonViewModel {
 
 interface RequesterOwnedComparisonSetExportItemViewModel {
   exportId: string;
-  userId: string;
   status: "completed";
   format: RequesterExportFormat;
   requestedAt: string;
@@ -503,7 +498,6 @@ interface RequesterComparisonSetExportOriginViewModel {
 }
 
 interface RequesterOwnedComparisonSetExportListViewModel {
-  userId: string;
   comparisonSet: {
     comparisonSetId: string;
     name: string;
@@ -520,7 +514,6 @@ interface RequesterOwnedComparisonSetExportListViewModel {
 
 export interface RequesterOwnedComparisonSetExportArtifactViewModel {
   exportId: string;
-  userId: string;
   status: "completed";
   format: RequesterExportFormat;
   requestedAt: string;
@@ -661,8 +654,6 @@ interface RequesterOwnedPropositionDetailViewModel {
     maxDurationSeconds: number;
     rewardBudget: string;
     baseResponseReward: string;
-    createdByUserId: string;
-    updatedByUserId: string | null;
     createdAt: string;
     updatedAt: string;
     publishedAt: string | null;
@@ -676,7 +667,6 @@ interface RequesterOwnedPropositionDetailViewModel {
   submission: {
     status: PropositionSubmissionStatus;
     submittedAt: string | null;
-    submittedByUserId: string | null;
     submissionReason: string | null;
     submissionNote: string | null;
   };
@@ -741,7 +731,6 @@ interface RequesterOwnedSettledPropositionReportViewModel {
     maxDurationSeconds: number;
     rewardBudget: string;
     baseResponseReward: string;
-    createdByUserId: string;
     createdAt: string;
     publishedAt: string | null;
     liveAt: string | null;
@@ -753,7 +742,6 @@ interface RequesterOwnedSettledPropositionReportViewModel {
   submission: {
     status: PropositionSubmissionStatus;
     submittedAt: string | null;
-    submittedByUserId: string | null;
     submissionReason: string | null;
     submissionNote: string | null;
   };
@@ -791,7 +779,6 @@ interface RequesterOwnedSettledPropositionReportViewModel {
 
 interface RequesterOwnedPropositionExportItemViewModel {
   exportId: string;
-  userId: string;
   status: "completed";
   format: RequesterExportFormat;
   requestedAt: string;
@@ -808,14 +795,12 @@ interface RequesterOwnedPropositionExportItemViewModel {
 }
 
 interface RequesterOwnedPropositionExportListViewModel {
-  userId: string;
   totalCount: number;
   items: RequesterOwnedPropositionExportItemViewModel[];
 }
 
 interface RequesterOwnedPropositionExportArtifactViewModel {
   exportId: string;
-  userId: string;
   status: "completed";
   format: RequesterExportFormat;
   requestedAt: string;
@@ -1455,7 +1440,6 @@ export class RequesterPropositionViewService {
         )[0] ?? null;
 
       return {
-        userId: input.userId,
         totals: {
           totalCount: snapshots.length,
           draftCount: snapshots.filter(({ proposition }) => proposition.status === "draft").length,
@@ -1781,7 +1765,6 @@ export class RequesterPropositionViewService {
 
       return {
         analytics: {
-          userId: input.userId,
           windowDays,
           now: now.toISOString(),
           windowStartedAt: windowStart.toISOString(),
@@ -1875,7 +1858,6 @@ export class RequesterPropositionViewService {
       );
 
       return {
-        userId: input.userId,
         totalCount: items.length,
         summary: this.buildComparisonSummary({
           items: items.map((item) => ({
@@ -1955,7 +1937,6 @@ export class RequesterPropositionViewService {
         : filteredExports;
 
     return {
-      userId: input.userId,
       comparisonSet: {
         comparisonSetId: comparisonSet.comparisonSetId,
         name: comparisonSet.name,
@@ -2043,7 +2024,6 @@ export class RequesterPropositionViewService {
       );
 
       return {
-        userId: input.userId,
         comparisonSetId: input.comparisonSetId,
         exportId: input.exportId,
         deleted: true,
@@ -2503,7 +2483,6 @@ export class RequesterPropositionViewService {
     userId: string,
     comparisonSetId: string,
     runs: {
-      userId: string;
       comparisonSetId: string;
       policyId: string;
       totalCount: number;
@@ -2624,8 +2603,6 @@ export class RequesterPropositionViewService {
           maxDurationSeconds: proposition.maxDurationSeconds,
           rewardBudget: proposition.rewardBudget,
           baseResponseReward: proposition.baseResponseReward,
-          createdByUserId: proposition.createdByUserId,
-          updatedByUserId: proposition.updatedByUserId,
           createdAt: proposition.createdAt.toISOString(),
           updatedAt: proposition.updatedAt.toISOString(),
           publishedAt: toIso(proposition.publishedAt),
@@ -2639,7 +2616,6 @@ export class RequesterPropositionViewService {
         submission: {
           status: submission.status,
           submittedAt: submission.submittedAt,
-          submittedByUserId: submission.submittedByUserId,
           submissionReason: submission.submissionReason,
           submissionNote: submission.submissionNote,
         },
@@ -2733,7 +2709,6 @@ export class RequesterPropositionViewService {
           maxDurationSeconds: proposition.maxDurationSeconds,
           rewardBudget: proposition.rewardBudget,
           baseResponseReward: proposition.baseResponseReward,
-          createdByUserId: proposition.createdByUserId,
           createdAt: proposition.createdAt.toISOString(),
           publishedAt: toIso(proposition.publishedAt),
           liveAt: toIso(proposition.liveAt),
@@ -2745,7 +2720,6 @@ export class RequesterPropositionViewService {
         submission: {
           status: submission.status,
           submittedAt: submission.submittedAt,
-          submittedByUserId: submission.submittedByUserId,
           submissionReason: submission.submissionReason,
           submissionNote: submission.submissionNote,
         },
@@ -2785,7 +2759,6 @@ export class RequesterPropositionViewService {
     const exports = parseStoredRequesterExports(record?.valueJson ?? null);
 
     return {
-      userId: input.userId,
       totalCount: exports.length,
       items: exports.map((record) => this.toExportListItem(record)),
     };
@@ -3219,7 +3192,6 @@ export class RequesterPropositionViewService {
       )[0] ?? null;
 
     return {
-      userId,
       totals: {
         totalCount: snapshots.length,
         draftCount: snapshots.filter(({ proposition }) => proposition.status === "draft").length,
@@ -3358,7 +3330,6 @@ export class RequesterPropositionViewService {
   ): Omit<RequesterOwnedPropositionExportArtifactViewModel, "serialized"> {
     return {
       exportId: record.exportId,
-      userId: record.userId,
       status: record.status,
       format: record.format,
       requestedAt: record.requestedAt,
@@ -3382,7 +3353,6 @@ export class RequesterPropositionViewService {
   ): RequesterOwnedPropositionExportItemViewModel {
     return {
       exportId: record.exportId,
-      userId: record.userId,
       status: record.status,
       format: record.format,
       requestedAt: record.requestedAt,
@@ -3418,7 +3388,6 @@ export class RequesterPropositionViewService {
   ): RequesterOwnedComparisonSetExportItemViewModel {
     return {
       exportId: record.exportId,
-      userId: record.userId,
       status: record.status,
       format: record.format,
       requestedAt: record.requestedAt,
@@ -3437,7 +3406,6 @@ export class RequesterPropositionViewService {
   ): Omit<RequesterOwnedComparisonSetExportArtifactViewModel, "serialized"> {
     return {
       exportId: record.exportId,
-      userId: record.userId,
       status: record.status,
       format: record.format,
       requestedAt: record.requestedAt,
@@ -3821,7 +3789,6 @@ export class RequesterPropositionViewService {
     }
 
     return {
-      userId: record.userId,
       windowDays: DEFAULT_ANALYTICS_WINDOW_DAYS,
       now: record.completedAt,
       windowStartedAt: windowStartedAt.toISOString(),

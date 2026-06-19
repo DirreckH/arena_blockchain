@@ -35,7 +35,6 @@ export interface RequesterComparisonSetDeliveryRunOriginViewModel {
 
 export interface RequesterComparisonSetDeliveryRunViewModel {
   runId: string;
-  userId: string;
   comparisonSetId: string;
   policyId: string;
   retriedRunId: string | null;
@@ -61,7 +60,6 @@ export interface RequesterComparisonSetDeliveryRunViewModel {
 }
 
 export interface RequesterComparisonSetDeliveryRunListViewModel {
-  userId: string;
   comparisonSetId: string;
   policyId: string;
   totalCount: number;
@@ -95,7 +93,9 @@ export interface CreateRequesterComparisonSetDeliveryRunInput {
 }
 
 type StoredRequesterComparisonSetDeliveryRunRecord =
-  RequesterComparisonSetDeliveryRunViewModel;
+  RequesterComparisonSetDeliveryRunViewModel & {
+    userId: string;
+  };
 
 function cloneValue<T>(value: T): T {
   return structuredClone(value);
@@ -238,6 +238,26 @@ function parseStoredRuns(
     );
 }
 
+function toPublicDeliveryRun(
+  record: StoredRequesterComparisonSetDeliveryRunRecord,
+): RequesterComparisonSetDeliveryRunViewModel {
+  return {
+    runId: record.runId,
+    comparisonSetId: record.comparisonSetId,
+    policyId: record.policyId,
+    retriedRunId: record.retriedRunId,
+    triggerType: record.triggerType,
+    status: record.status,
+    startedAt: record.startedAt,
+    completedAt: record.completedAt,
+    exportId: record.exportId,
+    retainedExportAvailable: record.retainedExportAvailable,
+    origin: cloneValue(record.origin),
+    delivery: cloneValue(record.delivery),
+    error: cloneValue(record.error),
+  };
+}
+
 @Injectable()
 export class RequesterComparisonSetDeliveryRunService {
   constructor(
@@ -288,7 +308,6 @@ export class RequesterComparisonSetDeliveryRunService {
       typeof limit === "number" ? filtered.slice(0, limit) : filtered;
 
     return {
-      userId,
       comparisonSetId,
       policyId,
       totalCount: items.length,
@@ -299,7 +318,7 @@ export class RequesterComparisonSetDeliveryRunService {
         replay,
         limit: limit ?? null,
       },
-      items: items.map(cloneValue),
+      items: items.map((item) => toPublicDeliveryRun(item)),
     };
   }
 
@@ -352,7 +371,7 @@ export class RequesterComparisonSetDeliveryRunService {
       db,
     );
 
-    return cloneValue(record);
+    return toPublicDeliveryRun(record);
   }
 
   async getRunForUser(
@@ -385,7 +404,7 @@ export class RequesterComparisonSetDeliveryRunService {
       );
     }
 
-    return cloneValue(run);
+    return toPublicDeliveryRun(run);
   }
 
   private async listStoredRuns(

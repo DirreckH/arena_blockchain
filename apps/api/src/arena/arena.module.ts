@@ -8,6 +8,7 @@ import { ArenaPublicController } from "./public.controller";
 import { ArenaPublicDiscoveryController } from "./public-discovery.controller";
 import { ArenaPublicRespondentLeaderboardController } from "./public-respondent-leaderboard.controller";
 import { ArenaInternalAuditController } from "./internal-audit.controller";
+import { ArenaInternalDiscoveryConfigController } from "./internal-discovery-config.controller";
 import { ArenaInternalDispatchController } from "./internal-dispatch.controller";
 import { ArenaInternalMonitoringController } from "./internal-monitoring.controller";
 import { ArenaInternalPropositionsController } from "./internal-propositions.controller";
@@ -22,6 +23,9 @@ import { ArenaRespondentRewardsController } from "./respondent-rewards.controlle
 import { ArenaRespondentReputationController } from "./respondent-reputation.controller";
 import { ArenaRespondentTagsController } from "./respondent-tags.controller";
 import { BetRepository } from "./repositories/bet.repository";
+import { ArenaUserRepository } from "./repositories/arena-user.repository";
+import { ArenaUserSessionRepository } from "./repositories/arena-user-session.repository";
+import { ArenaUserWalletRepository } from "./repositories/arena-user-wallet.repository";
 import { DispatchTaskRepository } from "./repositories/dispatch-task.repository";
 import { EffectiveSampleCounterRepository } from "./repositories/effective-sample-counter.repository";
 import { InternalAuditEventRepository } from "./repositories/internal-audit-event.repository";
@@ -30,6 +34,7 @@ import { PropositionRepository } from "./repositories/proposition.repository";
 import { ResponseReviewRepository } from "./repositories/response-review.repository";
 import { ResponseRepository } from "./repositories/response.repository";
 import { RewardLedgerRepository } from "./repositories/reward-ledger.repository";
+import { RewardPayoutRepository } from "./repositories/reward-payout.repository";
 import { SystemKeyValueRepository } from "./repositories/system-key-value.repository";
 import { UserReputationRepository } from "./repositories/user-reputation.repository";
 import { UserTagRepository } from "./repositories/user-tag.repository";
@@ -39,6 +44,7 @@ import { AccountPreferencesService } from "./services/account-preferences.servic
 import { AccountViewService } from "./services/account-view.service";
 import { AdjudicationViewService } from "./services/adjudication-view.service";
 import { ConsensusClosureService } from "./services/consensus-closure.service";
+import { DiscoveryConfigService } from "./services/discovery-config.service";
 import { DispatchEngineService } from "./services/dispatch-engine.service";
 import { DiscussionService } from "./services/discussion.service";
 import { DispatchTaskService } from "./services/dispatch-task.service";
@@ -51,6 +57,7 @@ import { InternalPropositionOpsService } from "./services/internal-proposition-o
 import { InternalResponseReviewOpsService } from "./services/internal-response-review-ops.service";
 import { InternalRewardAuditService } from "./services/internal-reward-audit.service";
 import { MarketService } from "./services/market.service";
+import { OpsAlertNotifierService } from "./services/ops-alert-notifier.service";
 import { PropositionEngineService } from "./services/proposition-engine.service";
 import { PropositionDraftService } from "./services/proposition-draft.service";
 import { PropositionLifecycleAutomationService } from "./services/proposition-lifecycle-automation.service";
@@ -70,11 +77,16 @@ import { RequesterReportPresetService } from "./services/requester-report-preset
 import { ResponseReviewService } from "./services/response-review.service";
 import { ResponseService } from "./services/response.service";
 import { RewardLedgerService } from "./services/reward-ledger.service";
+import { RewardPayoutExecutionService } from "./services/reward-payout-execution.service";
+import { RewardPayoutAutomationService } from "./services/reward-payout-automation.service";
+import { RewardPayoutService } from "./services/reward-payout.service";
 import { ResultViewService } from "./services/result-view.service";
 import { RewardViewService } from "./services/reward-view.service";
+import { ArenaUserIdentityService } from "./services/arena-user-identity.service";
 import { ReputationService } from "./services/reputation.service";
 import { RuntimeContractAlertService } from "./services/runtime-contract-alert.service";
 import { TagService } from "./services/tag.service";
+import { ValidationProofRecordService } from "./services/validation-proof-record.service";
 import { ValidationRehearsalCheckpointService } from "./services/validation-rehearsal-checkpoint.service";
 import { ValidationSettlementService } from "./services/validation-settlement.service";
 import { ValidationBetExecutionService } from "./services/validation-bet-execution.service";
@@ -85,6 +97,9 @@ import { ValidationChainModule } from "./validation-chain/validation-chain.modul
 
 const repositories = [
   PropositionRepository,
+  ArenaUserRepository,
+  ArenaUserWalletRepository,
+  ArenaUserSessionRepository,
   DispatchTaskRepository,
   ResponseRepository,
   ResponseReviewRepository,
@@ -93,6 +108,7 @@ const repositories = [
   MarketRepository,
   BetRepository,
   RewardLedgerRepository,
+  RewardPayoutRepository,
   SystemKeyValueRepository,
   UserReputationRepository,
   UserTagRepository,
@@ -103,6 +119,7 @@ const services = [
   PropositionEngineService,
   ConsensusClosureService,
   DispatchEngineService,
+  DiscoveryConfigService,
   DiscussionService,
   DispatchTaskService,
   DispatchTaskExpiryAutomationService,
@@ -116,12 +133,17 @@ const services = [
   InternalPropositionOpsService,
   InternalResponseReviewOpsService,
   InternalRewardAuditService,
+  OpsAlertNotifierService,
+  ValidationProofRecordService,
   ValidationRehearsalCheckpointService,
   MarketService,
   BetService,
   AdjudicationViewService,
   ValidationSettlementService,
   ValidationBetExecutionService,
+  RewardPayoutExecutionService,
+  RewardPayoutAutomationService,
+  RewardPayoutService,
   PropositionDraftService,
   RequesterComparisonSetService,
   RequesterComparisonSetDeliveryPolicyService,
@@ -136,6 +158,7 @@ const services = [
   PublicRespondentLeaderboardService,
   PublicResultViewService,
   RewardLedgerService,
+  ArenaUserIdentityService,
   AccountExportService,
   AccountPreferencesService,
   AccountViewService,
@@ -155,6 +178,7 @@ const services = [
     ArenaPublicDiscoveryController,
     ArenaPublicRespondentLeaderboardController,
     ArenaInternalAuditController,
+    ArenaInternalDiscoveryConfigController,
     ArenaAdjudicationController,
     ArenaDiscussionController,
     ArenaRespondentAccountController,
@@ -174,6 +198,13 @@ const services = [
     ArenaValidationController,
   ],
   providers: [ArenaIdService, ...repositories, ...services],
-  exports: [...services, ValidationChainModule],
+  exports: [
+    ArenaIdService,
+    ArenaUserRepository,
+    ArenaUserWalletRepository,
+    ArenaUserSessionRepository,
+    ...services,
+    ValidationChainModule,
+  ],
 })
 export class ArenaModule {}

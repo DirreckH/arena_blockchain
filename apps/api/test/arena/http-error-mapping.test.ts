@@ -22,22 +22,27 @@ import { SystemRole } from "@arena/shared";
 
 import { BlockchainService } from "../../src/blockchain/blockchain.service";
 import { ArenaAdjudicationController } from "../../src/arena/adjudication.controller";
+import { ArenaIdService } from "../../src/arena/arena-id.service";
 import { ArenaValidationError } from "../../src/arena/arena.errors";
+import { ArenaInternalDiscoveryConfigController } from "../../src/arena/internal-discovery-config.controller";
 import { ArenaInternalDispatchController } from "../../src/arena/internal-dispatch.controller";
 import { ArenaInternalMonitoringController } from "../../src/arena/internal-monitoring.controller";
 import { ArenaInternalPropositionsController } from "../../src/arena/internal-propositions.controller";
+import { ArenaInternalRewardsController } from "../../src/arena/internal-rewards.controller";
 import { ArenaInternalResponsesController } from "../../src/arena/internal-responses.controller";
 import { ArenaInternalValidationChainController } from "../../src/arena/internal-validation-chain.controller";
 import { ArenaPublicController } from "../../src/arena/public.controller";
 import { ArenaPublicDiscoveryController } from "../../src/arena/public-discovery.controller";
 import { ArenaPublicRespondentLeaderboardController } from "../../src/arena/public-respondent-leaderboard.controller";
 import { ArenaPropositionsController } from "../../src/arena/propositions.controller";
+import { SystemKeyValueRepository } from "../../src/arena/repositories/system-key-value.repository";
 import { ArenaRespondentAccountController } from "../../src/arena/respondent-account.controller";
 import { ArenaRespondentResultsController } from "../../src/arena/respondent-results.controller";
 import { ArenaValidationController } from "../../src/arena/validation.controller";
 import { Public } from "../../src/common/decorators/public.decorator";
 import { IS_PUBLIC_KEY } from "../../src/common/decorators/public.decorator";
 import { ApiExceptionFilter } from "../../src/common/filters/api-exception.filter";
+import { ArenaSurfaceBoundaryGuard } from "../../src/common/guards/arena-surface-boundary.guard";
 import { RolesGuard } from "../../src/common/guards/roles.guard";
 import type { RequestWithUser } from "../../src/common/interfaces/request-with-user.interface";
 import { PrismaService } from "../../src/database/prisma.service";
@@ -52,9 +57,11 @@ import { AccountExportService } from "../../src/arena/services/account-export.se
 import { AccountPreferencesService } from "../../src/arena/services/account-preferences.service";
 import { BetService } from "../../src/arena/services/bet.service";
 import { DispatchEngineService } from "../../src/arena/services/dispatch-engine.service";
+import { DiscoveryConfigService } from "../../src/arena/services/discovery-config.service";
 import { EffectiveSampleCounterService } from "../../src/arena/services/effective-sample-counter.service";
 import { InternalMonitoringService } from "../../src/arena/services/internal-monitoring.service";
 import { InternalPropositionOpsService } from "../../src/arena/services/internal-proposition-ops.service";
+import { InternalRewardAuditService } from "../../src/arena/services/internal-reward-audit.service";
 import { InternalResponseReviewOpsService } from "../../src/arena/services/internal-response-review-ops.service";
 import { PropositionDraftService } from "../../src/arena/services/proposition-draft.service";
 import { PublicDiscoveryService } from "../../src/arena/services/public-discovery.service";
@@ -71,6 +78,7 @@ import { PublicRespondentLeaderboardService } from "../../src/arena/services/pub
 import { RewardViewService } from "../../src/arena/services/reward-view.service";
 import { ResponseService } from "../../src/arena/services/response.service";
 import { ValidationBetExecutionService } from "../../src/arena/services/validation-bet-execution.service";
+import { ValidationProofRecordService } from "../../src/arena/services/validation-proof-record.service";
 import { ValidationRehearsalCheckpointService } from "../../src/arena/services/validation-rehearsal-checkpoint.service";
 import { ValidationViewService } from "../../src/arena/services/validation-view.service";
 import { WatchlistService } from "../../src/arena/services/watchlist.service";
@@ -228,6 +236,37 @@ const qualityScoreByReviewStatus = {
   fraud_suspected: 0,
 } as const;
 
+const validationPreRevealForbiddenFields = [
+  "probability",
+  "odds",
+  "currentDirection",
+  "leadingOption",
+  "responseRatio",
+  "voteCountByOption",
+  "rawVoteCount",
+  "internalSampleDistribution",
+  "unrevealedResultTrend",
+  "traderSentiment",
+  "optionVolume",
+  "trend",
+  "marketPrice",
+] as const;
+
+const adjudicationForbiddenFields = [
+  "odds",
+  "optionVolume",
+  "currentDirection",
+  "traderSentiment",
+  "validationLayerHeat",
+] as const;
+
+const INTERNAL_IDENTITY_KEYS = [
+  "userId",
+  "createdByUserId",
+  "updatedByUserId",
+  "reviewedByUserId",
+] as const;
+
 const createQueueOverviewSnapshot = (input: {
   schedulerStatus?: "up" | "down";
   schedulerDetails?: string;
@@ -292,6 +331,49 @@ const createQueueOverviewSnapshot = (input: {
     },
   ],
 });
+
+const assertForbiddenFieldsAbsent = (
+  payload: Record<string, unknown> | null | undefined,
+  fields: readonly string[],
+) => {
+  for (const field of fields) {
+    assert.equal(field in (payload ?? {}), false, `expected field ${field} to be absent`);
+  }
+};
+
+const assertKeyAbsentRecursively = (
+  value: unknown,
+  key: string,
+  path = "$",
+): void => {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      assertKeyAbsentRecursively(item, key, `${path}[${index}]`),
+    );
+    return;
+  }
+
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(record, key),
+    false,
+    `${path} unexpectedly exposes ${key}`,
+  );
+
+  for (const [childKey, nested] of Object.entries(record)) {
+    assertKeyAbsentRecursively(nested, key, `${path}.${childKey}`);
+  }
+};
+
+const assertInternalIdentityAbsentRecursively = (value: unknown): void => {
+  for (const key of INTERNAL_IDENTITY_KEYS) {
+    assertKeyAbsentRecursively(value, key);
+  }
+};
 
 async function createReviewedResponseForProposition(
   harness: ArenaHarness,
@@ -387,6 +469,7 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
     harness.userTagRepository as any,
     harness.accountPreferencesService as any,
     harness.systemKeyValueRepository as any,
+    harness.userRepository as any,
   );
   const validationBetExecution = {
     prepare: async (input: {
@@ -838,8 +921,10 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
     controllers: [
       HealthController,
       SystemController,
+      ArenaInternalDiscoveryConfigController,
       ArenaInternalDispatchController,
       ArenaInternalPropositionsController,
+      ArenaInternalRewardsController,
       ArenaInternalResponsesController,
       ArenaInternalMonitoringController,
       ArenaInternalValidationChainController,
@@ -865,6 +950,10 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
       {
         provide: InternalResponseReviewOpsService,
         useValue: harness.internalResponseReviewOpsService,
+      },
+      {
+        provide: InternalRewardAuditService,
+        useValue: harness.internalRewardAuditService,
       },
       { provide: InternalMonitoringService, useValue: internalMonitoring },
       { provide: QualityEngineService, useValue: harness.qualityEngineService },
@@ -895,6 +984,17 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
       {
         provide: ValidationChainCommandRecoveryService,
         useValue: validationChainCommandRecovery,
+      },
+      {
+        provide: ValidationProofRecordService,
+        useValue: {
+          async getLatestRecord() {
+            return null;
+          },
+          async recordProof() {
+            return null;
+          },
+        },
       },
       {
         provide: ValidationRehearsalCheckpointService,
@@ -934,11 +1034,26 @@ const createHttpArenaApp = async (): Promise<HttpArenaContext> => {
       { provide: PublicResultViewService, useValue: publicResultViews },
       { provide: PublicIntegrityViewService, useValue: publicIntegrityViews },
       { provide: PublicDiscoveryService, useValue: new PublicDiscoveryService(validationViews as any) },
+      { provide: ArenaIdService, useValue: new ArenaIdService() },
+      { provide: SystemKeyValueRepository, useValue: harness.systemKeyValueRepository },
+      {
+        provide: DiscoveryConfigService,
+        useFactory: (
+          ids: ArenaIdService,
+          systemKeyValues: SystemKeyValueRepository,
+          views: ValidationViewService,
+        ) => new DiscoveryConfigService(ids, systemKeyValues, views),
+        inject: [ArenaIdService, SystemKeyValueRepository, ValidationViewService],
+      },
       {
         provide: PublicRespondentLeaderboardService,
         useValue: publicRespondentLeaderboard,
       },
       { provide: ValidationViewService, useValue: validationViews },
+      {
+        provide: APP_GUARD,
+        useClass: ArenaSurfaceBoundaryGuard,
+      },
       {
         provide: APP_GUARD,
         useClass: TestAuthGuard,
@@ -1060,7 +1175,7 @@ const requestJson = async (
   baseUrl: string,
   path: string,
   input: {
-    method?: "DELETE" | "GET" | "PATCH" | "POST";
+    method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
     body?: unknown;
     user?: TestUser;
   } = {},
@@ -1439,6 +1554,96 @@ test("public market search route returns filtered public market results", async 
   });
 });
 
+test("public and validation market routes keep pre-reveal progress visible without leaking directional fields", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const proposition = await createLiveProposition(harness, {
+      marketEnabled: true,
+      minEffectiveSample: 2,
+      title: "HTTP boundary market proposition",
+      category: "politics",
+    });
+
+    await createReviewedResponseForProposition(harness, {
+      propositionId: proposition.id,
+      userId: "http_boundary_user_a",
+      minuteOffset: 620,
+      reviewStatus: "valid",
+    });
+    await harness.counterService.rebuildCounterForProposition(proposition.id);
+
+    const market = await harness.marketRepository.findByPropositionId(proposition.id);
+    assert.ok(market);
+
+    const publicListResponse = await requestJson(baseUrl, "/arena/public/markets");
+    const publicDetailResponse = await requestJson(
+      baseUrl,
+      `/arena/public/markets/${market.id}`,
+    );
+    const validationListResponse = await requestJson(
+      baseUrl,
+      "/arena/validation/markets",
+      {
+        user: {
+          userId: "validation_http_boundary_user",
+          roles: [SystemRole.User],
+          chainId: 1,
+        },
+      },
+    );
+    const validationDetailResponse = await requestJson(
+      baseUrl,
+      `/arena/validation/markets/${market.id}`,
+      {
+        user: {
+          userId: "validation_http_boundary_user",
+          roles: [SystemRole.User],
+          chainId: 1,
+        },
+      },
+    );
+
+    const publicListMarket = (publicListResponse.body as Array<Record<string, unknown>>).find(
+      (item) => item.marketId === market.id,
+    );
+    const validationListMarket = (
+      validationListResponse.body as Array<Record<string, unknown>>
+    ).find((item) => item.marketId === market.id);
+
+    assert.equal(publicListResponse.status, HttpStatus.OK);
+    assert.equal(publicDetailResponse.status, HttpStatus.OK);
+    assert.equal(validationListResponse.status, HttpStatus.OK);
+    assert.equal(validationDetailResponse.status, HttpStatus.OK);
+
+    for (const view of [
+      publicListMarket,
+      publicDetailResponse.body,
+      validationListMarket,
+      validationDetailResponse.body,
+    ]) {
+      assert.ok(view);
+      assert.equal(typeof view.timeProgressPercent, "number");
+      assert.equal(typeof (view.publicProgress as { progress?: unknown })?.progress, "object");
+      assert.equal(
+        typeof (
+          view.publicProgress as {
+            progress?: { currentEffectiveSample?: unknown };
+          }
+        )?.progress?.currentEffectiveSample,
+        "number",
+      );
+      assertForbiddenFieldsAbsent(view, validationPreRevealForbiddenFields);
+      assertInternalIdentityAbsentRecursively(view);
+    }
+
+    assert.equal(publicDetailResponse.body.publicProgress.progress.totalRequired, 2);
+    assert.equal(publicDetailResponse.body.publicProgress.progress.progressPercent, 50);
+    assert.equal(
+      validationDetailResponse.body.publicProgress.progress.currentEffectiveSample,
+      1,
+    );
+  });
+});
+
 test("public integrity overview route supports proposition-scoped focus without exposing internal monitoring detail", async () => {
   await withHttpArenaApp(async ({ baseUrl, harness }) => {
     const proposition = await createLiveProposition(harness, {
@@ -1581,6 +1786,7 @@ test("public discovery category index route returns the real directory slug and 
       ),
       true,
     );
+    assertInternalIdentityAbsentRecursively(response.body);
   });
 });
 
@@ -1591,7 +1797,15 @@ test("public respondent leaderboard route returns only privacy-safe public aggre
       title: "Leaderboard route politics proposition",
       category: "politics",
     });
-    const userId = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const userId = "http_public_leaderboard_user";
+
+    await harness.userRepository.create({
+      id: userId,
+      primaryWalletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      normalizedPrimaryWalletAddress:
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      status: "active",
+    } as never);
 
     await createReviewedResponseForProposition(harness, {
       propositionId: proposition.id,
@@ -1621,12 +1835,13 @@ test("public respondent leaderboard route returns only privacy-safe public aggre
     assert.equal(response.status, HttpStatus.OK);
     assert.equal(Array.isArray(response.body.categories), true);
     assert.equal(
-      response.body.categories.some((category: { id: string; rows: Array<{ walletShort: string; userId: string }> }) =>
+      response.body.categories.some((category: { id: string; rows: Array<{ walletShort: string; handle: string; userId?: string }> }) =>
         category.id === "public-policy" &&
-        category.rows.some((row) => row.walletShort === "0xaaaa…aaaa" && row.userId === userId),
+        category.rows.some((row) => row.walletShort === "0xaaaa…aaaa" && row.handle === "respondent-aaaa" && row.userId === undefined),
       ),
       true,
     );
+    assertInternalIdentityAbsentRecursively(response.body);
   });
 });
 
@@ -1759,6 +1974,12 @@ test("account exports still require authentication", async () => {
 
 test("account export endpoints create and list real export records", async () => {
   await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    await harness.userIdentityService.ensureUserExists("export_http_user");
+    await harness.userRepository.updatePrimaryWalletAddress(
+      "export_http_user",
+      "0x1234567890abcdef1234567890abcdef1234abcd",
+    );
+
     const proposition = await createLiveProposition(harness, {
       marketEnabled: true,
       title: "HTTP export proposition",
@@ -1854,12 +2075,12 @@ test("account export endpoints create and list real export records", async () =>
     );
 
     assert.equal(createResponse.status, HttpStatus.CREATED);
-    assert.equal(createResponse.body.userId, "export_http_user");
+    assertInternalIdentityAbsentRecursively(createResponse.body);
     assert.equal(createResponse.body.status, "completed");
     assert.equal(createResponse.body.format, "json");
     assert.equal(createResponse.body.period, "90d");
     assert.equal(createResponse.body.fileName.endsWith(".json"), true);
-    assert.equal(createResponse.body.walletAddress.includes("..."), true);
+    assert.equal(createResponse.body.walletAddress, "0x1234...abcd");
 
     const listResponse = await requestJson(
       baseUrl,
@@ -1879,8 +2100,151 @@ test("account export endpoints create and list real export records", async () =>
   });
 });
 
+test("adjudication task routes keep public progress while hiding market-direction and sentiment fields", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    const proposition = await createLiveProposition(harness, {
+      marketEnabled: true,
+      minEffectiveSample: 2,
+      title: "HTTP adjudication boundary proposition",
+      category: "sports",
+    });
+    const [task] = await harness.dispatchEngineService.createDispatchTasksForProposition({
+      propositionId: proposition.id,
+      userIds: ["adjudication_http_boundary_user"],
+      assignedAt: arenaTime(640),
+      expiresAt: arenaTime(650),
+    });
+
+    await createReviewedResponseForProposition(harness, {
+      propositionId: proposition.id,
+      userId: "adjudication_counter_user",
+      minuteOffset: 641,
+      reviewStatus: "partial_valid",
+    });
+    await harness.counterService.rebuildCounterForProposition(proposition.id);
+
+    const listResponse = await requestJson(baseUrl, "/arena/adjudication/tasks", {
+      user: {
+        userId: "adjudication_http_boundary_user",
+        roles: [SystemRole.User],
+      },
+    });
+    const detailResponse = await requestJson(
+      baseUrl,
+      `/arena/adjudication/tasks/${task.id}`,
+      {
+        user: {
+          userId: "adjudication_http_boundary_user",
+          roles: [SystemRole.User],
+        },
+      },
+    );
+
+    assert.equal(listResponse.status, HttpStatus.OK);
+    assert.equal(detailResponse.status, HttpStatus.OK);
+
+    const listTask = (listResponse.body as Array<Record<string, unknown>>)[0];
+    for (const view of [listTask, detailResponse.body]) {
+      assert.ok(view);
+      assert.equal(typeof view.timeRemainingSeconds, "number");
+      assert.equal(
+        typeof (
+          view.publicProgress as {
+            progress?: { currentEffectiveSample?: unknown; progressPercent?: unknown };
+          }
+        )?.progress?.currentEffectiveSample,
+        "number",
+      );
+      assert.equal(
+        typeof (
+          view.publicProgress as {
+            progress?: { currentEffectiveSample?: unknown; progressPercent?: unknown };
+          }
+        )?.progress?.progressPercent,
+        "number",
+      );
+      assertForbiddenFieldsAbsent(view, adjudicationForbiddenFields);
+      assertForbiddenFieldsAbsent(
+        view.publicProgress as Record<string, unknown>,
+        ["leadingOption", "responseRatio", "rawVoteCount", "voteCountByOption"],
+      );
+      assertInternalIdentityAbsentRecursively(view);
+    }
+  });
+});
+
 test("account export detail endpoint returns the stored artifact and keeps ownership boundaries", async () => {
   await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    await harness.userIdentityService.ensureUserExists("export_http_detail_user");
+    await harness.userRepository.updatePrimaryWalletAddress(
+      "export_http_detail_user",
+      "0xabcdefabcdefabcdefabcdefabcdefabcdef4321",
+    );
+
+    await requestJson(baseUrl, "/arena/adjudication/account/preferences", {
+      method: "PATCH",
+      user: {
+        userId: "export_http_detail_user",
+        roles: [SystemRole.User],
+      },
+      body: {
+        notificationPreferences: {
+          emailSettlement: false,
+          emailWatchlistUpdate: true,
+          emailSecurityAlert: true,
+          appOrderFilled: true,
+          appSettlement: true,
+          appWatchlistUpdate: true,
+          reviewSubmissionReceived: true,
+          reviewNeedMoreInfo: true,
+          reviewDecision: true,
+          challengeProgress: true,
+          dailyDigest: false,
+          quietHours: false,
+          onlyImportant: false,
+          syncEmailAndApp: true,
+        },
+        profile: {
+          avatarStyle: "initial",
+          landingView: "overview",
+          profileVisibility: "members",
+        },
+        privacy: {
+          showAccountSummary: true,
+          showSettledHistory: false,
+          allowActivityIndexing: false,
+        },
+        security: {
+          twoFactorEnabled: false,
+          withdrawalConfirmEnabled: true,
+        },
+        devices: {
+          rememberTrustedDevice: true,
+          sessionAlertsEnabled: true,
+        },
+        wallet: {
+          walletConnected: true,
+          signingReminderEnabled: true,
+          metricView: "usdc",
+          timeDisplay: "absolute",
+          highlightSettlement: true,
+          hideSmallFills: true,
+        },
+        exports: {
+          period: "30d",
+          includeSettlementAttachment: true,
+          maskWalletAddress: true,
+        },
+        developer: {
+          keyCreated: false,
+          whitelistEnabled: false,
+          environment: "sandbox",
+          codeEnabled: false,
+          scope: "self",
+        },
+      },
+    });
+
     const proposition = await createLiveProposition(harness, {
       marketEnabled: true,
       title: "HTTP export detail proposition",
@@ -1927,8 +2291,9 @@ test("account export detail endpoint returns the stored artifact and keeps owner
     assert.equal(detailResponse.status, HttpStatus.OK);
     assert.equal(detailResponse.body.exportId, createResponse.body.exportId);
     assert.equal(detailResponse.body.fileName, createResponse.body.fileName);
-    assert.equal(detailResponse.body.overview.userId, "export_http_detail_user");
-    assert.equal(detailResponse.body.preferences.userId, "export_http_detail_user");
+    assertInternalIdentityAbsentRecursively(detailResponse.body.overview);
+    assertInternalIdentityAbsentRecursively(detailResponse.body.preferences);
+    assert.equal(detailResponse.body.walletAddress, "0xabcd...4321");
 
     const otherUserDetailResponse = await requestJson(
       baseUrl,
@@ -3121,7 +3486,13 @@ test("creator proposition endpoints expose owned propositions across draft sched
 
     assert.equal(settledDetailResponse.status, HttpStatus.OK);
     assert.equal(settledDetailResponse.body.proposition.id, settled.id);
-    assert.equal(settledDetailResponse.body.proposition.createdByUserId, "creator_lifecycle");
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(
+        settledDetailResponse.body.proposition,
+        "createdByUserId",
+      ),
+      false,
+    );
     assert.equal(settledDetailResponse.body.submission.status, "approved");
     assert.equal(settledDetailResponse.body.proposition.status, "settled");
     assert.equal(settledDetailResponse.body.market.status, "settled");
@@ -3154,12 +3525,17 @@ test("creator proposition detail stays non-directional before settlement and exp
       description:
         "Requester-owned proposition reporting must preserve no-direction leakage before settlement and return a real settled summary afterwards.",
       options: ["Approve", "Reject"],
-      sampleConstraints: ["dao_member", "verified_human"],
+      sampleConstraints: ["wallet_signed"],
       minEffectiveSample: 1,
       minBetAmount: "15",
       marketEnabled: true,
       createdByUserId: "creator_report",
     });
+    await harness.userIdentityService.ensureUserExists("creator_report_participant");
+    await harness.userRepository.updatePrimaryWalletAddress(
+      "creator_report_participant",
+      "0x00000000000000000000000000000000000000d1",
+    );
     const scheduled = await harness.propositionEngineService.approveOrScheduleProposition({
       propositionId: proposition.id,
       publishedAt: "2026-04-18T10:00:00.000Z",
@@ -3233,7 +3609,7 @@ test("creator proposition detail stays non-directional before settlement and exp
     assert.equal(preSettlementDetailResponse.body.proposition.optionB, "Reject");
     assert.deepEqual(
       preSettlementDetailResponse.body.proposition.sampleConstraints,
-      ["dao_member", "verified_human"],
+      ["wallet_signed"],
     );
     assert.equal(preSettlementDetailResponse.body.proposition.minBetAmount, "15");
     assert.equal(preSettlementDetailResponse.body.proposition.resultComputedAt, null);
@@ -3345,6 +3721,48 @@ test("creator proposition detail stays non-directional before settlement and exp
     assert.equal(
       otherCreatorBudgetLedgerResponse.body.error.code,
       "proposition.not_found",
+    );
+  });
+});
+
+test("draft update rejects unsupported sample constraints with a proposition policy error", async () => {
+  await withHttpArenaApp(async ({ baseUrl }) => {
+    const createResponse = await requestJson(baseUrl, "/arena/propositions/drafts", {
+      method: "POST",
+      user: {
+        userId: "creator_constraints",
+        roles: [SystemRole.User],
+      },
+      body: {
+        category: "general",
+        title: "Will this supported draft stay editable?",
+        summary:
+          "The creator should receive a clear policy error when attempting to persist unsupported sample constraints through the draft API.",
+        optionA: "Yes",
+        optionB: "No",
+      },
+    });
+    assert.equal(createResponse.status, HttpStatus.CREATED);
+
+    const updateResponse = await requestJson(
+      baseUrl,
+      `/arena/propositions/drafts/${createResponse.body.propositionId}`,
+      {
+        method: "PATCH",
+        user: {
+          userId: "creator_constraints",
+          roles: [SystemRole.User],
+        },
+        body: {
+          sampleConstraints: ["verified_human"],
+        },
+      },
+    );
+
+    assert.equal(updateResponse.status, HttpStatus.CONFLICT);
+    assert.equal(
+      updateResponse.body.error.code,
+      "proposition.unsupported_sample_constraint",
     );
   });
 });
@@ -3499,7 +3917,7 @@ test("creator proposition overview aggregates owned proposition portfolio state 
     });
 
     assert.equal(response.status, HttpStatus.OK);
-    assert.equal(response.body.userId, "creator_overview");
+    assertInternalIdentityAbsentRecursively(response.body);
     assert.equal(response.body.totals.totalCount, 4);
     assert.equal(response.body.totals.draftCount, 1);
     assert.equal(response.body.totals.scheduledCount, 1);
@@ -3709,7 +4127,7 @@ test("creator proposition analytics endpoint returns longer-horizon requester an
     );
 
     assert.equal(response.status, HttpStatus.OK);
-    assert.equal(response.body.userId, "creator_analytics");
+    assertInternalIdentityAbsentRecursively(response.body);
     assert.equal(response.body.windowDays, 30);
     assert.equal(response.body.totals.createdCount, 3);
     assert.equal(response.body.totals.settledCount, 1);
@@ -3918,15 +4336,15 @@ test("creator proposition export endpoints create and list real owned propositio
     );
 
     assert.equal(createResponse.status, HttpStatus.CREATED);
-    assert.equal(createResponse.body.userId, "creator_export");
+    assertInternalIdentityAbsentRecursively(createResponse.body);
     assert.equal(createResponse.body.status, "completed");
     assert.equal(createResponse.body.format, "json");
     assert.equal(createResponse.body.fileName.endsWith(".json"), true);
-    assert.equal(createResponse.body.overview.userId, "creator_export");
+    assertInternalIdentityAbsentRecursively(createResponse.body.overview);
     assert.equal(createResponse.body.overview.totals.totalCount, 2);
     assert.equal(createResponse.body.overview.totals.settledCount, 1);
     assert.equal(createResponse.body.overview.marketSummary.awaitingSettlementCount, 0);
-    assert.equal(createResponse.body.analytics.userId, "creator_export");
+    assertInternalIdentityAbsentRecursively(createResponse.body.analytics);
     assert.equal(createResponse.body.analytics.windowDays, 30);
     assert.equal(createResponse.body.analytics.totals.createdCount, 2);
     assert.equal(createResponse.body.analytics.totals.settledCount, 1);
@@ -3969,9 +4387,9 @@ test("creator proposition export endpoints create and list real owned propositio
 
     assert.equal(detailResponse.status, HttpStatus.OK);
     assert.equal(detailResponse.body.exportId, createResponse.body.exportId);
-    assert.equal(detailResponse.body.userId, "creator_export");
-    assert.equal(detailResponse.body.overview.userId, "creator_export");
-    assert.equal(detailResponse.body.analytics.userId, "creator_export");
+    assertInternalIdentityAbsentRecursively(detailResponse.body);
+    assertInternalIdentityAbsentRecursively(detailResponse.body.overview);
+    assertInternalIdentityAbsentRecursively(detailResponse.body.analytics);
     assert.equal(detailResponse.body.analytics.windowDays, 30);
     assert.equal(detailResponse.body.analytics.delivery.exportCount, 0);
     assert.equal(detailResponse.body.reports.length, 1);
@@ -4181,7 +4599,7 @@ test("creator requester report preset CRUD endpoints persist scoped reporting co
     );
 
     assert.equal(createResponse.status, HttpStatus.CREATED);
-    assert.equal(createResponse.body.userId, "creator_report_preset");
+    assertInternalIdentityAbsentRecursively(createResponse.body);
     assert.equal(createResponse.body.name, "AI settled snapshot");
     assert.equal(
       createResponse.body.description,
@@ -4263,7 +4681,7 @@ test("creator requester report preset CRUD endpoints persist scoped reporting co
     );
 
     assert.equal(deleteResponse.status, HttpStatus.OK);
-    assert.equal(deleteResponse.body.userId, "creator_report_preset");
+    assertInternalIdentityAbsentRecursively(deleteResponse.body);
     assert.equal(deleteResponse.body.presetId, createResponse.body.presetId);
     assert.equal(deleteResponse.body.deleted, true);
 
@@ -4645,7 +5063,7 @@ test("creator requester report presets drive scoped analytics and export generat
     );
 
     assert.equal(exportCreateResponse.status, HttpStatus.CREATED);
-    assert.equal(exportCreateResponse.body.userId, "creator_report_scope");
+    assertInternalIdentityAbsentRecursively(exportCreateResponse.body);
     assert.equal(
       exportCreateResponse.body.preset.presetId,
       presetCreateResponse.body.presetId,
@@ -4865,7 +5283,7 @@ test("creator requester report preset comparison endpoint returns preset-backed 
     );
 
     assert.equal(comparisonResponse.status, HttpStatus.OK);
-    assert.equal(comparisonResponse.body.userId, "creator_report_compare");
+    assertInternalIdentityAbsentRecursively(comparisonResponse.body);
     assert.equal(comparisonResponse.body.totalCount, 2);
     assert.equal(comparisonResponse.body.items.length, 2);
     assert.equal(
@@ -5059,7 +5477,7 @@ test("creator requester comparison set CRUD endpoints persist named preset colle
     );
 
     assert.equal(createResponse.status, HttpStatus.CREATED);
-    assert.equal(createResponse.body.userId, "creator_comparison_set");
+    assertInternalIdentityAbsentRecursively(createResponse.body);
     assert.equal(createResponse.body.name, "Requester cohort pack");
     assert.equal(
       createResponse.body.description,
@@ -5862,7 +6280,7 @@ test("creator requester comparison set exports create, list, and detail persiste
     );
 
     assert.equal(createResponse.status, HttpStatus.CREATED);
-    assert.equal(createResponse.body.userId, "creator_comparison_export");
+    assertInternalIdentityAbsentRecursively(createResponse.body);
     assert.equal(
       createResponse.body.comparisonSet.comparisonSetId,
       comparisonSetResponse.body.comparisonSetId,
@@ -5987,7 +6405,7 @@ test("creator requester comparison set exports create, list, and detail persiste
         valueJson: [
           {
             exportId: createResponse.body.exportId,
-            userId: createResponse.body.userId,
+            userId: "creator_comparison_export",
             status: createResponse.body.status,
             format: createResponse.body.format,
             requestedAt: createResponse.body.requestedAt,
@@ -6005,7 +6423,7 @@ test("creator requester comparison set exports create, list, and detail persiste
         valueJson: [
           {
             exportId: createResponse.body.exportId,
-            userId: createResponse.body.userId,
+            userId: "creator_comparison_export",
             status: createResponse.body.status,
             format: createResponse.body.format,
             requestedAt: createResponse.body.requestedAt,
@@ -6384,7 +6802,7 @@ test("deleting a requester comparison set export removes only the targeted artif
     );
     assert.equal(deleteResponse.status, HttpStatus.OK);
     assert.equal(deleteResponse.body.deleted, true);
-    assert.equal(deleteResponse.body.userId, "creator_comparison_export_delete");
+    assertInternalIdentityAbsentRecursively(deleteResponse.body);
     assert.equal(deleteResponse.body.comparisonSetId, comparisonSetResponse.body.comparisonSetId);
     assert.equal(deleteResponse.body.exportId, firstExportResponse.body.exportId);
 
@@ -6849,7 +7267,7 @@ test("creator requester comparison set delivery policy CRUD and manual run creat
     );
 
       assert.equal(createResponse.status, HttpStatus.CREATED);
-      assert.equal(createResponse.body.userId, "creator_delivery_policy");
+      assertInternalIdentityAbsentRecursively(createResponse.body);
       assert.equal(createResponse.body.name, "Daily comparison export");
       assert.equal(createResponse.body.cadence, "daily");
       assert.equal(createResponse.body.enabled, true);
@@ -7565,7 +7983,7 @@ test("requester comparison set delivery runs persist manual and automation run h
       );
 
       assert.equal(runsResponse.status, HttpStatus.OK);
-      assert.equal(runsResponse.body.userId, "creator_delivery_runs");
+      assertInternalIdentityAbsentRecursively(runsResponse.body);
       assert.equal(runsResponse.body.comparisonSetId, comparisonSet.comparisonSetId);
       assert.equal(runsResponse.body.policyId, policy.policyId);
       assert.equal(runsResponse.body.totalCount, 2);
@@ -9359,7 +9777,7 @@ test("deleting a requester comparison set delivery policy preserves historical e
     );
     assert.equal(deleteResponse.status, HttpStatus.OK);
     assert.equal(deleteResponse.body.deleted, true);
-    assert.equal(deleteResponse.body.userId, "creator_delivery_policy_delete");
+    assertInternalIdentityAbsentRecursively(deleteResponse.body);
     assert.equal(deleteResponse.body.comparisonSetId, comparisonSet.comparisonSetId);
     assert.equal(deleteResponse.body.policyId, policy.policyId);
 
@@ -10353,7 +10771,7 @@ test("creator proposition export detail backfills analytics for legacy stored re
 
     assert.equal(legacyDetailResponse.status, HttpStatus.OK);
     assert.equal(legacyDetailResponse.body.exportId, "legacy_export_1");
-    assert.equal(legacyDetailResponse.body.analytics.userId, "creator_export_legacy");
+    assertInternalIdentityAbsentRecursively(legacyDetailResponse.body.analytics);
     assert.equal(legacyDetailResponse.body.analytics.windowDays, 30);
     assert.equal(legacyDetailResponse.body.analytics.totals.createdCount, 1);
     assert.equal(legacyDetailResponse.body.analytics.totals.settledCount, 1);
@@ -10596,6 +11014,175 @@ test("system queue failed-job requeue route requires admin or system roles", asy
     assert.equal(adminResponse.status, HttpStatus.CREATED);
     assert.equal(adminResponse.body.queue, "scheduler");
     assert.equal(adminResponse.body.retriedCount, 2);
+  });
+});
+
+test("internal discovery-config routes allow operator reads but reserve writes for admin or system roles", async () => {
+  await withHttpArenaApp(async ({ baseUrl }) => {
+    const operatorReadResponse = await requestJson(
+      baseUrl,
+      "/arena/internal/discovery/config/global",
+      {
+        user: {
+          userId: "operator_discovery_reader",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(operatorReadResponse.status, HttpStatus.OK);
+    assert.equal(Array.isArray(operatorReadResponse.body.categories), true);
+
+    const operatorWriteResponse = await requestJson(
+      baseUrl,
+      "/arena/internal/discovery/config/global",
+      {
+        method: "PUT",
+        user: {
+          userId: "operator_discovery_writer",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          categories: [
+            {
+              slug: "politics",
+              label: "政策雷达",
+              title: "政策",
+              directoryLabel: "政策目录",
+              description: "政策议题与公共治理追踪",
+              displayOrder: 1,
+            },
+          ],
+          rankingCategoryLabels: {
+            all: "全部赛道",
+            general: "综合",
+            politics: "政策",
+            sports: "竞技",
+            tech: "科技",
+            research: "研究",
+            culture: "文化",
+          },
+        },
+      },
+    );
+
+    assert.equal(operatorWriteResponse.status, HttpStatus.FORBIDDEN);
+    assert.equal(operatorWriteResponse.body.error.code, "FORBIDDEN");
+
+    const adminWriteResponse = await requestJson(
+      baseUrl,
+      "/arena/internal/discovery/config/global",
+      {
+        method: "PUT",
+        user: {
+          userId: "admin_discovery_writer",
+          roles: [SystemRole.Admin],
+        },
+        body: {
+          categories: [
+            {
+              slug: "politics",
+              label: "政策雷达",
+              title: "政策",
+              directoryLabel: "政策目录",
+              description: "政策议题与公共治理追踪",
+              displayOrder: 1,
+            },
+          ],
+          rankingCategoryLabels: {
+            all: "全部赛道",
+            general: "综合",
+            politics: "政策",
+            sports: "竞技",
+            tech: "科技",
+            research: "研究",
+            culture: "文化",
+          },
+        },
+      },
+    );
+
+    assert.equal(adminWriteResponse.status, HttpStatus.OK);
+    assert.equal(
+      adminWriteResponse.body.categories.some(
+        (item: { slug: string; label: string }) =>
+          item.slug === "politics" && item.label === "政策雷达",
+      ),
+      true,
+    );
+
+    const operatorCategoryReadResponse = await requestJson(
+      baseUrl,
+      "/arena/internal/discovery/config/categories/politics",
+      {
+        user: {
+          userId: "operator_category_reader",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(operatorCategoryReadResponse.status, HttpStatus.OK);
+    assert.equal(
+      Array.isArray(operatorCategoryReadResponse.body.sidebarItems),
+      true,
+    );
+
+    const operatorCategoryWriteResponse = await requestJson(
+      baseUrl,
+      "/arena/internal/discovery/config/categories/politics",
+      {
+        method: "PUT",
+        user: {
+          userId: "operator_category_writer",
+          roles: [SystemRole.Operator],
+        },
+        body: {
+          sidebarItems: [
+            {
+              id: "policy-focus",
+              label: "政策焦点",
+              linkedMarketIds: ["missing_market"],
+            },
+          ],
+        },
+      },
+    );
+
+    assert.equal(operatorCategoryWriteResponse.status, HttpStatus.FORBIDDEN);
+    assert.equal(
+      operatorCategoryWriteResponse.body.error.code,
+      "FORBIDDEN",
+    );
+
+    const adminCategoryWriteResponse = await requestJson(
+      baseUrl,
+      "/arena/internal/discovery/config/categories/politics",
+      {
+        method: "PUT",
+        user: {
+          userId: "admin_category_writer",
+          roles: [SystemRole.Admin],
+        },
+        body: {
+          sidebarItems: [
+            {
+              id: "policy-focus",
+              label: "政策焦点",
+              linkedMarketIds: ["missing_market"],
+            },
+          ],
+        },
+      },
+    );
+
+    assert.equal(adminCategoryWriteResponse.status, HttpStatus.OK);
+    assert.equal(
+      adminCategoryWriteResponse.body.sidebarItems[0]?.invalidLinkedMarketIds?.includes(
+        "missing_market",
+      ),
+      true,
+    );
   });
 });
 
@@ -11099,6 +11686,92 @@ test("validation rehearsal checkpoint list route returns proposition-scoped exec
       "publish_and_open",
     );
     assert.equal(detailResponse.body.validationRehearsalCheckpoints.length, 2);
+  });
+});
+
+test("reward payout confirm execution route completes an executing payout from its recorded transaction hash", async () => {
+  await withHttpArenaApp(async ({ baseUrl, harness }) => {
+    await harness.userRepository.create({
+      id: "http_reward_confirm_user",
+      primaryWalletAddress: "0x00000000000000000000000000000000000000c1",
+      normalizedPrimaryWalletAddress:
+        "0x00000000000000000000000000000000000000c1",
+      status: "active",
+    } as never);
+
+    const proposition = await createLiveProposition(harness, {
+      title: "HTTP reward confirm execution proposition",
+    });
+    const response = await createReviewedResponseForProposition(harness, {
+      propositionId: proposition.id,
+      userId: "http_reward_confirm_user",
+      minuteOffset: 26,
+      reviewStatus: "valid",
+    });
+    const ledger = await harness.rewardLedgerRepository.findLatestByResponseId(
+      response.id,
+    );
+    assert.ok(ledger);
+
+    await requestJson(
+      baseUrl,
+      `/arena/internal/rewards/${ledger!.id}/approve-payout`,
+      {
+        method: "POST",
+        body: {
+          approvedAt: arenaTime(27),
+          reason: "operator_approved_reward_payout",
+        },
+        user: {
+          userId: "operator_reward",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    await requestJson(
+      baseUrl,
+      `/arena/internal/rewards/${ledger!.id}/start-payout-execution`,
+      {
+        method: "POST",
+        body: {
+          startedAt: arenaTime(28),
+          reason: "wallet_transfer_broadcast_started",
+        },
+        user: {
+          userId: "operator_reward",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    const confirmResponse = await requestJson(
+      baseUrl,
+      `/arena/internal/rewards/${ledger!.id}/confirm-payout-execution`,
+      {
+        method: "POST",
+        body: {
+          confirmedAt: arenaTime(29),
+          reason: "wallet_transfer_chain_confirmed",
+          externalReference: "http_confirm_001",
+        },
+        user: {
+          userId: "operator_reward",
+          roles: [SystemRole.Operator],
+        },
+      },
+    );
+
+    assert.equal(confirmResponse.status, HttpStatus.CREATED);
+    assert.equal(confirmResponse.body.payout.status, "completed");
+    assert.equal(
+      confirmResponse.body.payout.executionTxHash,
+      "0x0000000000000000000000000000000000000000000000000000000000000001",
+    );
+    assert.equal(
+      confirmResponse.body.payout.externalReference,
+      "http_confirm_001",
+    );
   });
 });
 
@@ -11617,6 +12290,7 @@ test("runtime contract route exposes a unified backend deployment contract to op
           },
         ],
       },
+      validationProofRecord: null,
       commands: {
         install: ["pnpm install", "pnpm run deps:up"],
         dev: ["pnpm run api:dev"],

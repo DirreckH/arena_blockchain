@@ -96,7 +96,6 @@ export interface RequesterPropositionBudgetLedgerViewModel {
 }
 
 export interface RequesterOwnedPropositionOverviewViewModel {
-  userId: string;
   totals: {
     totalCount: number;
     draftCount: number;
@@ -171,7 +170,6 @@ export interface RequesterOwnedPropositionTrendAnalyticsViewModel {
 }
 
 export interface RequesterOwnedPropositionAnalyticsViewModel {
-  userId: string;
   windowDays: number;
   now: string;
   windowStartedAt: string;
@@ -219,7 +217,6 @@ export interface RequesterReportPresetConfigViewModel {
 
 export interface RequesterReportPresetViewModel {
   presetId: string;
-  userId: string;
   name: string;
   description: string | null;
   config: RequesterReportPresetConfigViewModel;
@@ -229,14 +226,12 @@ export interface RequesterReportPresetViewModel {
 
 export interface RequesterReportPresetListItemViewModel {
   presetId: string;
-  userId: string;
   name: string;
   description: string | null;
   updatedAt: string;
 }
 
 export interface RequesterReportPresetListViewModel {
-  userId: string;
   totalCount: number;
   items: RequesterReportPresetListItemViewModel[];
 }
@@ -258,8 +253,6 @@ export interface RequesterOwnedPropositionDetailViewModel {
     maxDurationSeconds: number;
     rewardBudget: string;
     baseResponseReward: string;
-    createdByUserId: string;
-    updatedByUserId: string | null;
     createdAt: string;
     updatedAt: string;
     publishedAt: string | null;
@@ -273,7 +266,6 @@ export interface RequesterOwnedPropositionDetailViewModel {
   submission: {
     status: RequesterPropositionSubmissionStatus;
     submittedAt: string | null;
-    submittedByUserId: string | null;
     submissionReason: string | null;
     submissionNote: string | null;
   };
@@ -338,7 +330,6 @@ export interface RequesterOwnedSettledPropositionReportViewModel {
     maxDurationSeconds: number;
     rewardBudget: string;
     baseResponseReward: string;
-    createdByUserId: string;
     createdAt: string;
     publishedAt: string | null;
     liveAt: string | null;
@@ -350,7 +341,6 @@ export interface RequesterOwnedSettledPropositionReportViewModel {
   submission: {
     status: RequesterPropositionSubmissionStatus;
     submittedAt: string | null;
-    submittedByUserId: string | null;
     submissionReason: string | null;
     submissionNote: string | null;
   };
@@ -388,7 +378,6 @@ export interface RequesterOwnedSettledPropositionReportViewModel {
 
 export interface RequesterOwnedPropositionExportItemViewModel {
   exportId: string;
-  userId: string;
   status: "completed";
   format: RequesterReportPresetExportFormat;
   requestedAt: string;
@@ -405,7 +394,6 @@ export interface RequesterOwnedPropositionExportItemViewModel {
 }
 
 export interface RequesterOwnedPropositionExportListViewModel {
-  userId: string;
   totalCount: number;
   items: RequesterOwnedPropositionExportItemViewModel[];
 }
@@ -433,7 +421,6 @@ export interface RequesterOwnedPropositionExportArtifactViewModel
 
 export interface RequesterComparisonSetViewModel {
   comparisonSetId: string;
-  userId: string;
   name: string;
   description: string | null;
   presetIds: string[];
@@ -443,7 +430,6 @@ export interface RequesterComparisonSetViewModel {
 
 export interface RequesterComparisonSetListItemViewModel {
   comparisonSetId: string;
-  userId: string;
   name: string;
   description: string | null;
   presetIds: string[];
@@ -451,7 +437,6 @@ export interface RequesterComparisonSetListItemViewModel {
 }
 
 export interface RequesterComparisonSetListViewModel {
-  userId: string;
   totalCount: number;
   items: RequesterComparisonSetListItemViewModel[];
 }
@@ -488,7 +473,6 @@ export interface RequesterOwnedPropositionAnalyticsComparisonItemViewModel {
 }
 
 export interface RequesterOwnedPropositionAnalyticsComparisonViewModel {
-  userId: string;
   totalCount: number;
   summary: RequesterOwnedPropositionAnalyticsComparisonSummaryViewModel;
   comparisonSet?: {
@@ -512,7 +496,6 @@ export interface RequesterComparisonSetExportOriginViewModel {
 
 export interface RequesterOwnedComparisonSetExportItemViewModel {
   exportId: string;
-  userId: string;
   status: "completed";
   format: RequesterReportPresetExportFormat;
   requestedAt: string;
@@ -526,7 +509,6 @@ export interface RequesterOwnedComparisonSetExportItemViewModel {
 }
 
 export interface RequesterOwnedComparisonSetExportListViewModel {
-  userId: string;
   comparisonSet: {
     comparisonSetId: string;
     name: string;
@@ -556,7 +538,6 @@ export interface RequesterOwnedComparisonSetExportReportRowViewModel {
 
 export interface RequesterOwnedComparisonSetExportArtifactViewModel {
   exportId: string;
-  userId: string;
   status: "completed";
   format: RequesterReportPresetExportFormat;
   requestedAt: string;
@@ -598,7 +579,6 @@ export interface RequesterOwnedComparisonSetExportArtifactViewModel {
 }
 
 export interface DeleteOwnedComparisonSetExportResultViewModel {
-  userId: string;
   comparisonSetId: string;
   exportId: string;
   deleted: true;
@@ -646,7 +626,6 @@ export interface UpdateRequesterComparisonSetDeliveryPolicyInputViewModel {
 
 export interface RequesterComparisonSetDeliveryPolicyViewModel {
   policyId: string;
-  userId: string;
   comparisonSetId: string;
   name: string;
   description: string | null;
@@ -663,14 +642,12 @@ export interface RequesterComparisonSetDeliveryPolicyViewModel {
 }
 
 export interface RequesterComparisonSetDeliveryPolicyListViewModel {
-  userId: string;
   comparisonSetId: string;
   totalCount: number;
   items: RequesterComparisonSetDeliveryPolicyViewModel[];
 }
 
 export interface DeleteRequesterComparisonSetDeliveryPolicyResultViewModel {
-  userId: string;
   comparisonSetId: string;
   policyId: string;
   deleted: true;
@@ -707,7 +684,6 @@ export interface RequesterComparisonSetDeliveryRunOriginViewModel {
 
 export interface RequesterComparisonSetDeliveryRunViewModel {
   runId: string;
-  userId: string;
   comparisonSetId: string;
   policyId: string;
   retriedRunId: string | null;
@@ -723,7 +699,6 @@ export interface RequesterComparisonSetDeliveryRunViewModel {
 }
 
 export interface RequesterComparisonSetDeliveryRunListViewModel {
-  userId: string;
   comparisonSetId: string;
   policyId: string;
   totalCount: number;

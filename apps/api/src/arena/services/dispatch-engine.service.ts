@@ -25,6 +25,7 @@ import type {
 } from "../arena.types";
 import { withArenaTransaction } from "../arena-transaction.utils";
 import { PropositionRepository } from "../repositories/proposition.repository";
+import { ArenaUserRepository } from "../repositories/arena-user.repository";
 import { DispatchTaskRepository } from "../repositories/dispatch-task.repository";
 import { ResponseRepository } from "../repositories/response.repository";
 import { UserReputationRepository } from "../repositories/user-reputation.repository";
@@ -36,6 +37,7 @@ import { DispatchTaskService } from "./dispatch-task.service";
 const toIso = (value: Date | null): string | null =>
   value ? value.toISOString() : null;
 const ACTIVE_TASK_STATUSES = new Set(["assigned", "started"]);
+const EXPERIENCED_USER_MIN_REVIEWED_RESPONSES = 3;
 
 @Injectable()
 export class DispatchEngineService {
@@ -46,6 +48,7 @@ export class DispatchEngineService {
     private readonly propositions: PropositionRepository,
     private readonly tasks: DispatchTaskRepository,
     private readonly responses: ResponseRepository,
+    private readonly users: ArenaUserRepository,
     private readonly reputations: UserReputationRepository,
     private readonly tags: UserTagRepository,
     private readonly dispatchTasks: DispatchTaskService,
@@ -279,10 +282,11 @@ export class DispatchEngineService {
     assignedAt: Date,
     db: ArenaDbClient,
   ): Promise<DispatchCandidateRankingSnapshot> {
-    const [tasks, reputation, tags] = await Promise.all([
+    const [tasks, reputation, tags, user] = await Promise.all([
       this.tasks.listByUser(userId, db),
       this.reputations.findByUserId(userId, db),
       this.tags.listCurrentByUser(userId, db),
+      this.users.findById(userId, db),
     ]);
     const metrics = (reputation?.metricsJson ?? null) as
       | {
@@ -292,11 +296,22 @@ export class DispatchEngineService {
           fraudFlagCount?: number;
         }
       | null;
+    const activeTagKeys = tags.map((tag) => tag.tagKey);
+    const reviewedResponseCount = metrics?.reviewedResponseCount ?? 0;
 
     return {
       userId,
       userStatus: "active",
-      matchesSampleConstraints: true,
+      matchesSampleConstraints: this.matchesSampleConstraints(
+        proposition.sampleConstraints,
+        {
+          activeTagKeys,
+          reviewedResponseCount,
+          hasPrimaryWalletAddress:
+            typeof user?.primaryWalletAddress === "string" &&
+            user.primaryWalletAddress.trim().length > 0,
+        },
+      ),
       activeTaskCount: tasks.filter((task) => ACTIVE_TASK_STATUSES.has(task.status))
         .length,
       hasActiveTaskForProposition: tasks.some(
@@ -315,12 +330,41 @@ export class DispatchEngineService {
       ),
       reputationLevel: reputation?.reputationLevel ?? null,
       reputationScore: reputation?.reputationScore ?? null,
-      reviewedResponseCount: metrics?.reviewedResponseCount ?? 0,
+      reviewedResponseCount,
       invalidRate: metrics?.invalidRate ?? 0,
       anomalyRate: metrics?.anomalyRate ?? 0,
       fraudFlagCount: metrics?.fraudFlagCount ?? 0,
-      activeTagKeys: tags.map((tag) => tag.tagKey),
+      activeTagKeys,
     };
+  }
+
+  private matchesSampleConstraints(
+    sampleConstraints: readonly string[],
+    candidate: {
+      activeTagKeys: readonly string[];
+      reviewedResponseCount: number;
+      hasPrimaryWalletAddress: boolean;
+    },
+  ): boolean {
+    if (sampleConstraints.length === 0) {
+      return true;
+    }
+
+    const tagKeys = new Set(candidate.activeTagKeys);
+
+    return sampleConstraints.every((constraint) => {
+      switch (constraint) {
+        case "wallet_signed":
+          return candidate.hasPrimaryWalletAddress;
+        case "experienced_user":
+          return (
+            candidate.reviewedResponseCount >=
+            EXPERIENCED_USER_MIN_REVIEWED_RESPONSES
+          );
+        default:
+          return tagKeys.has(constraint);
+      }
+    });
   }
 
   private toInternalViewModel(

@@ -1,10 +1,12 @@
 import { Body, Controller, Get, Param, Post, Req } from "@nestjs/common";
 import type { ArenaDiscussionThreadViewModel } from "@arena/shared";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { CreateDiscussionCommentDto } from "./dto/create-discussion-comment.dto";
 import { DiscussionService } from "./services/discussion.service";
 
+@ArenaSurfaceBoundary("validation")
 @Controller("arena/discussion")
 export class ArenaDiscussionController {
   constructor(private readonly discussions: DiscussionService) {}

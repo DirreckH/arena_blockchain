@@ -67,6 +67,7 @@ import type {
   Response,
   ResponseReview,
   RewardLedger,
+  RewardPayout,
   UserReputation,
   UserTag,
 } from "./entities.js";
@@ -185,6 +186,7 @@ export interface RewardServiceContract {
     userId: string,
   ): Promise<RewardLedger | null>;
   listByUser(userId: string): Promise<RewardLedger[]>;
+  listPayoutsByUser(userId: string): Promise<RewardPayout[]>;
 }
 
 export interface ReputationServiceContract {

@@ -141,6 +141,19 @@ enum RewardLedgerReasonCode {
   fraud_suspected_review
 }
 
+enum RewardPayoutStatus {
+  requested
+  approved
+  executing
+  completed
+  failed
+  cancelled
+}
+
+enum RewardPayoutMethod {
+  wallet_transfer
+}
+
 enum ReputationLevel {
   new
   normal
@@ -158,6 +171,12 @@ enum UserTagSourceType {
   participation
 }
 
+enum UserStatus {
+  active
+  blocked
+  deleted
+}
+
 model SystemKeyValue {
   id          String    @id @db.Text
   key         String    @unique @db.Text
@@ -169,6 +188,69 @@ model SystemKeyValue {
 
   @@index([deletedAt], map: "idx_system_key_value_deleted_at")
   @@map("system_key_value")
+}
+
+model User {
+  id                           String        @id @db.Text
+  primaryWalletAddress         String?       @map("primary_wallet_address") @db.Text
+  normalizedPrimaryWalletAddress String?     @unique(map: "uq_user_normalized_primary_wallet_address") @map("normalized_primary_wallet_address") @db.Text
+  status                       UserStatus    @default(active)
+  lastLoginAt                  DateTime?     @map("last_login_at") @db.Timestamptz(3)
+  createdAt                    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+  wallets                      UserWallet[]
+  sessions                     UserSession[]
+  createdPropositions          Proposition[] @relation("PropositionCreatedBy")
+  updatedPropositions          Proposition[] @relation("PropositionUpdatedBy")
+  dispatchTasks                DispatchTask[]
+  responses                    Response[]
+  reviewedResponseReviews      ResponseReview[] @relation("ResponseReviewReviewedBy")
+  bets                         Bet[]
+  rewardLedgers                RewardLedger[]
+  rewardPayouts                RewardPayout[]
+  approvedRewardPayouts        RewardPayout[]         @relation("RewardPayoutApprovedBy")
+  reputations                  UserReputation[]
+  tags                         UserTag[]
+  internalAuditEvents          InternalAuditEvent[] @relation("InternalAuditActor")
+
+  @@index([status, createdAt], map: "idx_user_status_created_at")
+  @@map("arena_user")
+}
+
+model UserWallet {
+  id                      String    @id @db.Text
+  userId                  String    @map("user_id") @db.Text
+  walletAddress           String    @map("wallet_address") @db.Text
+  normalizedWalletAddress String    @map("normalized_wallet_address") @db.Text
+  chainId                 Int       @map("chain_id")
+  isPrimary               Boolean   @default(false) @map("is_primary")
+  verifiedAt              DateTime? @map("verified_at") @db.Timestamptz(3)
+  revokedAt               DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                    User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([normalizedWalletAddress, chainId], map: "uq_user_wallet_normalized_wallet_chain")
+  @@index([userId, isPrimary], map: "idx_user_wallet_user_primary")
+  @@map("user_wallet")
+}
+
+model UserSession {
+  id            String    @id @db.Text
+  userId        String    @map("user_id") @db.Text
+  walletAddress String    @map("wallet_address") @db.Text
+  chainId       Int       @map("chain_id")
+  accessToken   String    @map("access_token") @db.Text
+  issuedAt      DateTime  @map("issued_at") @db.Timestamptz(3)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([userId, issuedAt], map: "idx_user_session_user_issued_at")
+  @@index([expiresAt, revokedAt], map: "idx_user_session_expires_revoked")
+  @@map("user_session")
 }
 
 model Proposition {
@@ -206,6 +288,8 @@ model Proposition {
   updatedByUserId        String?                 @map("updated_by_user_id") @db.Text
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdByUser          User                    @relation("PropositionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser          User?                   @relation("PropositionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   dispatchTasks          DispatchTask[]
   responses              Response[]
   effectiveSampleCounter EffectiveSampleCounter?
@@ -233,6 +317,7 @@ model DispatchTask {
   createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   proposition   Proposition        @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user          User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   responses     Response[]
 
   @@index([propositionId, userId, status], map: "idx_dispatch_task_proposition_user_status")
@@ -259,6 +344,7 @@ model Response {
   updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
   proposition        Proposition     @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   task               DispatchTask    @relation(fields: [taskId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user               User            @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   review             ResponseReview?
   rewardLedgers      RewardLedger[]
 
@@ -280,6 +366,7 @@ model ResponseReview {
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
   response         Response             @relation(fields: [responseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reviewedByUser   User?                @relation("ResponseReviewReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([status, reviewedAt], map: "idx_response_review_status_reviewed_at")
   @@map("response_review")
@@ -361,6 +448,7 @@ model Bet {
   updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
   market            Market                @relation(fields: [marketId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   proposition       Proposition           @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([marketId, userId], map: "uq_bet_market_user")
   @@index([propositionId, userId], map: "idx_bet_proposition_user")
@@ -424,14 +512,51 @@ model RewardLedger {
   reasonCode         RewardLedgerReasonCode? @map("reason_code")
   createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   proposition        Proposition            @relation(fields: [propositionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   response           Response               @relation(fields: [responseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  payoutRequests     RewardPayout[]
 
   @@unique([responseId, ledgerVersion], map: "uq_reward_ledger_response_version")
   @@index([propositionId, userId, sourceType, createdAt], map: "idx_reward_ledger_proposition_user_source")
   @@index([userId, status], map: "idx_reward_ledger_user_status")
   @@index([userId, sourceType, sourceId], map: "idx_reward_ledger_user_source")
   @@map("reward_ledger")
+}
+
+model RewardPayout {
+  id                   String             @id @db.Text
+  ledgerId             String             @map("ledger_id") @db.Text
+  userId               String             @map("user_id") @db.Text
+  method               RewardPayoutMethod @default(wallet_transfer)
+  status               RewardPayoutStatus @default(requested)
+  assetSymbol          String             @default("USDC") @map("asset_symbol") @db.Text
+  chainId              Int                @map("chain_id")
+  amount               String             @db.Text
+  destinationAddress   String             @map("destination_address") @db.Text
+  requestedAt          DateTime           @map("requested_at") @db.Timestamptz(3)
+  approvedAt           DateTime?          @map("approved_at") @db.Timestamptz(3)
+  approvedByUserId     String?            @map("approved_by_user_id") @db.Text
+  executionStartedAt   DateTime?          @map("execution_started_at") @db.Timestamptz(3)
+  completedAt          DateTime?          @map("completed_at") @db.Timestamptz(3)
+  failedAt             DateTime?          @map("failed_at") @db.Timestamptz(3)
+  cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  lastErrorCode        String?            @map("last_error_code") @db.Text
+  lastErrorMessage     String?            @map("last_error_message") @db.Text
+  executionTxHash      String?            @map("execution_tx_hash") @db.Text
+  externalReference    String?            @map("external_reference") @db.Text
+  retryCount           Int                @default(0) @map("retry_count")
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  ledger               RewardLedger       @relation(fields: [ledgerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  approvedByUser       User?              @relation("RewardPayoutApprovedBy", fields: [approvedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([ledgerId], map: "uq_reward_payout_ledger_id")
+  @@index([userId, status, requestedAt], map: "idx_reward_payout_user_status_requested_at")
+  @@index([status, requestedAt], map: "idx_reward_payout_status_requested_at")
+  @@index([approvedByUserId, approvedAt], map: "idx_reward_payout_approved_by_approved_at")
+  @@map("reward_payout")
 }
 
 model UserReputation {
@@ -444,6 +569,7 @@ model UserReputation {
   computedAt      DateTime        @map("computed_at") @db.Timestamptz(3)
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user            User            @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([reputationLevel, computedAt], map: "idx_user_reputation_level_computed_at")
   @@map("user_reputation")
@@ -463,6 +589,7 @@ model UserTag {
   expiresAt       DateTime?         @map("expires_at") @db.Timestamptz(3)
   createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([userId, tagKey], map: "uq_user_tag_user_key")
   @@index([userId, tagType, expiresAt], map: "idx_user_tag_user_type_expires_at")
@@ -479,6 +606,7 @@ model InternalAuditEvent {
   note        String?  @db.Text
   metadataJson Json?   @map("metadata_json")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actorUser   User?    @relation("InternalAuditActor", fields: [actorUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([entityType, entityId, createdAt], map: "idx_internal_audit_entity_created_at")
   @@index([action, createdAt], map: "idx_internal_audit_action_created_at")

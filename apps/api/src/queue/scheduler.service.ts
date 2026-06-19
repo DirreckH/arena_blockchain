@@ -146,6 +146,26 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  @Cron(CronExpression.EVERY_MINUTE)
+  async runRewardPayoutAutomation(): Promise<void> {
+    try {
+      const job = await this.queueService.enqueueRewardPayoutAutomation({
+        requestedAt: new Date().toISOString(),
+      });
+      this.logger.debug({ job }, "Enqueued reward payout automation job");
+    } catch (error) {
+      this.logger.error(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown reward payout automation error",
+        },
+        "Failed to run reward payout automation",
+      );
+    }
+  }
+
   private async enqueueValidationChainSync(): Promise<void> {
     try {
       const job = await this.queueService.enqueueValidationChainSync();

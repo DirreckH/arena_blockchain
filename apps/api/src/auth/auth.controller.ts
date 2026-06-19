@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Req } from "@nestjs/common";
 
 import type { AuthChallengeResponse, JwtIdentity } from "@arena/shared";
 
+import { ArenaRateLimit } from "../common/decorators/arena-rate-limit.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { AuthService, type AuthTokenResponse } from "./auth.service";
@@ -13,12 +14,14 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @ArenaRateLimit("auth_challenge")
   @Post("challenge")
   createChallenge(@Body() body: AuthChallengeDto): Promise<AuthChallengeResponse> {
     return this.authService.createChallenge(body.walletAddress, body.chainId);
   }
 
   @Public()
+  @ArenaRateLimit("auth_verify")
   @Post("verify")
   verifySignature(@Body() body: AuthVerifyDto): Promise<AuthTokenResponse> {
     return this.authService.verifySignature(

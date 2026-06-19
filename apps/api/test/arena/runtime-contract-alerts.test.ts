@@ -8,6 +8,14 @@ import { InternalMonitoringService } from "../../src/arena/services/internal-mon
 import { RuntimeContractAlertService } from "../../src/arena/services/runtime-contract-alert.service";
 import { createArenaHarness } from "./harness";
 
+class FakeOpsAlertNotifier {
+  readonly notifications: Array<Record<string, unknown>> = [];
+
+  async notifyAlert(input: Record<string, unknown>): Promise<void> {
+    this.notifications.push(structuredClone(input));
+  }
+}
+
 const buildBlockedRuntimeContract = (): BackendRuntimeContractViewModel => ({
   status: "degraded",
   generatedAt: "2026-06-02T00:00:00.000Z",
@@ -112,6 +120,7 @@ const buildBlockedRuntimeContract = (): BackendRuntimeContractViewModel => ({
       },
     ],
   },
+  validationProofRecord: null,
   commands: {
     install: ["pnpm install", "pnpm run deps:up"],
     dev: ["pnpm run api:dev"],
@@ -461,7 +470,12 @@ const createBlockedRuntimeMonitoring = (
       },
     } as never,
     buildValidationContractReadinessStub(),
-    undefined,
+    undefined as never,
+    {
+      async getLatestProof() {
+        return null;
+      },
+    } as never,
   );
 
 const createReadyRuntimeMonitoring = (
@@ -560,7 +574,12 @@ const createReadyRuntimeMonitoring = (
       },
     } as never,
     buildValidationContractReadinessStub(),
-    undefined,
+    undefined as never,
+    {
+      async getLatestProof() {
+        return null;
+      },
+    } as never,
   );
 
 test("runtime contract audit records deduped release alerts only when the blocker set changes", async () => {
@@ -610,6 +629,37 @@ test("runtime contract audit records deduped release alerts only when the blocke
   assert.deepEqual(
     (auditEvents[0]?.metadata as { blockingDependencies?: string[] }).blockingDependencies,
     [],
+  );
+});
+
+test("runtime contract health checks forward structured release alerts to the configured notifier", async () => {
+  const harness = createArenaHarness();
+  const notifier = new FakeOpsAlertNotifier();
+  const monitoring = {
+    async getRuntimeContract() {
+      return buildBlockedRuntimeContract();
+    },
+  } as InternalMonitoringService;
+  const alerts = new RuntimeContractAlertService(
+    monitoring,
+    harness.internalAuditService,
+    notifier as never,
+  );
+
+  await alerts.runHealthCheck("2026-06-02T00:00:00.000Z");
+
+  assert.equal(notifier.notifications.length, 1);
+  assert.equal(
+    notifier.notifications[0]?.source,
+    "runtime_contract",
+  );
+  assert.equal(
+    notifier.notifications[0]?.action,
+    "runtime_contract.alert.release_blocked",
+  );
+  assert.equal(
+    notifier.notifications[0]?.entityType,
+    "runtime_contract",
   );
 });
 

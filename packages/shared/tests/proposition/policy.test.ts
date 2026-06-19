@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS,
   PropositionPolicyError,
   assertReadyForLivePublication,
   assertSupportedMvpPropositionDraftInput,
@@ -66,6 +67,48 @@ test("mvp proposition draft policy rejects rolling and survey extensions", () =>
     (error: unknown) =>
       error instanceof PropositionPolicyError &&
       error.code === "proposition.unsupported_multi_question",
+  );
+});
+
+test("mvp proposition draft policy accepts supported executable sample constraints only", () => {
+  assert.doesNotThrow(() =>
+    assertSupportedMvpPropositionDraftInput({
+      title: "Will A happen?",
+      description: "Binary consensus proposition",
+      options: ["A", "B"],
+      sampleConstraints: [
+        "experienced_user",
+        "wallet_signed",
+        ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS[0],
+      ],
+      minEffectiveSample: 3,
+      minBetAmount: "10",
+      minDurationSeconds: 60,
+      maxDurationSeconds: 3600,
+      rewardBudget: "100",
+      baseResponseReward: "5",
+      marketEnabled: true,
+    }),
+  );
+
+  assert.throws(
+    () =>
+      assertSupportedMvpPropositionDraftInput({
+        title: "Will A happen?",
+        description: "Binary consensus proposition",
+        options: ["A", "B"],
+        sampleConstraints: ["verified_human"],
+        minEffectiveSample: 3,
+        minBetAmount: "10",
+        minDurationSeconds: 60,
+        maxDurationSeconds: 3600,
+        rewardBudget: "100",
+        baseResponseReward: "5",
+        marketEnabled: true,
+      }),
+    (error: unknown) =>
+      error instanceof PropositionPolicyError &&
+      error.code === "proposition.unsupported_sample_constraint",
   );
 });
 

@@ -23,6 +23,7 @@ import { ResponseReviewRepository } from "../repositories/response-review.reposi
 import { SystemKeyValueRepository } from "../repositories/system-key-value.repository";
 import { assertResponseReviewTransition } from "../state-machines/response-review-state.machine";
 import { toDate } from "../arena.utils";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 import { InternalAuditService } from "./internal-audit.service";
 import { RewardLedgerService } from "./reward-ledger.service";
 import { ReputationService } from "./reputation.service";
@@ -110,6 +111,7 @@ export class ResponseReviewService {
     private readonly rewards: RewardLedgerService,
     private readonly reputation: ReputationService,
     private readonly tags: TagService,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async markPendingReview(
@@ -178,6 +180,11 @@ export class ResponseReviewService {
     db?: ArenaDbClient,
   ): Promise<ResponseReviewWorkflowViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.claimedByUserId,
+        undefined,
+        tx,
+      );
       const review = await this.markPendingReview(input.responseId, tx);
       if (review.status !== "pending_review") {
         throw new ArenaConflictError(
@@ -207,6 +214,11 @@ export class ResponseReviewService {
     db?: ArenaDbClient,
   ): Promise<ResponseReviewWorkflowViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(
+        input.releasedByUserId,
+        undefined,
+        tx,
+      );
       const review = await this.markPendingReview(input.responseId, tx);
       if (review.status !== "pending_review") {
         throw new ArenaConflictError(
@@ -301,6 +313,13 @@ export class ResponseReviewService {
       }
 
       if (review.status !== "pending_review") {
+        if (input.reviewedByUserId) {
+          await this.userIdentity.ensureUserExists(
+            input.reviewedByUserId,
+            undefined,
+            tx,
+          );
+        }
         if (isSameFinalizedReview(review, input, reasonCodes)) {
           await this.persistFinalizedWorkflowRecord(
             review,
@@ -365,6 +384,11 @@ export class ResponseReviewService {
       );
 
       if (input.reviewedByUserId) {
+        await this.userIdentity.ensureUserExists(
+          input.reviewedByUserId,
+          undefined,
+          tx,
+        );
         await this.ensurePendingReviewOwnershipForFinalization(
           review,
           input.reviewedByUserId,

@@ -1,5 +1,9 @@
 import type { PropositionRuntimeSnapshot } from "../dto.js";
 import type { Market, Proposition } from "../entities.js";
+import {
+  RESPONDENT_INTEREST_TAG_KEYS,
+  RESPONDENT_QUALITY_TAG_KEYS,
+} from "../tags/constants.js";
 import { PropositionPolicyError } from "./errors.js";
 
 export const ARENA_PROPOSITION_MVP_LIMITS = {
@@ -12,6 +16,17 @@ export const ARENA_PROPOSITION_MVP_LIMITS = {
     max: 604_800,
   },
 } as const;
+
+export const ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS = [
+  ...RESPONDENT_QUALITY_TAG_KEYS,
+  ...RESPONDENT_INTEREST_TAG_KEYS,
+  "wallet_signed",
+  "experienced_user",
+] as const;
+
+const EXECUTABLE_SAMPLE_CONSTRAINT_SET = new Set<string>(
+  ARENA_EXECUTABLE_SAMPLE_CONSTRAINTS,
+);
 
 const fail = (code: string, message: string): never => {
   throw new PropositionPolicyError(code, message);
@@ -47,6 +62,35 @@ const parseAmount = (value: unknown, field: string): bigint => {
   }
 
   return BigInt(value as string);
+};
+
+const assertSupportedSampleConstraints = (value: unknown): void => {
+  if (!Array.isArray(value)) {
+    fail(
+      "proposition.invalid_sample_constraints",
+      "sampleConstraints must be an array.",
+    );
+  }
+
+  const constraints = value as unknown[];
+
+  for (const constraint of constraints) {
+    if (typeof constraint !== "string") {
+      fail(
+        "proposition.invalid_sample_constraints",
+        "sampleConstraints must contain only strings.",
+      );
+    }
+
+    const normalizedConstraint = constraint as string;
+
+    if (!EXECUTABLE_SAMPLE_CONSTRAINT_SET.has(normalizedConstraint)) {
+      fail(
+        "proposition.unsupported_sample_constraint",
+        `Unsupported sample constraint: ${normalizedConstraint}.`,
+      );
+    }
+  }
 };
 
 const assertSupportedIdentity = (input: {
@@ -152,6 +196,10 @@ export const assertSupportedMvpPropositionDraftInput = (
     rollingMode: input.rollingMode ?? "non_rolling",
     settlementTarget: input.settlementTarget ?? "final",
   });
+
+  if ("sampleConstraints" in input) {
+    assertSupportedSampleConstraints(input.sampleConstraints);
+  }
 };
 
 export const assertSupportedMvpPropositionConfig = (
@@ -188,12 +236,7 @@ export const assertSupportedMvpPropositionConfig = (
     );
   }
 
-  if (!Array.isArray(input.sampleConstraints)) {
-    fail(
-      "proposition.invalid_sample_constraints",
-      "sampleConstraints must be an array.",
-    );
-  }
+  assertSupportedSampleConstraints(input.sampleConstraints);
 
   if (
     !isFiniteInteger(input.minEffectiveSample) ||

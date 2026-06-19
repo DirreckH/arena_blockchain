@@ -14,6 +14,7 @@ import type {
 import type { ArenaDbClient } from "../prisma.types";
 import { ValidationChainCursorRepository } from "../repositories/validation-chain-cursor.repository";
 import { InternalAuditService } from "../services/internal-audit.service";
+import { OpsAlertNotifierService } from "../services/ops-alert-notifier.service";
 import { withArenaTransaction } from "../arena-transaction.utils";
 import {
   VALIDATION_CHAIN_STREAM_KEY,
@@ -88,6 +89,8 @@ export class ValidationChainAlertService {
     private readonly audit: InternalAuditService,
     @Optional()
     private readonly validationContract?: ValidationChainContractService,
+    @Optional()
+    private readonly notifier?: OpsAlertNotifierService,
   ) {}
 
   async recordCommandRetryQueued(input: {
@@ -706,6 +709,15 @@ export class ValidationChainAlertService {
   }
 
   async runHealthCheck(nowIso = new Date().toISOString()): Promise<void> {
+    const notifications: Array<{
+      action: string;
+      reason: string;
+      entityType: string;
+      entityId: string;
+      createdAt: string;
+      metadata: Record<string, unknown>;
+    }> = [];
+
     await withArenaTransaction(this.prisma, undefined, async (tx) => {
       const [snapshot, lifecycleDrifts] = await Promise.all([
         this.getHealthSnapshot(nowIso, tx),
@@ -713,11 +725,12 @@ export class ValidationChainAlertService {
       ]);
 
       if (snapshot.isCursorStalled) {
-        await this.recordAlertOnce({
+        const alert = await this.recordAlertOnce({
           entityType: "validation_chain_stream",
           entityId: snapshot.streamKey,
           action: CURSOR_STALLED_ACTION,
           reason: "validation_chain.cursor.stalled",
+          nowIso,
           dedupeAfter: snapshot.cursorStaleThresholdMs,
           metadata: {
             lastProcessedBlock: snapshot.lastProcessedBlock,
@@ -727,28 +740,36 @@ export class ValidationChainAlertService {
             cursorStaleThresholdMs: snapshot.cursorStaleThresholdMs,
           },
         });
+        if (alert) {
+          notifications.push(alert);
+        }
       }
 
       if (snapshot.metrics.recentSyncFailureCount >= 3) {
-        await this.recordAlertOnce({
+        const alert = await this.recordAlertOnce({
           entityType: "validation_chain_stream",
           entityId: snapshot.streamKey,
           action: SYNC_WORKER_UNHEALTHY_ACTION,
           reason: "validation_chain.sync.unhealthy",
+          nowIso,
           dedupeAfter: RECENT_ALERT_WINDOW_MS,
           metadata: {
             recentSyncFailureCount: snapshot.metrics.recentSyncFailureCount,
             windowMs: RECENT_ALERT_WINDOW_MS,
           },
         });
+        if (alert) {
+          notifications.push(alert);
+        }
       }
 
       if (snapshot.schedulerWorker?.status === "down") {
-        await this.recordAlertOnce({
+        const alert = await this.recordAlertOnce({
           entityType: "validation_chain_stream",
           entityId: snapshot.streamKey,
           action: SYNC_WORKER_UNHEALTHY_ACTION,
           reason: "validation_chain.sync.worker_heartbeat_down",
+          nowIso,
           dedupeAfter: snapshot.cursorStaleThresholdMs,
           metadata: {
             schedulerWorkerStatus: snapshot.schedulerWorker.status,
@@ -763,19 +784,26 @@ export class ValidationChainAlertService {
             operatorActions: snapshot.schedulerWorker.operatorActions,
           },
         });
+        if (alert) {
+          notifications.push(alert);
+        }
       }
 
       for (const lifecycleDrift of lifecycleDrifts) {
-        await this.recordLifecycleDriftAlert(lifecycleDrift);
+        const alert = await this.recordLifecycleDriftAlert(lifecycleDrift);
+        if (alert) {
+          notifications.push(alert);
+        }
       }
 
       const oldestStalePayoutMarket = snapshot.stalePayoutMarkets[0];
       if (oldestStalePayoutMarket) {
-        await this.recordAlertOnce({
+        const alert = await this.recordAlertOnce({
           entityType: "validation_chain_stream",
           entityId: snapshot.streamKey,
           action: STALE_PAYOUT_ACTION,
           reason: "validation_chain.payout.stale",
+          nowIso,
           dedupeAfter: STALE_PAYOUT_WINDOW_MS,
           metadata: {
             stalePayoutMarketCount: snapshot.metrics.stalePayoutMarketCount,
@@ -786,6 +814,9 @@ export class ValidationChainAlertService {
             operatorActions: oldestStalePayoutMarket.operatorActions,
           },
         });
+        if (alert) {
+          notifications.push(alert);
+        }
       }
 
       const oldestUnsyncedBet = snapshot.projection.unsyncedBetBacklog[0];
@@ -793,11 +824,12 @@ export class ValidationChainAlertService {
         oldestUnsyncedBet &&
         oldestUnsyncedBet.oldestUnsyncedAgeMs >= UNSYNCED_BET_BACKLOG_WINDOW_MS
       ) {
-        await this.recordAlertOnce({
+        const alert = await this.recordAlertOnce({
           entityType: "validation_chain_stream",
           entityId: snapshot.streamKey,
           action: UNSYNCED_BET_BACKLOG_ACTION,
           reason: "validation_chain.bet_projection.backlog",
+          nowIso,
           dedupeAfter: UNSYNCED_BET_BACKLOG_WINDOW_MS,
           metadata: {
             unsyncedBetBacklogCount: snapshot.metrics.unsyncedBetBacklogCount,
@@ -808,8 +840,15 @@ export class ValidationChainAlertService {
             operatorActions: oldestUnsyncedBet.operatorActions,
           },
         });
+        if (alert) {
+          notifications.push(alert);
+        }
       }
     });
+
+    for (const notification of notifications) {
+      await this.notifyAlert(notification);
+    }
   }
 
   private async listLifecycleDriftAlerts(
@@ -930,7 +969,14 @@ export class ValidationChainAlertService {
     entityId: string;
     reason: string;
     metadata: Record<string, unknown>;
-  }): Promise<void> {
+  }): Promise<{
+    action: string;
+    reason: string;
+    entityType: string;
+    entityId: string;
+    createdAt: string;
+    metadata: Record<string, unknown>;
+  } | null> {
     const latest = await this.prisma.internalAuditEvent.findFirst({
       where: {
         entityType: input.entityType,
@@ -948,16 +994,24 @@ export class ValidationChainAlertService {
         "metadataJson" in latest ? latest.metadataJson : null,
       ) === this.buildLifecycleDriftSignature(input.metadata)
     ) {
-      return;
+      return this.toAlertNotification({
+        action: latest.action,
+        reason: latest.reason,
+        entityType: latest.entityType,
+        entityId: latest.entityId,
+        createdAt: latest.createdAt,
+        metadata: latest.metadataJson,
+      });
     }
 
-    await this.audit.record({
+    const recorded = await this.audit.record({
       entityType: input.entityType,
       entityId: input.entityId,
       action: LIFECYCLE_DRIFT_ACTION,
       reason: input.reason,
       metadata: input.metadata as Prisma.InputJsonValue,
     });
+    return this.toAlertNotification(recorded);
   }
 
   private buildLifecycleDriftSignature(metadata: unknown): string {
@@ -1011,9 +1065,19 @@ export class ValidationChainAlertService {
     action: string;
     reason: string;
     metadata: Record<string, unknown>;
+    nowIso: string;
     dedupeAfter: number;
-  }): Promise<void> {
-    const dedupeSince = new Date(Date.now() - input.dedupeAfter);
+  }): Promise<{
+    action: string;
+    reason: string;
+    entityType: string;
+    entityId: string;
+    createdAt: string;
+    metadata: Record<string, unknown>;
+  } | null> {
+    const dedupeSince = new Date(
+      new Date(input.nowIso).getTime() - input.dedupeAfter,
+    );
     const existing = await this.prisma.internalAuditEvent.findFirst({
       where: {
         entityType: input.entityType,
@@ -1029,16 +1093,24 @@ export class ValidationChainAlertService {
     });
 
     if (existing) {
-      return;
+      return this.toAlertNotification({
+        action: existing.action,
+        reason: existing.reason,
+        entityType: existing.entityType,
+        entityId: existing.entityId,
+        createdAt: existing.createdAt,
+        metadata: existing.metadataJson,
+      });
     }
 
-    await this.audit.record({
+    const recorded = await this.audit.record({
       entityType: input.entityType,
       entityId: input.entityId,
       action: input.action,
       reason: input.reason,
       metadata: input.metadata as Prisma.InputJsonValue,
     });
+    return this.toAlertNotification(recorded);
   }
 
   private async getSchedulerWorkerSnapshot(
@@ -1235,5 +1307,54 @@ export class ValidationChainAlertService {
       `POST /arena/internal/validation-chain/markets/${marketId}/replay-projection`,
       "GET /arena/internal/monitoring/validation-chain",
     ];
+  }
+
+  private toAlertNotification(input: {
+    action: string;
+    reason: string;
+    entityType: string;
+    entityId: string;
+    createdAt: string | Date;
+    metadata?: unknown;
+  }): {
+    action: string;
+    reason: string;
+    entityType: string;
+    entityId: string;
+    createdAt: string;
+    metadata: Record<string, unknown>;
+  } {
+    return {
+      action: input.action,
+      reason: input.reason,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      createdAt:
+        input.createdAt instanceof Date
+          ? input.createdAt.toISOString()
+          : input.createdAt,
+      metadata:
+        input.metadata && typeof input.metadata === "object"
+          ? (input.metadata as Record<string, unknown>)
+          : {},
+    };
+  }
+
+  private async notifyAlert(input: {
+    action: string;
+    reason: string;
+    entityType: string;
+    entityId: string;
+    createdAt: string;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    if (!this.notifier) {
+      return;
+    }
+
+    await this.notifier.notifyAlert({
+      source: "validation_chain",
+      ...input,
+    });
   }
 }

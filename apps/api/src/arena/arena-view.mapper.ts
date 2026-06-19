@@ -7,6 +7,7 @@ import type {
   Response,
   ResponseReview,
   RewardLedger,
+  RewardPayout,
   UserReputation,
   UserTag,
 } from "@prisma/client";
@@ -19,6 +20,7 @@ import type {
   Response as SharedResponse,
   ResponseReview as SharedResponseReview,
   RewardLedger as SharedRewardLedger,
+  RewardPayout as SharedRewardPayout,
   UserReputation as SharedUserReputation,
   UserTag as SharedUserTag,
 } from "@arena/shared";
@@ -191,6 +193,37 @@ export const toSharedRewardLedger = (
         reversedAt: toIso(rewardLedger.reversedAt),
         reversalOfLedgerId: rewardLedger.reversalOfLedgerId,
         reasonCode: rewardLedger.reasonCode,
+      }
+    : null;
+
+export const toSharedRewardPayout = (
+  rewardPayout: RewardPayout | null,
+): SharedRewardPayout | null =>
+  rewardPayout
+    ? {
+        id: rewardPayout.id,
+        ledgerId: rewardPayout.ledgerId,
+        userId: rewardPayout.userId,
+        method: rewardPayout.method,
+        status: rewardPayout.status,
+        assetSymbol: rewardPayout.assetSymbol,
+        chainId: rewardPayout.chainId,
+        amount: rewardPayout.amount,
+        destinationAddress: rewardPayout.destinationAddress,
+        requestedAt: rewardPayout.requestedAt.toISOString(),
+        approvedAt: toIso(rewardPayout.approvedAt),
+        approvedByUserId: rewardPayout.approvedByUserId,
+        executionStartedAt: toIso(rewardPayout.executionStartedAt),
+        completedAt: toIso(rewardPayout.completedAt),
+        failedAt: toIso(rewardPayout.failedAt),
+        cancelledAt: toIso(rewardPayout.cancelledAt),
+        lastErrorCode: rewardPayout.lastErrorCode,
+        lastErrorMessage: rewardPayout.lastErrorMessage,
+        executionTxHash: rewardPayout.executionTxHash,
+        externalReference: rewardPayout.externalReference,
+        retryCount: rewardPayout.retryCount,
+        createdAt: rewardPayout.createdAt.toISOString(),
+        updatedAt: rewardPayout.updatedAt.toISOString(),
       }
     : null;
 

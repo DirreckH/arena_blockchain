@@ -29,6 +29,7 @@ import {
 import { DispatchTaskService } from "./dispatch-task.service";
 import { ResponseReviewService } from "./response-review.service";
 import { RewardLedgerService } from "./reward-ledger.service";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 
 @Injectable()
 export class ResponseService {
@@ -41,6 +42,7 @@ export class ResponseService {
     private readonly dispatchTasks: DispatchTaskService,
     private readonly reviews: ResponseReviewService,
     private readonly rewards: RewardLedgerService,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async submitResponse(
@@ -48,6 +50,7 @@ export class ResponseService {
     db?: ArenaDbClient,
   ): Promise<Response> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       const proposition = await this.propositions.findById(
         input.propositionId,
         tx,

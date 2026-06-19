@@ -1,11 +1,13 @@
 import { Body, Controller, Param, Post } from "@nestjs/common";
 import { SystemRole } from "@arena/shared";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { CreateDispatchTasksDto } from "./dto/create-dispatch-tasks.dto";
 import { PreviewDispatchCandidatesDto } from "./dto/preview-dispatch-candidates.dto";
 import { DispatchEngineService } from "./services/dispatch-engine.service";
 
+@ArenaSurfaceBoundary("internal")
 @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
 @Controller("arena/internal/propositions")
 export class ArenaInternalDispatchController {

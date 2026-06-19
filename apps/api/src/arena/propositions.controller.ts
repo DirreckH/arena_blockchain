@@ -11,6 +11,7 @@ import {
   Req,
 } from "@nestjs/common";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { CreateRequesterComparisonSetDto } from "./dto/create-requester-comparison-set.dto";
 import { CreateRequesterComparisonSetDeliveryPolicyDto } from "./dto/create-requester-comparison-set-delivery-policy.dto";
@@ -38,6 +39,7 @@ import { PropositionDraftService } from "./services/proposition-draft.service";
 import { RequesterPropositionViewService } from "./services/requester-proposition-view.service";
 import { RequesterReportPresetService } from "./services/requester-report-preset.service";
 
+@ArenaSurfaceBoundary("requester")
 @Controller("arena/propositions")
 export class ArenaPropositionsController {
   constructor(

@@ -64,6 +64,47 @@ type HttpArenaContext = {
   harness: ArenaHarness;
 };
 
+const INTERNAL_IDENTITY_KEYS = [
+  "userId",
+  "createdByUserId",
+  "updatedByUserId",
+  "reviewedByUserId",
+] as const;
+
+const assertKeyAbsentRecursively = (
+  value: unknown,
+  key: string,
+  path = "$",
+): void => {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) =>
+      assertKeyAbsentRecursively(item, key, `${path}[${index}]`),
+    );
+    return;
+  }
+
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(record, key),
+    false,
+    `${path} unexpectedly exposes ${key}`,
+  );
+
+  for (const [childKey, nested] of Object.entries(record)) {
+    assertKeyAbsentRecursively(nested, key, `${path}.${childKey}`);
+  }
+};
+
+const assertInternalIdentityAbsentRecursively = (value: unknown): void => {
+  for (const key of INTERNAL_IDENTITY_KEYS) {
+    assertKeyAbsentRecursively(value, key);
+  }
+};
+
 class TestAuthGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
@@ -503,3 +544,142 @@ test("skip route rejects non-owner and terminal tasks", async () => {
     );
   });
 });
+
+test(
+  "adjudication self surfaces keep task and submission views free of internal user ids",
+  async () => {
+    await withHttpArenaApp(async ({ baseUrl, harness }) => {
+      const userId = "respondent_identity_owner";
+      const listedProposition = await createLiveProposition(harness, {
+        title: "Adjudication identity regression listed proposition",
+      });
+      const listedTask = await harness.dispatchTaskService.assignTask({
+        propositionId: listedProposition.id,
+        userId,
+        assignedAt: arenaTime(90),
+        expiresAt: arenaTime(150),
+      });
+      const startedProposition = await createLiveProposition(harness, {
+        title: "Adjudication identity regression started proposition",
+      });
+      const startedTask = await harness.dispatchTaskService.assignTask({
+        propositionId: startedProposition.id,
+        userId,
+        assignedAt: arenaTime(91),
+        expiresAt: arenaTime(151),
+      });
+      const skippedProposition = await createLiveProposition(harness, {
+        title: "Adjudication identity regression skipped proposition",
+      });
+      const skippedTask = await harness.dispatchTaskService.assignTask({
+        propositionId: skippedProposition.id,
+        userId,
+        assignedAt: arenaTime(92),
+        expiresAt: arenaTime(152),
+      });
+      const submittedProposition = await createLiveProposition(harness, {
+        title: "Adjudication identity regression submitted proposition",
+      });
+      const submittedTask = await harness.dispatchTaskService.assignTask({
+        propositionId: submittedProposition.id,
+        userId,
+        assignedAt: arenaTime(93),
+        expiresAt: arenaTime(153),
+      });
+
+      const listResponse = await requestJson(baseUrl, "/arena/adjudication/tasks", {
+        user: { userId },
+      });
+      const detailResponse = await requestJson(
+        baseUrl,
+        `/arena/adjudication/tasks/${listedTask.id}`,
+        {
+          user: { userId },
+        },
+      );
+      const startResponse = await requestJson(
+        baseUrl,
+        `/arena/adjudication/tasks/${startedTask.id}/start`,
+        {
+          method: "POST",
+          user: { userId },
+          body: {
+            startedAt: arenaTime(94),
+          },
+        },
+      );
+      const skipResponse = await requestJson(
+        baseUrl,
+        `/arena/adjudication/tasks/${skippedTask.id}/skip`,
+        {
+          method: "POST",
+          user: { userId },
+          body: {
+            skippedAt: arenaTime(95),
+            skipReason: "user_declined",
+          },
+        },
+      );
+      const submitResponse = await requestJson(
+        baseUrl,
+        `/arena/adjudication/tasks/${submittedTask.id}/responses`,
+        {
+          method: "POST",
+          user: { userId },
+          body: {
+            propositionId: submittedProposition.id,
+            selectedOption: 0,
+            confirmationOption: 0,
+            clientStartedAt: arenaTime(96),
+            clientSubmittedAt: arenaTime(97),
+            understandingAck: true,
+            submittedAt: arenaTime(97),
+          },
+        },
+      );
+      const submittedDetailResponse = await requestJson(
+        baseUrl,
+        `/arena/adjudication/tasks/${submittedTask.id}`,
+        {
+          user: { userId },
+        },
+      );
+
+      assert.equal(listResponse.status, HttpStatus.OK);
+      assert.equal(detailResponse.status, HttpStatus.OK);
+      assert.equal(startResponse.status, HttpStatus.CREATED);
+      assert.equal(skipResponse.status, HttpStatus.CREATED);
+      assert.equal(submitResponse.status, HttpStatus.CREATED);
+      assert.equal(submittedDetailResponse.status, HttpStatus.OK);
+
+      assert.equal(Array.isArray(listResponse.body), true);
+      assert.equal(
+        listResponse.body.some(
+          (item: { taskId: string }) => item.taskId === listedTask.id,
+        ),
+        true,
+      );
+      assert.equal(detailResponse.body.taskId, listedTask.id);
+      assert.equal(startResponse.body.taskId, startedTask.id);
+      assert.equal(startResponse.body.taskStatus, "started");
+      assert.equal(skipResponse.body.taskId, skippedTask.id);
+      assert.equal(skipResponse.body.taskStatus, "skipped");
+      assert.equal(typeof submitResponse.body.responseId, "string");
+      assert.equal(submitResponse.body.taskView.taskId, submittedTask.id);
+      assert.equal(submitResponse.body.taskView.taskStatus, "submitted");
+      assert.equal(submittedDetailResponse.body.taskId, submittedTask.id);
+      assert.equal(submittedDetailResponse.body.taskStatus, "submitted");
+
+      for (const body of [
+        listResponse.body,
+        detailResponse.body,
+        startResponse.body,
+        skipResponse.body,
+        submitResponse.body,
+        submittedDetailResponse.body,
+      ]) {
+        assertInternalIdentityAbsentRecursively(body);
+      }
+    });
+  },
+);

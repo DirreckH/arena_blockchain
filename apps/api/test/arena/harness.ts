@@ -7,7 +7,9 @@ import type {
   Response,
   ResponseReview,
   RewardLedger,
+  RewardPayout,
   SystemKeyValue,
+  User,
   UserReputation,
   UserTag,
   ValidationChainEvent,
@@ -15,8 +17,12 @@ import type {
 import type { PinoLogger } from "nestjs-pino";
 
 import { AppConfigService } from "../../src/config/app-config.service";
-import { ArenaConflictError } from "../../src/arena/arena.errors";
+import {
+  ArenaConflictError,
+  ArenaValidationError,
+} from "../../src/arena/arena.errors";
 import { ArenaIdService } from "../../src/arena/arena-id.service";
+import { ArenaUserRepository } from "../../src/arena/repositories/arena-user.repository";
 import { BetRepository } from "../../src/arena/repositories/bet.repository";
 import { DispatchTaskRepository } from "../../src/arena/repositories/dispatch-task.repository";
 import { EffectiveSampleCounterRepository } from "../../src/arena/repositories/effective-sample-counter.repository";
@@ -26,6 +32,7 @@ import { PropositionRepository } from "../../src/arena/repositories/proposition.
 import { ResponseReviewRepository } from "../../src/arena/repositories/response-review.repository";
 import { ResponseRepository } from "../../src/arena/repositories/response.repository";
 import { RewardLedgerRepository } from "../../src/arena/repositories/reward-ledger.repository";
+import { RewardPayoutRepository } from "../../src/arena/repositories/reward-payout.repository";
 import { SystemKeyValueRepository } from "../../src/arena/repositories/system-key-value.repository";
 import { UserReputationRepository } from "../../src/arena/repositories/user-reputation.repository";
 import { UserTagRepository } from "../../src/arena/repositories/user-tag.repository";
@@ -35,6 +42,7 @@ import { AccountViewService } from "../../src/arena/services/account-view.servic
 import { AccountExportService } from "../../src/arena/services/account-export.service";
 import { AccountPreferencesService } from "../../src/arena/services/account-preferences.service";
 import { AdjudicationViewService } from "../../src/arena/services/adjudication-view.service";
+import { ArenaUserIdentityService } from "../../src/arena/services/arena-user-identity.service";
 import { ConsensusClosureService } from "../../src/arena/services/consensus-closure.service";
 import { DispatchEngineService } from "../../src/arena/services/dispatch-engine.service";
 import { DispatchTaskService } from "../../src/arena/services/dispatch-task.service";
@@ -63,10 +71,14 @@ import { RequesterReportPresetService } from "../../src/arena/services/requester
 import { ResponseReviewService } from "../../src/arena/services/response-review.service";
 import { ResponseService } from "../../src/arena/services/response.service";
 import { RewardLedgerService } from "../../src/arena/services/reward-ledger.service";
+import { RewardPayoutExecutionService } from "../../src/arena/services/reward-payout-execution.service";
+import { RewardPayoutAutomationService } from "../../src/arena/services/reward-payout-automation.service";
+import { RewardPayoutService } from "../../src/arena/services/reward-payout.service";
 import { ResultViewService } from "../../src/arena/services/result-view.service";
 import { RewardViewService } from "../../src/arena/services/reward-view.service";
 import { ReputationService } from "../../src/arena/services/reputation.service";
 import { TagService } from "../../src/arena/services/tag.service";
+import { ValidationProofRecordService } from "../../src/arena/services/validation-proof-record.service";
 import { ValidationRehearsalCheckpointService } from "../../src/arena/services/validation-rehearsal-checkpoint.service";
 import { ValidationSettlementService } from "../../src/arena/services/validation-settlement.service";
 import { WatchlistService } from "../../src/arena/services/watchlist.service";
@@ -83,6 +95,7 @@ type DispatchTaskRecord = Awaited<
   : never;
 
 interface ArenaStore {
+  users: User[];
   propositions: Proposition[];
   dispatchTasks: DispatchTaskRecord[];
   responses: Response[];
@@ -91,6 +104,7 @@ interface ArenaStore {
   markets: Market[];
   bets: Bet[];
   rewardLedgers: RewardLedger[];
+  rewardPayouts: RewardPayout[];
   systemKeyValues: SystemKeyValue[];
   userReputations: UserReputation[];
   userTags: UserTag[];
@@ -105,6 +119,7 @@ const clone = <T>(value: T): T => structuredClone(value);
 const now = (): Date => new Date();
 
 const createEmptyStore = (): ArenaStore => ({
+  users: [],
   propositions: [],
   dispatchTasks: [],
   responses: [],
@@ -113,6 +128,7 @@ const createEmptyStore = (): ArenaStore => ({
   markets: [],
   bets: [],
   rewardLedgers: [],
+  rewardPayouts: [],
   systemKeyValues: [],
   userReputations: [],
   userTags: [],
@@ -121,6 +137,7 @@ const createEmptyStore = (): ArenaStore => ({
 });
 
 const restoreStore = (target: ArenaStore, snapshot: ArenaStore): void => {
+  target.users = clone(snapshot.users);
   target.propositions = clone(snapshot.propositions);
   target.dispatchTasks = clone(snapshot.dispatchTasks);
   target.responses = clone(snapshot.responses);
@@ -129,6 +146,7 @@ const restoreStore = (target: ArenaStore, snapshot: ArenaStore): void => {
   target.markets = clone(snapshot.markets);
   target.bets = clone(snapshot.bets);
   target.rewardLedgers = clone(snapshot.rewardLedgers);
+  target.rewardPayouts = clone(snapshot.rewardPayouts);
   target.systemKeyValues = clone(snapshot.systemKeyValues);
   target.userReputations = clone(snapshot.userReputations);
   target.userTags = clone(snapshot.userTags);
@@ -351,6 +369,67 @@ class FakePropositionRepository {
     }
 
     return clone(this.store.propositions.filter((item) => ids.includes(item.id)));
+  }
+}
+
+class FakeArenaUserRepository {
+  constructor(private readonly store: ArenaStore) {}
+
+  async findById(userId: string): Promise<User | null> {
+    return clone(this.store.users.find((item) => item.id === userId) ?? null);
+  }
+
+  async findByIds(userIds: string[]): Promise<User[]> {
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    return clone(this.store.users.filter((item) => userIds.includes(item.id)));
+  }
+
+  async create(data: any): Promise<User> {
+    const record: User = {
+      id: data.id,
+      primaryWalletAddress: data.primaryWalletAddress ?? null,
+      normalizedPrimaryWalletAddress:
+        data.normalizedPrimaryWalletAddress ?? null,
+      status: data.status ?? "active",
+      lastLoginAt: data.lastLoginAt ?? null,
+      createdAt: data.createdAt ?? now(),
+      updatedAt: data.updatedAt ?? now(),
+    };
+
+    this.store.users.push(record);
+    return clone(record);
+  }
+
+  async updatePrimaryWalletAddress(
+    userId: string,
+    walletAddress: string,
+  ): Promise<User> {
+    const record = this.store.users.find((item) => item.id === userId);
+    if (!record) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    applyDefinedFields(record as Record<string, unknown>, {
+      primaryWalletAddress: walletAddress,
+      normalizedPrimaryWalletAddress: walletAddress.toLowerCase(),
+    });
+
+    return clone(record);
+  }
+
+  async touchLastLogin(userId: string): Promise<User> {
+    const record = this.store.users.find((item) => item.id === userId);
+    if (!record) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    applyDefinedFields(record as Record<string, unknown>, {
+      lastLoginAt: now(),
+    });
+    return clone(record);
   }
 }
 
@@ -1134,6 +1213,95 @@ class FakeRewardLedgerRepository {
   }
 }
 
+class FakeRewardPayoutRepository {
+  constructor(private readonly store: ArenaStore) {}
+
+  async create(data: any): Promise<RewardPayout> {
+    const record: RewardPayout = {
+      id: data.id,
+      ledgerId: data.ledgerId,
+      userId: data.userId,
+      method: data.method ?? "wallet_transfer",
+      status: data.status ?? "requested",
+      assetSymbol: data.assetSymbol ?? "USDC",
+      chainId: data.chainId,
+      amount: data.amount,
+      destinationAddress: data.destinationAddress,
+      requestedAt: data.requestedAt ?? now(),
+      approvedAt: data.approvedAt ?? null,
+      approvedByUserId: data.approvedByUserId ?? null,
+      executionStartedAt: data.executionStartedAt ?? null,
+      completedAt: data.completedAt ?? null,
+      failedAt: data.failedAt ?? null,
+      cancelledAt: data.cancelledAt ?? null,
+      lastErrorCode: data.lastErrorCode ?? null,
+      lastErrorMessage: data.lastErrorMessage ?? null,
+      executionTxHash: data.executionTxHash ?? null,
+      externalReference: data.externalReference ?? null,
+      retryCount: data.retryCount ?? 0,
+      createdAt: data.createdAt ?? now(),
+      updatedAt: data.updatedAt ?? now(),
+    };
+
+    this.store.rewardPayouts.push(record);
+    return clone(record);
+  }
+
+  async findById(id: string): Promise<RewardPayout | null> {
+    return clone(this.store.rewardPayouts.find((item) => item.id === id) ?? null);
+  }
+
+  async findByLedgerId(ledgerId: string): Promise<RewardPayout | null> {
+    return clone(
+      this.store.rewardPayouts.find((item) => item.ledgerId === ledgerId) ?? null,
+    );
+  }
+
+  async list(filters: {
+    userId?: string;
+    ledgerId?: string;
+    status?: RewardPayout["status"];
+  } = {}): Promise<RewardPayout[]> {
+    return clone(
+      this.store.rewardPayouts
+        .filter((item) => {
+          if (filters.userId && item.userId !== filters.userId) {
+            return false;
+          }
+          if (filters.ledgerId && item.ledgerId !== filters.ledgerId) {
+            return false;
+          }
+          if (filters.status && item.status !== filters.status) {
+            return false;
+          }
+          return true;
+        })
+        .sort((left, right) => {
+          const requestedDiff =
+            right.requestedAt.getTime() - left.requestedAt.getTime();
+          if (requestedDiff !== 0) {
+            return requestedDiff;
+          }
+          return right.createdAt.getTime() - left.createdAt.getTime();
+        }),
+    );
+  }
+
+  async listByUser(userId: string): Promise<RewardPayout[]> {
+    return this.list({ userId });
+  }
+
+  async update(id: string, data: any): Promise<RewardPayout> {
+    const record = this.store.rewardPayouts.find((item) => item.id === id);
+    if (!record) {
+      throw new Error(`Reward payout ${id} not found`);
+    }
+
+    applyDefinedFields(record as Record<string, unknown>, data);
+    return clone(record);
+  }
+}
+
 class FakeSystemKeyValueRepository {
   constructor(private readonly store: ArenaStore) {}
 
@@ -1531,6 +1699,11 @@ export interface ArenaHarness {
   betService: BetService;
   validationSettlementService: ValidationSettlementService;
   rewardLedgerService: RewardLedgerService;
+  rewardPayoutService: RewardPayoutService;
+  rewardPayoutAutomationService: RewardPayoutAutomationService;
+  userIdentityService: ArenaUserIdentityService;
+  resultViewService: ResultViewService;
+  accountViewService: AccountViewService;
   accountExportService: AccountExportService;
   accountPreferencesService: AccountPreferencesService;
   watchlistService: WatchlistService;
@@ -1552,6 +1725,7 @@ export interface ArenaHarness {
   discussionService: DiscussionService;
   validationRehearsalCheckpointService: ValidationRehearsalCheckpointService;
   validationChainIdService: FakeValidationChainIdService;
+  userRepository: FakeArenaUserRepository;
   propositionRepository: FakePropositionRepository;
   dispatchTaskRepository: FakeDispatchTaskRepository;
   responseRepository: FakeResponseRepository;
@@ -1560,6 +1734,7 @@ export interface ArenaHarness {
   marketRepository: FakeMarketRepository;
   betRepository: FakeBetRepository;
   rewardLedgerRepository: FakeRewardLedgerRepository;
+  rewardPayoutRepository: FakeRewardPayoutRepository;
   systemKeyValueRepository: FakeSystemKeyValueRepository;
   userReputationRepository: FakeUserReputationRepository;
   userTagRepository: FakeUserTagRepository;
@@ -1570,6 +1745,67 @@ export interface ArenaHarness {
 interface ArenaHarnessOptions {
   validationChainRuntime?: ValidationChainCommandRuntimeService;
   validationChainAlerts?: ValidationChainAlertService;
+  rewardPayoutExecutionPlan?: RewardPayoutExecutionPlanEntry[];
+  rewardPayoutVerificationPlan?: RewardPayoutVerificationPlanEntry[];
+}
+
+type RewardPayoutExecutionPlanEntry =
+  | {
+      type: "success";
+      executionTxHash?: string;
+      externalReference?: string | null;
+    }
+  | {
+      type: "failure";
+      code: string;
+      message: string;
+    };
+
+type RewardPayoutVerificationPlanEntry =
+  | {
+      type: "success";
+    }
+  | {
+      type: "failure";
+      code: string;
+      message: string;
+    };
+
+class FakeRewardPayoutExecutionService {
+  private callCount = 0;
+  private verificationCallCount = 0;
+
+  constructor(
+    private readonly plan: RewardPayoutExecutionPlanEntry[] = [],
+    private readonly verificationPlan: RewardPayoutVerificationPlanEntry[] = [],
+  ) {}
+
+  async executeWalletTransfer(): Promise<{
+    executionTxHash: string;
+    externalReference: string | null;
+  }> {
+    this.callCount += 1;
+    const step = this.plan[this.callCount - 1];
+
+    if (step?.type === "failure") {
+      throw new ArenaValidationError(step.code, step.message);
+    }
+
+    return {
+      executionTxHash:
+        step?.executionTxHash ??
+        `0x${String(this.callCount).padStart(64, "0")}`,
+      externalReference: step?.externalReference ?? null,
+    };
+  }
+
+  async verifyWalletTransfer(): Promise<void> {
+    this.verificationCallCount += 1;
+    const step = this.verificationPlan[this.verificationCallCount - 1];
+    if (step?.type === "failure") {
+      throw new ArenaValidationError(step.code, step.message);
+    }
+  }
 }
 
 export const createArenaHarness = (
@@ -1586,6 +1822,10 @@ export const createArenaHarness = (
     validationOperatorPrivateKey: "0x1111111111111111111111111111111111111111111111111111111111111111",
     validationOraclePrivateKey: "0x2222222222222222222222222222222222222222222222222222222222222222",
     validationPauserPrivateKey: "0x3333333333333333333333333333333333333333333333333333333333333333",
+    rewardPayoutAssetSymbol: "USDC",
+    rewardPayoutErc20Address: "0x0000000000000000000000000000000000000010",
+    rewardPayoutOperatorPrivateKey:
+      "0x4444444444444444444444444444444444444444444444444444444444444444",
     requesterDeliveryWebhookBearerTokens: {
       delivery_policy: "token_delivery_policy",
       retry_delivery: "token_retry_delivery",
@@ -1596,6 +1836,8 @@ export const createArenaHarness = (
 
   const propositionRepository =
     new FakePropositionRepository(store) as unknown as PropositionRepository;
+  const userRepository =
+    new FakeArenaUserRepository(store) as unknown as ArenaUserRepository;
   const dispatchTaskRepository =
     new FakeDispatchTaskRepository(store) as unknown as DispatchTaskRepository;
   const responseRepository =
@@ -1611,6 +1853,8 @@ export const createArenaHarness = (
   const betRepository = new FakeBetRepository(store) as unknown as BetRepository;
   const rewardLedgerRepository =
     new FakeRewardLedgerRepository(store) as unknown as RewardLedgerRepository;
+  const rewardPayoutRepository =
+    new FakeRewardPayoutRepository(store) as unknown as RewardPayoutRepository;
   const systemKeyValueRepository =
     new FakeSystemKeyValueRepository(store) as unknown as SystemKeyValueRepository;
   const internalAuditEventRepository =
@@ -1629,6 +1873,24 @@ export const createArenaHarness = (
     new FakeUserTagRepository(store) as unknown as UserTagRepository;
   const validationChainIdService =
     new FakeValidationChainIdService() as unknown as ValidationChainIdService;
+  const rewardPayoutExecutionService =
+    new FakeRewardPayoutExecutionService(
+      options.rewardPayoutExecutionPlan,
+      options.rewardPayoutVerificationPlan,
+    ) as unknown as RewardPayoutExecutionService;
+  const rewardPayoutService = new RewardPayoutService(
+    prisma,
+    config,
+    ids,
+    rewardLedgerRepository,
+    rewardPayoutRepository,
+    userRepository,
+    rewardPayoutExecutionService,
+  );
+  const userIdentityService = new ArenaUserIdentityService(
+    userRepository,
+    rewardPayoutService,
+  );
 
   const counterService = new EffectiveSampleCounterService(
     prisma,
@@ -1645,6 +1907,8 @@ export const createArenaHarness = (
     propositionRepository,
     responseRepository,
     rewardLedgerRepository,
+    rewardPayoutService,
+    userIdentityService,
   );
   const accountPreferencesService = new AccountPreferencesService(
     prisma,
@@ -1690,6 +1954,7 @@ export const createArenaHarness = (
     prisma,
     ids,
     internalAuditEventRepository,
+    userIdentityService,
   );
   const validationRehearsalCheckpointService =
     new ValidationRehearsalCheckpointService(
@@ -1699,6 +1964,12 @@ export const createArenaHarness = (
       propositionRepository,
       systemKeyValueRepository,
     );
+  const validationProofRecordService = new ValidationProofRecordService(
+    prisma,
+    ids,
+    config,
+    systemKeyValueRepository,
+  );
   const logger: Pick<PinoLogger, "setContext" | "error" | "warn" | "info" | "debug"> = {
     setContext() {},
     error() {},
@@ -1706,12 +1977,20 @@ export const createArenaHarness = (
     info() {},
     debug() {},
   } as Pick<PinoLogger, "setContext" | "error" | "warn" | "info" | "debug">;
+  const rewardPayoutAutomationService = new RewardPayoutAutomationService(
+    rewardLedgerRepository,
+    rewardPayoutRepository,
+    rewardPayoutService,
+    internalAuditService,
+    logger as PinoLogger,
+  );
   const reputationService = new ReputationService(
     prisma,
     ids,
     dispatchTaskRepository,
     responseReviewRepository,
     userReputationRepository,
+    userIdentityService,
   );
   const tagService = new TagService(
     prisma,
@@ -1720,6 +1999,7 @@ export const createArenaHarness = (
     propositionRepository,
     userReputationRepository,
     userTagRepository,
+    userIdentityService,
   );
   const reviewService = new ResponseReviewService(
     prisma,
@@ -1731,12 +2011,14 @@ export const createArenaHarness = (
     rewardLedgerService,
     reputationService,
     tagService,
+    userIdentityService,
   );
   const dispatchTaskService = new DispatchTaskService(
     prisma,
     ids,
     propositionRepository,
     dispatchTaskRepository,
+    userIdentityService,
     reputationService,
     tagService,
   );
@@ -1745,6 +2027,7 @@ export const createArenaHarness = (
     propositionRepository,
     dispatchTaskRepository,
     responseRepository,
+    userRepository,
     userReputationRepository,
     userTagRepository,
     dispatchTaskService,
@@ -1763,6 +2046,7 @@ export const createArenaHarness = (
     dispatchTaskService,
     reviewService,
     rewardLedgerService,
+    userIdentityService,
   );
   const qualityEngineService = new QualityEngineService(
     prisma,
@@ -1784,6 +2068,7 @@ export const createArenaHarness = (
     ids,
     propositionRepository,
     marketService,
+    userIdentityService,
   );
   const propositionEngineService = new PropositionEngineService(
     prisma,
@@ -1797,6 +2082,7 @@ export const createArenaHarness = (
     propositionRepository,
     internalAuditService,
     propositionEngineService,
+    userIdentityService,
   );
   const freezeRevealOrchestratorService = new FreezeRevealOrchestratorService(
     prisma,
@@ -1815,6 +2101,7 @@ export const createArenaHarness = (
     propositionRepository,
     marketRepository,
     betRepository,
+    userIdentityService,
   );
   const validationSettlementService = new ValidationSettlementService(
     prisma,
@@ -2027,6 +2314,7 @@ export const createArenaHarness = (
       },
     } as any,
     options.validationChainAlerts,
+    validationProofRecordService,
   );
   const internalPropositionOpsService = new InternalPropositionOpsService(
     prisma,
@@ -2042,6 +2330,7 @@ export const createArenaHarness = (
     propositionService,
     freezeRevealOrchestratorService,
     internalAuditService,
+    userIdentityService,
     internalMonitoringService,
     validationRehearsalCheckpointService,
     validationChainIdService,
@@ -2059,7 +2348,9 @@ export const createArenaHarness = (
     responseRepository,
     responseReviewRepository,
     rewardLedgerRepository,
+    rewardPayoutRepository,
     rewardLedgerService,
+    rewardPayoutService,
     internalAuditService,
   );
   const requesterPropositionViewService = new RequesterPropositionViewService(
@@ -2095,10 +2386,12 @@ export const createArenaHarness = (
     systemKeyValueRepository as unknown as SystemKeyValueRepository,
     marketRepository as unknown as MarketRepository,
     propositionRepository as unknown as PropositionRepository,
+    userRepository as unknown as ArenaUserRepository,
   );
   const rewardViewService = new RewardViewService(
     propositionRepository,
     rewardLedgerService,
+    rewardPayoutService,
   );
   const resultViewService = new ResultViewService(
     propositionRepository,
@@ -2114,6 +2407,7 @@ export const createArenaHarness = (
     responseRepository,
     responseReviewRepository,
     rewardLedgerRepository,
+    rewardPayoutRepository,
   );
   const accountViewService = new AccountViewService(
     rewardViewService,
@@ -2125,6 +2419,7 @@ export const createArenaHarness = (
     prisma,
     ids,
     systemKeyValueRepository,
+    userRepository as any,
     accountViewService,
     accountPreferencesService,
   );
@@ -2149,6 +2444,10 @@ export const createArenaHarness = (
     betService,
     validationSettlementService,
     rewardLedgerService,
+    rewardPayoutService,
+    rewardPayoutAutomationService,
+    resultViewService,
+    accountViewService,
     accountExportService,
     accountPreferencesService,
     watchlistService,
@@ -2169,8 +2468,10 @@ export const createArenaHarness = (
     requesterReportPresetService,
     discussionService,
     validationRehearsalCheckpointService,
+    userIdentityService,
     validationChainIdService:
       validationChainIdService as unknown as FakeValidationChainIdService,
+    userRepository: userRepository as unknown as FakeArenaUserRepository,
     propositionRepository: propositionRepository as unknown as FakePropositionRepository,
     dispatchTaskRepository:
       dispatchTaskRepository as unknown as FakeDispatchTaskRepository,
@@ -2183,6 +2484,8 @@ export const createArenaHarness = (
     betRepository: betRepository as unknown as FakeBetRepository,
     rewardLedgerRepository:
       rewardLedgerRepository as unknown as FakeRewardLedgerRepository,
+    rewardPayoutRepository:
+      rewardPayoutRepository as unknown as FakeRewardPayoutRepository,
     systemKeyValueRepository:
       systemKeyValueRepository as unknown as FakeSystemKeyValueRepository,
     userReputationRepository:

@@ -158,6 +158,10 @@ test("adjudication task view model keeps only adjudication fields", () => {
   assert.equal("marketStatus" in view, false);
   assert.equal("odds" in view, false);
   assert.equal("optionPools" in view, false);
+  assert.equal("currentUserPosition" in view, false);
+  assert.equal("executionReadiness" in view, false);
+  assert.equal("marketBias" in view, false);
+  assert.equal("reviewOutcomeByOption" in view, false);
 });
 
 test("respondent task view model exposes only task intake fields", () => {

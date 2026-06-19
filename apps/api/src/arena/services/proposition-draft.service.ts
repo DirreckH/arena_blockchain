@@ -22,6 +22,7 @@ import {
 import { withArenaTransaction } from "../arena-transaction.utils";
 import type { ArenaDbClient } from "../prisma.types";
 import { PropositionRepository } from "../repositories/proposition.repository";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 import { InternalAuditService } from "./internal-audit.service";
 import { PropositionEngineService } from "./proposition-engine.service";
 
@@ -154,6 +155,7 @@ export class PropositionDraftService {
     private readonly propositions: PropositionRepository,
     private readonly audits: InternalAuditService,
     private readonly propositionEngine: PropositionEngineService,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async listDrafts(
@@ -268,6 +270,7 @@ export class PropositionDraftService {
     const payload = this.buildCreateState(input);
 
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       const proposition = await this.propositionEngine.createProposition(
         {
           category: payload.category,
@@ -299,6 +302,7 @@ export class PropositionDraftService {
     db?: ArenaDbClient,
   ): Promise<PropositionDraftViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       const proposition = await this.getRequiredOwnedProposition(
         input.propositionId,
         input.userId,
@@ -358,6 +362,7 @@ export class PropositionDraftService {
     db?: ArenaDbClient,
   ): Promise<PropositionDraftViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       const proposition = await this.getRequiredOwnedProposition(
         input.propositionId,
         input.userId,
@@ -420,6 +425,7 @@ export class PropositionDraftService {
     db?: ArenaDbClient,
   ): Promise<PropositionDraftViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       const proposition = await this.getRequiredOwnedProposition(
         input.propositionId,
         input.userId,
@@ -485,6 +491,7 @@ export class PropositionDraftService {
     db?: ArenaDbClient,
   ): Promise<ArchivePropositionDraftResult> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       const proposition = await this.getRequiredOwnedProposition(
         input.propositionId,
         input.userId,

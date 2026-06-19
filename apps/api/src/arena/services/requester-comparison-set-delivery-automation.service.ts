@@ -76,8 +76,8 @@ export class RequesterComparisonSetDeliveryAutomationService {
 
   private async runSingleDuePolicy(
     policy: Awaited<
-      ReturnType<RequesterComparisonSetDeliveryPolicyService["getPolicyForUser"]>
-    >,
+      ReturnType<RequesterComparisonSetDeliveryPolicyService["listDuePolicies"]>
+    >[number],
     now: string,
     db?: ArenaDbClient,
   ): Promise<RequesterComparisonSetDeliveryAutomationResult["items"][number]> {

@@ -15,6 +15,8 @@ import type {
   RewardLedgerReasonCode,
   RewardLedgerSourceType,
   RewardLedgerStatus,
+  RewardPayoutMethod,
+  RewardPayoutStatus,
   ReputationLevel,
   UserTagSourceType,
   UserTagType,
@@ -155,6 +157,32 @@ export interface RewardLedger {
   reversedAt: string | null;
   reversalOfLedgerId: string | null;
   reasonCode: RewardLedgerReasonCode | null;
+}
+
+export interface RewardPayout {
+  id: string;
+  ledgerId: string;
+  userId: string;
+  method: RewardPayoutMethod;
+  status: RewardPayoutStatus;
+  assetSymbol: string;
+  chainId: number;
+  amount: string;
+  destinationAddress: string;
+  requestedAt: string;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  executionStartedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  cancelledAt: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  executionTxHash: string | null;
+  externalReference: string | null;
+  retryCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserReputationMetrics {

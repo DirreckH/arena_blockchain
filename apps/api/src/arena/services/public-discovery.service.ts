@@ -15,25 +15,22 @@ import type {
   ValidationMarketViewModel,
 } from "@arena/shared";
 
+import {
+  defaultDiscoveryRankingCategoryLabels,
+  defaultDiscoveryRankingFilterLabels,
+  displayCategoryByArenaCategory,
+  discoveryDirectoryDefinitions,
+  DiscoveryRankingCategoryId,
+  filterMarketsForDiscoveryDirectory,
+  getDiscoveryDirectoryDefinitionByPathname,
+  getDiscoveryDirectoryDefinitionBySlug,
+} from "../discovery-config.contract";
+import type {
+  InternalDiscoveryGlobalCategoryConfigViewModel,
+  InternalDiscoveryGlobalConfigViewModel,
+} from "../internal-ops.types";
+import { DiscoveryConfigService } from "./discovery-config.service";
 import { ValidationViewService } from "./validation-view.service";
-
-type DiscoveryDisplayCategoryId =
-  | "general"
-  | "politics"
-  | "sports"
-  | "tech"
-  | "research"
-  | "culture";
-
-type DirectoryConfig = {
-  slug: string;
-  pathname: string;
-  label: string;
-  title: string;
-  directoryLabel: string;
-  description: string;
-  marketFilter: (market: ValidationMarketViewModel) => boolean;
-};
 
 const MAX_RANKING_ITEMS = 24;
 const DISCOVER_FEATURED_LIMIT = 6;
@@ -41,134 +38,7 @@ const SPARKLINE_POINTS = 10;
 const CLOSING_SOON_URGENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 const MAX_UPCOMING_CLOSING_SOON_ITEMS = 6;
 
-const displayCategoryByArenaCategory: Record<
-  ValidationMarketViewModel["category"],
-  DiscoveryDisplayCategoryId
-> = {
-  general: "general",
-  politics: "politics",
-  sports: "sports",
-  ai: "tech",
-  brand_research: "research",
-  entertainment: "culture",
-};
-
-const displayCategoryLabels: Record<
-  DiscoveryDisplayCategoryId,
-  { label: string; tile: string }
-> = {
-  general: { label: "General", tile: "GEN" },
-  politics: { label: "Politics", tile: "POL" },
-  sports: { label: "Sports", tile: "SPT" },
-  tech: { label: "Tech", tile: "AI" },
-  research: { label: "Research", tile: "RSH" },
-  culture: { label: "Culture", tile: "CUL" },
-};
-
-const directoryConfigs: DirectoryConfig[] = [
-  {
-    slug: "politics",
-    pathname: "/zh/politics",
-    label: "公共政策",
-    title: "政治",
-    directoryLabel: "公共政策",
-    description: "政府、立法与公共治理",
-    marketFilter: (market) => market.category === "politics",
-  },
-  {
-    slug: "sports-live",
-    pathname: "/zh/sports/live",
-    label: "体育",
-    title: "体育",
-    directoryLabel: "体育结果",
-    description: "赛事结果与运动员表现",
-    marketFilter: (market) => market.category === "sports",
-  },
-  {
-    slug: "crypto",
-    pathname: "/zh/crypto",
-    label: "加密",
-    title: "加密",
-    directoryLabel: "加密观察",
-    description: "区块链与数字资产市场",
-    marketFilter: (market) => market.category === "ai",
-  },
-  {
-    slug: "tech",
-    pathname: "/zh/tech",
-    label: "科技",
-    title: "科技",
-    directoryLabel: "科技调研",
-    description: "产品、开发者与科技生态",
-    marketFilter: (market) => market.category === "ai",
-  },
-  {
-    slug: "geopolitics",
-    pathname: "/zh/geopolitics",
-    label: "地缘",
-    title: "地缘",
-    directoryLabel: "地缘事件",
-    description: "国际局势与区域冲突",
-    marketFilter: (market) =>
-      market.category === "politics" || market.category === "general",
-  },
-  {
-    slug: "finance",
-    pathname: "/zh/finance",
-    label: "金融",
-    title: "金融",
-    directoryLabel: "金融观察",
-    description: "资产价格与宏观经济",
-    marketFilter: (market) =>
-      market.category === "brand_research" || market.category === "general",
-  },
-  {
-    slug: "pop-culture",
-    pathname: "/zh/pop-culture",
-    label: "文化",
-    title: "文化",
-    directoryLabel: "文化调研",
-    description: "娱乐、媒体与大众文化",
-    marketFilter: (market) => market.category === "entertainment",
-  },
-  {
-    slug: "economy",
-    pathname: "/zh/economy",
-    label: "经济",
-    title: "经济",
-    directoryLabel: "经济观察",
-    description: "就业、消费与产业数据",
-    marketFilter: (market) =>
-      market.category === "brand_research" || market.category === "general",
-  },
-  {
-    slug: "weather",
-    pathname: "/zh/weather",
-    label: "天气",
-    title: "天气",
-    directoryLabel: "天气滚动命题",
-    description: "天气与滚动观察命题",
-    marketFilter: (market) => market.category === "general",
-  },
-  {
-    slug: "surveys",
-    pathname: "/zh/surveys",
-    label: "调研",
-    title: "调研",
-    directoryLabel: "调研网络",
-    description: "开发者、消费者与品牌调研",
-    marketFilter: (market) => market.category === "brand_research",
-  },
-  {
-    slug: "rolling",
-    pathname: "/zh/rolling",
-    label: "滚动命题",
-    title: "滚动命题",
-    directoryLabel: "滚动命题",
-    description: "周期更新与上期结果归档",
-    marketFilter: (market) => market.category === "general",
-  },
-];
+type DiscoveryDisplayCategoryId = keyof typeof defaultDiscoveryRankingCategoryLabels;
 
 const categoryAriaLabel = "Discovery ranking categories";
 const hotDescription =
@@ -339,7 +209,7 @@ const toRankingItem = (
   market: ValidationMarketViewModel,
 ): PublicDiscoveryRankingItemViewModel => {
   const displayCategoryId = toDisplayCategoryId(market);
-  const categoryDisplay = displayCategoryLabels[displayCategoryId];
+  const categoryDisplay = defaultDiscoveryRankingCategoryLabels[displayCategoryId];
   const score = marketScore(market);
 
   return {
@@ -360,6 +230,7 @@ const toRankingItem = (
 
 const buildRankingCategories = (
   items: PublicDiscoveryRankingItemViewModel[],
+  rankingLabels: Record<string, string>,
 ): PublicDiscoveryCategoryViewModel[] => {
   const uniqueIds = [
     ...new Set(items.flatMap((item) => item.categoryIds)),
@@ -368,11 +239,14 @@ const buildRankingCategories = (
   return [
     {
       id: "all",
-      label: "All",
+      label: rankingLabels.all ?? defaultDiscoveryRankingFilterLabels.all,
     },
     ...uniqueIds.map((id) => ({
       id,
-      label: displayCategoryLabels[id].label,
+      label:
+        rankingLabels[id] ??
+        defaultDiscoveryRankingFilterLabels[id] ??
+        defaultDiscoveryRankingCategoryLabels[id].label,
     })),
   ];
 };
@@ -410,11 +284,20 @@ const buildSidebarItems = (
 
 @Injectable()
 export class PublicDiscoveryService {
-  constructor(private readonly validationViews: ValidationViewService) {}
+  constructor(
+    private readonly validationViews: ValidationViewService,
+    private readonly discoveryConfig?: DiscoveryConfigService,
+  ) {}
 
   async getCategoryDirectoryIndex(): Promise<PublicCategoryDirectoryIndexViewModel> {
+    if (this.discoveryConfig) {
+      return {
+        items: await this.discoveryConfig.getPublicCategoryDirectoryIndexItems(),
+      };
+    }
+
     return {
-      items: directoryConfigs.map((config) => ({
+      items: discoveryDirectoryDefinitions.map((config) => ({
         slug: config.slug,
         pathname: config.pathname,
         label: config.label,
@@ -427,8 +310,27 @@ export class PublicDiscoveryService {
 
   async getHome(): Promise<PublicDiscoverPageViewModel> {
     const markets = await this.validationViews.listMarkets();
-    const hotRanking = this.buildRanking(markets, "hot");
-    const breakingRanking = this.buildRanking(markets, "breaking");
+    const globalConfig = this.discoveryConfig
+      ? await this.discoveryConfig.getGlobalConfig()
+      : null;
+    const rankingLabels =
+      globalConfig?.rankingCategoryLabels ?? defaultDiscoveryRankingFilterLabels;
+    const directoryIndexItems = globalConfig
+      ? this.toPublicDirectoryIndexItems(globalConfig)
+      : discoveryDirectoryDefinitions.map((config) => ({
+          slug: config.slug,
+          pathname: config.pathname,
+          label: config.label,
+          title: config.title,
+          directoryLabel: config.directoryLabel,
+          description: config.description,
+        }));
+    const hotRanking = await this.buildRanking(markets, "hot", rankingLabels);
+    const breakingRanking = await this.buildRanking(
+      markets,
+      "breaking",
+      rankingLabels,
+    );
     const latestTopics = this.buildLatestTopics(markets);
 
     const sections: PublicDiscoverPageSectionViewModel[] = [
@@ -450,11 +352,14 @@ export class PublicDiscoveryService {
         marketIds: latestTopics.items[0]?.marketIds ?? [],
         moreHref: "/zh/new",
       },
-      ...directoryConfigs.map((config) => ({
+      ...directoryIndexItems.map((config) => ({
         href: config.pathname,
         label: config.label,
         marketIds: getUniqueMarketIds(
-          this.filterMarketsForDirectory(markets, config.pathname),
+          this.filterMarketsForDirectory(
+            markets,
+            this.resolveDirectoryContext(config.slug, globalConfig),
+          ),
         ),
         moreHref: config.pathname,
       })),
@@ -472,7 +377,12 @@ export class PublicDiscoveryService {
     kind: PublicDiscoveryRankingKind,
   ): Promise<PublicDiscoveryRankingViewModel> {
     const markets = await this.validationViews.listMarkets();
-    return this.buildRanking(markets, kind);
+    const rankingLabels =
+      this.discoveryConfig
+        ? await this.discoveryConfig.getPublicRankingCategoryLabels()
+        : defaultDiscoveryRankingFilterLabels;
+
+    return this.buildRanking(markets, kind, rankingLabels);
   }
 
   async getLatestTopics(): Promise<PublicLatestTopicsViewModel> {
@@ -503,30 +413,42 @@ export class PublicDiscoveryService {
   }
 
   async getCategoryDirectory(
-    pathname: string,
+    slugOrPathname: string,
   ): Promise<PublicCategoryDirectoryViewModel | null> {
-    const config = directoryConfigs.find((item) => item.pathname === pathname);
-    if (!config) {
+    const markets = await this.validationViews.listMarkets();
+    const globalConfig = this.discoveryConfig
+      ? await this.discoveryConfig.getGlobalConfig()
+      : null;
+    const config = this.resolveDirectoryContext(slugOrPathname, globalConfig);
+    if (!config || config.pageState !== "visible") {
       return null;
     }
 
-    const markets = this.filterMarketsForDirectory(
-      await this.validationViews.listMarkets(),
-      pathname,
+    const filteredMarkets = this.filterMarketsForDirectory(
+      markets,
+      config,
     );
+    const title = config.title;
+    const configuredSidebarItems = this.discoveryConfig
+      ? await this.discoveryConfig.getResolvedPublicSidebarItems(
+          config.slug,
+          filteredMarkets,
+        )
+      : null;
 
     return {
-      title: config.title,
-      sidebarItems: buildSidebarItems(markets),
-      featuredMarketId: markets[0]?.marketId ?? null,
-      marketIds: getUniqueMarketIds(markets),
+      title,
+      sidebarItems: configuredSidebarItems ?? buildSidebarItems(filteredMarkets),
+      featuredMarketId: filteredMarkets[0]?.marketId ?? null,
+      marketIds: getUniqueMarketIds(filteredMarkets),
     };
   }
 
-  private buildRanking(
+  private async buildRanking(
     markets: ValidationMarketViewModel[],
     kind: PublicDiscoveryRankingKind,
-  ): PublicDiscoveryRankingViewModel {
+    rankingLabels: Record<string, string>,
+  ): Promise<PublicDiscoveryRankingViewModel> {
     const orderedMarkets =
       kind === "hot"
         ? sortHotMarkets(markets)
@@ -534,6 +456,9 @@ export class PublicDiscoveryService {
     const items = orderedMarkets
       .slice(0, MAX_RANKING_ITEMS)
       .map(toRankingItem);
+    const categories = this.discoveryConfig
+      ? await this.buildConfiguredRankingCategories(items, rankingLabels)
+      : buildRankingCategories(items, rankingLabels);
 
     return {
       pageClassName: buildPageClassName(kind),
@@ -543,9 +468,122 @@ export class PublicDiscoveryService {
       description: buildRankingDescription(kind),
       categoryAriaLabel,
       listAriaLabel: `${buildRankingTitle(kind)} markets`,
-      categories: buildRankingCategories(items),
+      categories,
       items,
     };
+  }
+
+  private async buildConfiguredRankingCategories(
+    items: PublicDiscoveryRankingItemViewModel[],
+    rankingLabels: Record<string, string>,
+  ): Promise<PublicDiscoveryCategoryViewModel[]> {
+    const secondaryCapsules = this.discoveryConfig
+      ? await this.discoveryConfig.getPublicSecondaryCapsules()
+      : null;
+    if (!secondaryCapsules) {
+      return buildRankingCategories(items, rankingLabels);
+    }
+
+    const itemIds = new Set(items.map((item) => item.id));
+
+    return secondaryCapsules
+      .map((capsule) => {
+        if (capsule.marketIds) {
+          return {
+            id: capsule.id,
+            label: capsule.label,
+            marketIds: capsule.marketIds.filter((marketId) =>
+              itemIds.has(marketId),
+            ),
+          };
+        }
+
+        const systemCapsuleId = capsule.id as DiscoveryRankingCategoryId;
+        if (
+          systemCapsuleId !== "all" &&
+          !items.some((item) => item.categoryIds.includes(systemCapsuleId))
+        ) {
+          return null;
+        }
+
+        return {
+          id: systemCapsuleId,
+          label:
+            capsule.label ??
+            rankingLabels[systemCapsuleId] ??
+            defaultDiscoveryRankingFilterLabels[systemCapsuleId] ??
+            systemCapsuleId,
+        };
+      })
+      .filter((entry) => entry !== null) as PublicDiscoveryCategoryViewModel[];
+  }
+
+  private toPublicDirectoryIndexItems(
+    globalConfig: InternalDiscoveryGlobalConfigViewModel,
+  ): PublicCategoryDirectoryIndexViewModel["items"] {
+    return globalConfig.categories
+      .filter((category) => category.pageState === "visible")
+      .map((category) => ({
+        slug: category.slug,
+        pathname: category.pathname,
+        label: category.label,
+        title: category.title,
+        directoryLabel: category.directoryLabel,
+        description: category.description,
+      }));
+  }
+
+  private resolveDirectoryContext(
+    slugOrPathname: string,
+    globalConfig: InternalDiscoveryGlobalConfigViewModel | null,
+  ): InternalDiscoveryGlobalCategoryConfigViewModel | null {
+    const normalized = slugOrPathname.trim();
+
+    if (globalConfig) {
+      const configuredCategory =
+        globalConfig.categories.find(
+          (item) => item.slug === normalized || item.pathname === normalized,
+        ) ?? null;
+      if (configuredCategory) {
+        return configuredCategory;
+      }
+    }
+
+    const definition =
+      getDiscoveryDirectoryDefinitionByPathname(normalized) ??
+      getDiscoveryDirectoryDefinitionBySlug(normalized);
+    if (!definition) {
+      return null;
+    }
+
+    return {
+      slug: definition.slug,
+      pathname: definition.pathname,
+      label: definition.label,
+      title: definition.title,
+      directoryLabel: definition.directoryLabel,
+      description: definition.description,
+      displayOrder: 0,
+      pageState: "visible",
+      kind: "system",
+      marketIdWhitelist: [],
+      invalidMarketIds: [],
+    };
+  }
+
+  private filterMarketsForDirectory(
+    markets: ValidationMarketViewModel[],
+    config: InternalDiscoveryGlobalCategoryConfigViewModel | null,
+  ): ValidationMarketViewModel[] {
+    if (!config || config.pageState !== "visible") {
+      return [];
+    }
+
+    const orderedMarkets = config.kind === "custom"
+      ? markets.filter((market) => config.marketIdWhitelist.includes(market.marketId))
+      : filterMarketsForDiscoveryDirectory(markets, config.pathname);
+
+    return orderedMarkets.sort(compareByRecency);
   }
 
   private buildLatestTopics(
@@ -606,7 +644,8 @@ export class PublicDiscoveryService {
         ] as DiscoveryDisplayCategoryId[]
       ).map((categoryId) => ({
         id: categoryId,
-        label: displayCategoryLabels[categoryId].label,
+        label:
+          defaultDiscoveryRankingCategoryLabels[categoryId].label,
         marketIds: getUniqueMarketIds(
           orderedByRecency.filter(
             (market) => toDisplayCategoryId(market) === categoryId,
@@ -618,15 +657,4 @@ export class PublicDiscoveryService {
     return { items };
   }
 
-  private filterMarketsForDirectory(
-    markets: ValidationMarketViewModel[],
-    pathname: string,
-  ): ValidationMarketViewModel[] {
-    const config = directoryConfigs.find((item) => item.pathname === pathname);
-    if (!config) {
-      return [];
-    }
-
-    return markets.filter(config.marketFilter).sort(compareByRecency);
-  }
 }

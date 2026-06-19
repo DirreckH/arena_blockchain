@@ -47,9 +47,17 @@ export const buildAdjudicationTaskViewModel = (
       input.task.status === "submitted" || input.task.submittedAt !== null,
     timeRemainingSeconds: secondsRemaining(effectiveDeadline, input.now),
     latestResponseStatus: input.latestReview?.status ?? null,
-    rewardStatus: input.rewardLedger?.status ?? null,
+    rewardStatus:
+      input.rewardPayout?.status === "completed"
+        ? "finalized"
+        : input.rewardPayout?.status === "cancelled"
+          ? "reversed"
+          : input.rewardLedger?.status ?? null,
     rewardPendingAmount: input.rewardLedger?.pendingAmount ?? null,
-    rewardFinalAmount: input.rewardLedger?.finalAmount ?? null,
+    rewardFinalAmount:
+      input.rewardPayout?.status === "completed"
+        ? input.rewardPayout.amount
+        : null,
     publicProgress: input.publicProgress,
   };
 };

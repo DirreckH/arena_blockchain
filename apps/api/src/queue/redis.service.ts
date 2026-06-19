@@ -10,6 +10,16 @@ import {
   SCHEDULER_WORKER_HEARTBEAT_TTL_SECONDS,
 } from "./scheduler-worker-heartbeat";
 
+const INCREMENT_WINDOW_COUNTER_SCRIPT = `
+local current = redis.call("INCR", KEYS[1])
+local ttl = redis.call("TTL", KEYS[1])
+if ttl < 0 then
+  redis.call("EXPIRE", KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return { current, ttl }
+`;
+
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly client: Redis;
@@ -66,6 +76,26 @@ export class RedisService implements OnModuleDestroy {
 
   async setWithTtl(key: string, value: string, ttlSeconds: number): Promise<void> {
     await this.client.set(key, value, "EX", ttlSeconds);
+  }
+
+  async incrementWindowCounter(
+    key: string,
+    ttlSeconds: number,
+  ): Promise<{ count: number; ttlSeconds: number }> {
+    const rawResult = await this.client.eval(
+      INCREMENT_WINDOW_COUNTER_SCRIPT,
+      1,
+      key,
+      String(ttlSeconds),
+    );
+    const [count, ttl] = Array.isArray(rawResult)
+      ? rawResult
+      : [0, ttlSeconds];
+
+    return {
+      count: Number(count),
+      ttlSeconds: Math.max(Number(ttl), 1),
+    };
   }
 
   get(key: string): Promise<string | null> {

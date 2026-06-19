@@ -86,7 +86,6 @@ export class WatchlistService {
     }
 
     return {
-      userId,
       totalCount: items.length,
       items,
     };
@@ -131,7 +130,6 @@ export class WatchlistService {
     await this.persistItems(userId, nextItems, db);
 
     return {
-      userId,
       marketId: input.marketId,
       propositionId: market.propositionId,
       isSaved: true,
@@ -160,7 +158,6 @@ export class WatchlistService {
     await this.persistItems(userId, nextItems, db);
 
     return {
-      userId,
       marketId,
       propositionId: market.propositionId,
       isSaved: false,

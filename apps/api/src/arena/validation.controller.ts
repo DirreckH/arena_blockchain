@@ -4,12 +4,15 @@ import type {
   PrepareValidationBetResult,
 } from "@arena/shared";
 
+import { ArenaRateLimit } from "../common/decorators/arena-rate-limit.decorator";
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { ConfirmMarketBetDto } from "./dto/confirm-market-bet.dto";
 import { PrepareMarketBetDto } from "./dto/prepare-market-bet.dto";
 import { ValidationBetExecutionService } from "./services/validation-bet-execution.service";
 import { ValidationViewService } from "./services/validation-view.service";
 
+@ArenaSurfaceBoundary("validation")
 @Controller("arena/validation")
 export class ArenaValidationController {
   constructor(
@@ -33,6 +36,7 @@ export class ArenaValidationController {
   }
 
   @Post("markets/:marketId/bets/prepare")
+  @ArenaRateLimit("validation_bet_prepare")
   async prepareBet(
     @Param("marketId") marketId: string,
     @Body() body: PrepareMarketBetDto,
@@ -52,6 +56,7 @@ export class ArenaValidationController {
   }
 
   @Post("markets/:marketId/bets/confirm")
+  @ArenaRateLimit("validation_bet_confirm")
   async confirmBet(
     @Param("marketId") marketId: string,
     @Body() body: ConfirmMarketBetDto,

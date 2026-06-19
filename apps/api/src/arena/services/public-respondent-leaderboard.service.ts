@@ -19,6 +19,7 @@ import { ResponseReviewRepository } from "../repositories/response-review.reposi
 import { UserReputationRepository } from "../repositories/user-reputation.repository";
 import { UserTagRepository } from "../repositories/user-tag.repository";
 import { SystemKeyValueRepository } from "../repositories/system-key-value.repository";
+import { ArenaUserRepository } from "../repositories/arena-user.repository";
 import { AccountPreferencesService } from "./account-preferences.service";
 
 type LeaderboardCategoryConfig = {
@@ -35,6 +36,7 @@ type EligibleUserAggregate = {
   responseRatePercent: number;
   reputationScore: number;
   topTag: string;
+  publicWalletAddress: string | null;
 };
 
 type ReviewAggregateBucket = {
@@ -126,6 +128,32 @@ function buildWalletShort(userId: string): string {
   return `${normalized.slice(0, 6)}…${normalized.slice(-4)}`;
 }
 
+function isWalletAddress(value: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/u.test(value);
+}
+
+function buildPublicIdentity(
+  userId: string,
+  publicWalletAddress: string | null,
+): Pick<PublicRespondentLeaderboardRowViewModel, "handle" | "walletShort"> | null {
+  const walletAddress =
+    typeof publicWalletAddress === "string" &&
+    isWalletAddress(publicWalletAddress)
+      ? publicWalletAddress.toLowerCase()
+      : isWalletAddress(userId)
+        ? userId.toLowerCase()
+        : null;
+
+  if (!walletAddress) {
+    return null;
+  }
+
+  return {
+    handle: buildHandle(walletAddress),
+    walletShort: buildWalletShort(walletAddress),
+  };
+}
+
 function pickTopTag(tags: UserTag[]): string {
   const currentTag = tags.find((tag) => tag.tagKey !== "risky_responder");
   if (!currentTag) {
@@ -155,7 +183,11 @@ function sortRows(
     return right.reputationScore - left.reputationScore;
   }
 
-  return left.userId.localeCompare(right.userId);
+  if (left.handle !== right.handle) {
+    return left.handle.localeCompare(right.handle);
+  }
+
+  return left.walletShort.localeCompare(right.walletShort);
 }
 
 @Injectable()
@@ -169,6 +201,7 @@ export class PublicRespondentLeaderboardService {
     private readonly tags: UserTagRepository,
     private readonly accountPreferences: AccountPreferencesService,
     private readonly systemKeyValues: SystemKeyValueRepository,
+    private readonly users: ArenaUserRepository,
   ) {}
 
   async getLeaderboard(): Promise<PublicRespondentLeaderboardViewModel> {
@@ -185,6 +218,10 @@ export class PublicRespondentLeaderboardService {
     }
 
     const propositions = await this.propositions.list({ marketEnabled: true });
+    const users = await this.users.findByIds(eligibleUserIds);
+    const walletByUserId = new Map(
+      users.map((user) => [user.id, user.primaryWalletAddress ?? null] as const),
+    );
     const propositionById = new Map(
       propositions.map((proposition) => [proposition.id, proposition] as const),
     );
@@ -203,6 +240,7 @@ export class PublicRespondentLeaderboardService {
               userId,
               categoryBuckets.get(category.id) ?? new Set(),
               propositionById,
+              walletByUserId.get(userId) ?? null,
             );
             if (!aggregate || aggregate.reviewedCount === 0) {
               return null;
@@ -260,6 +298,7 @@ export class PublicRespondentLeaderboardService {
     userId: string,
     categoryFilter: Set<PropositionCategory>,
     propositionById: Map<string, PropositionRecord>,
+    publicWalletAddress: string | null,
   ): Promise<EligibleUserAggregate | null> {
     const [tasks, latestResponses, finalizedReviews, reputation, tags] =
       await Promise.all([
@@ -331,16 +370,25 @@ export class PublicRespondentLeaderboardService {
             10,
       reputationScore: reputation?.reputationScore ?? 0,
       topTag: pickTopTag(tags),
+      publicWalletAddress,
     };
   }
 
   private toRowViewModel(
     aggregate: EligibleUserAggregate,
-  ): PublicRespondentLeaderboardRowViewModel {
+  ): PublicRespondentLeaderboardRowViewModel | null {
+    const publicIdentity = buildPublicIdentity(
+      aggregate.userId,
+      aggregate.publicWalletAddress,
+    );
+
+    if (!publicIdentity) {
+      return null;
+    }
+
     return {
-      userId: aggregate.userId,
-      handle: buildHandle(aggregate.userId),
-      walletShort: buildWalletShort(aggregate.userId),
+      handle: publicIdentity.handle,
+      walletShort: publicIdentity.walletShort,
       responseRatePercent: aggregate.responseRatePercent,
       reviewedCount: aggregate.reviewedCount,
       acceptedCount: aggregate.acceptedCount,

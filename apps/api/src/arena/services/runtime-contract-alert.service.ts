@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 
 import type {
@@ -14,6 +14,7 @@ import {
   RUNTIME_CONTRACT_RELEASE_BLOCKED_ACTION,
   RUNTIME_CONTRACT_RELEASE_READY_ACTION,
 } from "./runtime-contract-alert.constants";
+import { OpsAlertNotifierService } from "./ops-alert-notifier.service";
 
 const uniqueSorted = (values: string[]): string[] =>
   Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
@@ -40,6 +41,8 @@ export class RuntimeContractAlertService {
   constructor(
     private readonly monitoring: InternalMonitoringService,
     private readonly audits: InternalAuditService,
+    @Optional()
+    private readonly notifier?: OpsAlertNotifierService,
   ) {}
 
   async runHealthCheck(nowIso = new Date().toISOString()): Promise<void> {
@@ -63,10 +66,19 @@ export class RuntimeContractAlertService {
       latest.action === action &&
       this.buildSignature(latest.metadata) === this.buildSignature(metadata)
     ) {
+      await this.notifyAlert({
+        source: "runtime_contract",
+        action: latest.action,
+        reason: latest.reason,
+        entityType: latest.entityType,
+        entityId: latest.entityId,
+        createdAt: latest.createdAt,
+        metadata: (latest.metadata ?? {}) as Record<string, unknown>,
+      });
       return;
     }
 
-    await this.audits.record({
+    const alertEvent = await this.audits.record({
       entityType: RUNTIME_CONTRACT_AUDIT_ENTITY_TYPE,
       entityId: RUNTIME_CONTRACT_AUDIT_ENTITY_ID,
       action,
@@ -74,6 +86,15 @@ export class RuntimeContractAlertService {
       note: "scheduled_runtime_contract_health_check",
       metadata: metadata as Prisma.InputJsonValue,
       createdAt: new Date(nowIso),
+    });
+    await this.notifyAlert({
+      source: "runtime_contract",
+      action: alertEvent.action,
+      reason: alertEvent.reason,
+      entityType: alertEvent.entityType,
+      entityId: alertEvent.entityId,
+      createdAt: alertEvent.createdAt,
+      metadata: (alertEvent.metadata ?? {}) as Record<string, unknown>,
     });
   }
 
@@ -136,5 +157,21 @@ export class RuntimeContractAlertService {
       schedulerQueuePaused: payload.schedulerQueuePaused ?? null,
       validationChainStatus: payload.validationChainStatus ?? null,
     });
+  }
+
+  private async notifyAlert(input: {
+    source: "runtime_contract";
+    action: string;
+    reason: string;
+    entityType: string;
+    entityId: string;
+    createdAt: string;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    if (!this.notifier) {
+      return;
+    }
+
+    await this.notifier.notifyAlert(input);
   }
 }

@@ -539,6 +539,14 @@ class FakeAuditService {
   }
 }
 
+class FakeOpsAlertNotifier {
+  readonly notifications: Array<Record<string, unknown>> = [];
+
+  async notifyAlert(input: Record<string, unknown>): Promise<void> {
+    this.notifications.push(structuredClone(input));
+  }
+}
+
 class FakeValidationChainContractReadService {
   position:
     | {
@@ -577,6 +585,151 @@ class FakeValidationChainContractReadService {
       toString: () => claimable,
     };
   }
+}
+
+type MonitoringContractTestOverrides = {
+  config?: Record<string, unknown>;
+  blockchain?: Record<string, unknown>;
+  redis?: Record<string, unknown>;
+  health?: Record<string, unknown>;
+  queue?: Record<string, unknown>;
+  validationContract?: FakeValidationChainContractService;
+  proofRecords?: { getLatestProof: () => Promise<unknown> };
+};
+
+function createMonitoringForContractTests(
+  overrides: MonitoringContractTestOverrides = {},
+) {
+  const defaultConfig = {
+    validationEnvironment: "staging",
+    chainId: 8453,
+    rpcUrl: "https://rpc.example",
+    arenaContractAddress: "0x0000000000000000000000000000000000000001",
+    validationContractAddress: "0x0000000000000000000000000000000000000002",
+    validationOperatorPrivateKey:
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+    validationOraclePrivateKey:
+      "0x2222222222222222222222222222222222222222222222222222222222222222",
+    validationPauserPrivateKey:
+      "0x3333333333333333333333333333333333333333333333333333333333333333",
+    rewardPayoutAssetSymbol: "USDC",
+    rewardPayoutErc20Address:
+      "0x0000000000000000000000000000000000000010",
+    rewardPayoutOperatorPrivateKey:
+      "0x4444444444444444444444444444444444444444444444444444444444444444",
+    nodeEnv: "production",
+    port: 4000,
+  };
+  const defaultBlockchain = {
+    async assertReady() {
+      return undefined;
+    },
+  };
+  const defaultRedis = {
+    async ping() {
+      return "PONG";
+    },
+  };
+  const defaultHealth = {
+    getLiveSnapshot() {
+      return {
+        status: "ok",
+        timestamp: "2026-06-07T00:36:00.000Z",
+      };
+    },
+    async getReadinessSnapshot() {
+      return {
+        status: "ok",
+        timestamp: "2026-06-07T00:36:00.000Z",
+        dependencies: [
+          { name: "database", status: "up" },
+          { name: "redis", status: "up" },
+          { name: "rpc", status: "up" },
+          { name: "scheduler_queue", status: "up" },
+        ],
+      };
+    },
+  };
+  const defaultQueue = {
+    async getQueueOverview() {
+      return {
+        status: "ok",
+        timestamp: "2026-06-07T00:36:00.000Z",
+        redis: { status: "up" },
+        queues: [
+          {
+            name: "scheduler",
+            status: "up",
+            policy: {
+              retryable: true,
+              attempts: 5,
+              backoffType: "exponential",
+              backoffDelayMs: 1000,
+            },
+            paused: false,
+            counts: {
+              waiting: 0,
+              active: 0,
+              delayed: 0,
+              completed: 0,
+              failed: 0,
+            },
+          },
+        ],
+      };
+    },
+  };
+  const validationContract =
+    overrides.validationContract ?? new FakeValidationChainContractService();
+  const proofRecords =
+    overrides.proofRecords ??
+    ({
+      async getLatestProof() {
+        return null;
+      },
+    } as const);
+
+  return new InternalMonitoringService(
+    {
+      async assertReady() {
+        return undefined;
+      },
+    } as never,
+    {
+      ...defaultConfig,
+      ...overrides.config,
+    } as never,
+    {
+      ...defaultBlockchain,
+      ...overrides.blockchain,
+    } as never,
+    {
+      ...defaultRedis,
+      ...overrides.redis,
+    } as never,
+    {
+      ...defaultHealth,
+      ...overrides.health,
+    } as never,
+    {
+      ...defaultQueue,
+      ...overrides.queue,
+    } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
+      async listByEntity() {
+        return [];
+      },
+    } as never,
+    validationContract as never,
+    undefined as never,
+    proofRecords as never,
+  );
 }
 
 function createCommandRuntimeService(input?: {
@@ -676,6 +829,12 @@ describe("Validation chain phase six runtime integration", () => {
     const runtime = new FakeValidationChainRuntime();
     const harness = createArenaHarness({
       validationChainRuntime: runtime as never,
+    });
+    await harness.userRepository.create({
+      id: "phase6_user",
+      primaryWalletAddress: "0x00000000000000000000000000000000000000f6",
+      normalizedPrimaryWalletAddress:
+        "0x00000000000000000000000000000000000000f6",
     });
 
     const draft = await harness.propositionEngineService.createProposition({
@@ -2372,6 +2531,81 @@ describe("Validation chain phase six runtime integration", () => {
     ]);
   });
 
+  it("forwards validation-chain alerts to the configured notifier when a new alert is recorded", async () => {
+    const cursor: ValidationChainCursor = {
+      streamKey: "validation_market_main",
+      chainId: 1337,
+      contractAddress: "0x0000000000000000000000000000000000000002",
+      lastProcessedBlock: 10,
+      lastProcessedTxHash: "0x10",
+      lastProcessedLogIndex: 0,
+      lastFinalizedBlock: 12,
+      syncStatus: "idle",
+      createdAt: new Date("2026-04-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-24T00:59:45.000Z"),
+    };
+
+    const audit = new FakeAuditService();
+    const notifier = new FakeOpsAlertNotifier();
+    const prisma = new FakePrismaService(
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+        count: async () => 0,
+      },
+      {
+        findMany: async () => [] as Array<Record<string, unknown>>,
+        findFirst: async () => null,
+      },
+      {
+        count: async () => 0,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+      {
+        findFirst: async () => null,
+        findMany: async () => [] as Array<Record<string, unknown>>,
+      },
+    );
+    const redis = new FakeRedisService();
+    redis.schedulerWorkerHeartbeat = {
+      processRole: "worker",
+      startedAt: "2026-04-24T00:40:00.000Z",
+      lastSeenAt: "2026-04-24T00:45:00.000Z",
+      lastJobProcessedAt: "2026-04-24T00:45:00.000Z",
+      lastJobName: "validation-chain.sync",
+      lastWorkerErrorAt: null,
+      lastWorkerErrorMessage: null,
+    };
+
+    const alerts = new ValidationChainAlertService(
+      prisma as never,
+      {
+        validationSyncPollIntervalMs: 15_000,
+      } as never,
+      new FakeCursorRepository(cursor) as never,
+      redis as never,
+      audit as never,
+      undefined,
+      notifier as never,
+    );
+
+    await alerts.runHealthCheck("2026-04-24T01:00:00.000Z");
+
+    assert.equal(notifier.notifications.length, 1);
+    assert.equal(
+      notifier.notifications[0]?.source,
+      "validation_chain",
+    );
+    assert.equal(
+      notifier.notifications[0]?.action,
+      "validation_chain.alert.sync_worker_unhealthy",
+    );
+    assert.equal(
+      notifier.notifications[0]?.reason,
+      "validation_chain.sync.worker_heartbeat_down",
+    );
+  });
+
   it("reconciles a local validation bet against on-chain position data with audit context", async () => {
     const contract = new FakeValidationChainContractReadService();
     contract.position = {
@@ -3385,7 +3619,12 @@ describe("Validation chain phase six runtime integration", () => {
       "up",
     );
     assert.equal(snapshot.requiredEnvKeys.includes("ARENA_VALIDATION_OPERATOR_PRIVATE_KEY"), true);
-    assert.equal(snapshot.preflightCommands.includes("pnpm run validation:chain:check"), true);
+    assert.equal(
+      snapshot.preflightCommands.includes(
+        "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
+      ),
+      true,
+    );
     assert.equal(snapshot.runbookPath, "docs/contracts/arena-validation-chain-runbook.md");
     assert.equal(snapshot.operatorActions.some((item) => item.dependency === "env"), true);
     assert.equal(snapshot.operatorActions.some((item) => item.dependency === "rpc"), true);
@@ -3581,37 +3820,9 @@ describe("Validation chain phase six runtime integration", () => {
     );
   });
 
-  it("reports deployment-level validation-chain readiness failures for bytecode drift and signer role gaps", async () => {
-    const monitoring = new InternalMonitoringService(
-      {
-        async assertReady() {
-          return undefined;
-        },
-      } as never,
-      {
-        validationEnvironment: "staging",
-        chainId: 8453,
-        rpcUrl: "https://rpc.example",
-        arenaContractAddress: "0x0000000000000000000000000000000000000001",
-        validationContractAddress: "0x0000000000000000000000000000000000000002",
-        validationOperatorPrivateKey:
-          "0x1111111111111111111111111111111111111111111111111111111111111111",
-        validationOraclePrivateKey:
-          "0x2222222222222222222222222222222222222222222222222222222222222222",
-        validationPauserPrivateKey:
-          "0x3333333333333333333333333333333333333333333333333333333333333333",
-      } as never,
-      {
-        async assertReady() {
-          return undefined;
-        },
-      } as never,
-      {
-        async ping() {
-          return "PONG";
-        },
-      } as never,
-      {
+it("reports deployment-level validation-chain readiness failures for bytecode drift and signer role gaps", async () => {
+    const monitoring = createMonitoringForContractTests({
+      health: {
         getLiveSnapshot() {
           return {
             status: "ok",
@@ -3630,8 +3841,8 @@ describe("Validation chain phase six runtime integration", () => {
             ],
           };
         },
-      } as never,
-      {
+      },
+      queue: {
         async getQueueOverview() {
           return {
             status: "ok",
@@ -3659,19 +3870,8 @@ describe("Validation chain phase six runtime integration", () => {
             ],
           };
         },
-      } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {
-        async listByEntity() {
-          return [];
-        },
-      } as never,
-      new FakeValidationChainContractService({
+      },
+      validationContract: new FakeValidationChainContractService({
         runtimeBytecodeMatchesArtifact: false,
         signerIssues: {
           operator: {
@@ -3681,9 +3881,8 @@ describe("Validation chain phase six runtime integration", () => {
             hasBalance: false,
           },
         },
-      }) as never,
-      undefined,
-    );
+      }),
+    });
 
     const snapshot = await monitoring.getValidationChainRuntimeReadiness();
 
@@ -3710,7 +3909,9 @@ describe("Validation chain phase six runtime integration", () => {
     );
     assert.equal(
       snapshot.operatorActions.find((item) => item.dependency === "validation_contract_bytecode")
-        ?.commands.includes("pnpm run validation:deploy -- --network <network>"),
+        ?.commands.includes(
+          "pnpm run validation:deploy -- --env-file <path-to-release-env> --network validation",
+        ),
       true,
     );
     assert.equal(
@@ -3720,39 +3921,14 @@ describe("Validation chain phase six runtime integration", () => {
     );
   });
 
-  it("builds a validation rehearsal contract for environment-backed operator verification", async () => {
-    const monitoring = new InternalMonitoringService(
-      {
-        async assertReady() {
-          return undefined;
-        },
-      } as never,
-      {
-        validationEnvironment: "staging",
-        chainId: 8453,
-        rpcUrl: "https://rpc.example",
-        arenaContractAddress: "0x0000000000000000000000000000000000000001",
-        validationContractAddress: "0x0000000000000000000000000000000000000002",
-        validationOperatorPrivateKey:
-          "0x1111111111111111111111111111111111111111111111111111111111111111",
-        validationOraclePrivateKey:
-          "0x2222222222222222222222222222222222222222222222222222222222222222",
-        validationPauserPrivateKey:
-          "0x3333333333333333333333333333333333333333333333333333333333333333",
-        nodeEnv: "production",
-        port: 4000,
-      } as never,
-      {
+it("builds a validation rehearsal contract for environment-backed operator verification", async () => {
+    const monitoring = createMonitoringForContractTests({
+      blockchain: {
         async assertReady() {
           throw new Error("rpc timeout");
         },
-      } as never,
-      {
-        async ping() {
-          return "PONG";
-        },
-      } as never,
-      {
+      },
+      health: {
         getLiveSnapshot() {
           return {
             status: "ok",
@@ -3775,8 +3951,8 @@ describe("Validation chain phase six runtime integration", () => {
             ],
           };
         },
-      } as never,
-      {
+      },
+      queue: {
         async getQueueOverview() {
           return {
             status: "degraded",
@@ -3805,21 +3981,8 @@ describe("Validation chain phase six runtime integration", () => {
             ],
           };
         },
-      } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {
-        async listByEntity() {
-          return [];
-        },
-      } as never,
-      new FakeValidationChainContractService() as never,
-      undefined,
-    );
+      },
+    });
 
     const snapshot = await monitoring.getRuntimeContract();
 
@@ -3893,8 +4056,384 @@ describe("Validation chain phase six runtime integration", () => {
     assert.equal(validationGate?.status, "blocked");
     assert.equal(validationGate?.blockingDependencies.includes("rpc"), true);
     assert.equal(
-      validationGate?.operatorActions.includes("pnpm run validation:chain:check"),
+      validationGate?.operatorActions.includes(
+        "pnpm run validation:chain:check -- --env-file <path-to-release-env>",
+      ),
       true,
     );
   });
+
+  it("treats reward payout readiness as a release gate without blocking validation rehearsal progress", async () => {
+    const monitoring = new InternalMonitoringService(
+      {
+        async assertReady() {
+          return undefined;
+        },
+      } as never,
+      {
+        validationEnvironment: "staging",
+        chainId: 8453,
+        rpcUrl: "https://rpc.example",
+        arenaContractAddress: "0x0000000000000000000000000000000000000001",
+        validationContractAddress: "0x0000000000000000000000000000000000000002",
+        validationOperatorPrivateKey:
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+        validationOraclePrivateKey:
+          "0x2222222222222222222222222222222222222222222222222222222222222222",
+        validationPauserPrivateKey:
+          "0x3333333333333333333333333333333333333333333333333333333333333333",
+        rewardPayoutErc20Address: "",
+        rewardPayoutOperatorPrivateKey: "",
+        nodeEnv: "production",
+        port: 4000,
+      } as never,
+      {
+        async assertReady() {
+          return undefined;
+        },
+      } as never,
+      {
+        async ping() {
+          return "PONG";
+        },
+      } as never,
+      {
+        getLiveSnapshot() {
+          return {
+            status: "ok",
+            timestamp: "2026-06-07T00:36:00.000Z",
+          };
+        },
+        async getReadinessSnapshot() {
+          return {
+            status: "ok",
+            timestamp: "2026-06-07T00:36:00.000Z",
+            dependencies: [
+              { name: "database", status: "up" },
+              { name: "redis", status: "up" },
+              { name: "rpc", status: "up" },
+              { name: "scheduler_queue", status: "up" },
+            ],
+          };
+        },
+      } as never,
+      {
+        async getQueueOverview() {
+          return {
+            status: "ok",
+            timestamp: "2026-06-07T00:36:00.000Z",
+            redis: { status: "up" },
+            queues: [
+              {
+                name: "scheduler",
+                status: "up",
+                policy: {
+                  retryable: true,
+                  attempts: 5,
+                  backoffType: "exponential",
+                  backoffDelayMs: 1000,
+                },
+                paused: false,
+                counts: {
+                  waiting: 0,
+                  active: 0,
+                  delayed: 0,
+                  completed: 0,
+                  failed: 0,
+                },
+              },
+            ],
+          };
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        async listByEntity() {
+          return [];
+        },
+      } as never,
+      new FakeValidationChainContractService() as never,
+      undefined,
+    );
+
+    const snapshot = await monitoring.getRuntimeContract();
+    const rewardPayoutGate = snapshot.releaseChecklist.find(
+      (item) => item.id === "reward-payout",
+    );
+    const validationGate = snapshot.releaseChecklist.find(
+      (item) => item.id === "validation-runtime",
+    );
+
+    assert.equal(snapshot.validationChain.status, "degraded");
+    assert.equal(
+      snapshot.validationChain.dependencies.find(
+        (item) => item.name === "reward_payout_token",
+      )?.status,
+      "down",
+    );
+    assert.equal(
+      snapshot.validationChain.dependencies.find(
+        (item) => item.name === "reward_payout_operator_signer",
+      )?.status,
+      "down",
+    );
+    assert.equal(
+      snapshot.validationChain.requiredEnvKeys.includes(
+        "ARENA_REWARD_PAYOUT_ERC20_ADDRESS",
+      ),
+      true,
+    );
+    assert.equal(
+      snapshot.validationChain.requiredEnvKeys.includes(
+        "ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY",
+      ),
+      true,
+    );
+    assert.equal(snapshot.validationRehearsal.status, "ready");
+    assert.deepEqual(snapshot.validationRehearsal.blockingDependencies, []);
+    assert.equal(validationGate, undefined);
+    assert.equal(rewardPayoutGate?.status, "blocked");
+    assert.deepEqual(rewardPayoutGate?.blockingDependencies, [
+      "reward_payout_token",
+      "reward_payout_operator_signer",
+    ]);
+    assert.equal(
+      rewardPayoutGate?.commands.includes("GET /arena/internal/rewards"),
+      true,
+    );
+    assert.equal(snapshot.releaseReadiness.status, "blocked");
+    assert.deepEqual(snapshot.releaseReadiness.blockingDependencies, [
+      "reward_payout_token",
+      "reward_payout_operator_signer",
+      "validation_proof_missing",
+    ]);
+    assert.equal(snapshot.operatorSummary.focusArea, "reward-payout");
+    assert.equal(
+      snapshot.operatorSummary.operatorActions.includes(
+        "GET /arena/internal/rewards",
+      ),
+      true,
+    );
+  });
+
+it("blocks non-local release readiness when no external validation proof record exists", async () => {
+    const monitoring = createMonitoringForContractTests({
+      proofRecords: {
+        async getLatestProof() {
+          return null;
+        },
+      },
+    });
+
+    const snapshot = await monitoring.getRuntimeContract();
+    const validationProofGate = snapshot.releaseChecklist.find(
+      (item) => item.id === "validation-proof",
+    );
+
+    assert.equal(snapshot.validationProofRecord, null);
+    assert.equal(validationProofGate?.status, "blocked");
+    assert.deepEqual(validationProofGate?.blockingDependencies, [
+      "validation_proof_missing",
+    ]);
+    assert.equal(
+      validationProofGate?.commands.includes(
+        "pnpm run validation:proof:capture -- --proposition-id <id> --env-file <path-to-release-env> --base-url <url> --auth-token <operator-token>",
+      ),
+      true,
+    );
+    assert.equal(
+      validationProofGate?.operatorActions.includes(
+        "pnpm run validation:proof:capture -- --proposition-id <id> --env-file <path-to-release-env> --base-url <url> --auth-token <operator-token>",
+      ),
+      true,
+    );
+    assert.equal(
+      validationProofGate?.commands.includes(
+        "POST /arena/internal/validation-chain/proof-record",
+      ),
+      true,
+    );
+    assert.equal(snapshot.releaseReadiness.status, "blocked");
+    assert.equal(
+      snapshot.releaseReadiness.blockingDependencies.includes(
+        "validation_proof_missing",
+      ),
+      true,
+    );
+    assert.equal(snapshot.operatorSummary.focusArea, "validation-proof");
+  });
+
+it("keeps non-local release readiness blocked when external proof exists but reward payout follow-through is still incomplete", async () => {
+  const monitoring = createMonitoringForContractTests({
+    proofRecords: {
+      async getLatestProof() {
+        return {
+          environment: "staging",
+            chainId: 8453,
+            propositionId: "prop_staging_complete",
+            proofComplete: true,
+            failures: [],
+            releaseReadinessStatus: "ready",
+            releaseBlockingDependencies: [],
+            validationRehearsalStatus: "ready",
+            validationCurrentStepId: null,
+            validationCurrentStepStatus: null,
+            completedStepCount: 5,
+            remainingStepCount: 0,
+            latestCheckpointStepId: "projection_and_settlement",
+            latestCheckpointStatus: "complete",
+            latestCheckpointAt: "2026-06-07T00:35:00.000Z",
+            publicSettledResultVisible: true,
+            publicIntegrityOverviewVisible: true,
+            rewardPayoutLedgerEntryCount: 3,
+            rewardPayoutRecordCount: 2,
+            rewardPayoutFinalizedWithoutPayoutCount: 1,
+            rewardPayoutExecutingWithoutTxHashCount: 0,
+            rewardPayoutStaleExecutingCount: 1,
+            rewardPayoutStaleExecutingWithoutTxHashCount: 1,
+            rewardPayoutStaleExecutingAwaitingConfirmationCount: 0,
+            rewardPayoutCompletedWithExecutionTxHashCount: 1,
+            rewardPayoutStatusCounts: {
+              requested: 0,
+              approved: 1,
+              executing: 0,
+              completed: 1,
+              failed: 0,
+              cancelled: 0,
+              none: 1,
+            },
+            summaryArtifactPath: "validation-rehearsal/prop_staging_complete/proof-summary.json",
+            evidenceArtifactPath: "validation-rehearsal/prop_staging_complete/evidence-bundle.json",
+            rewardPayoutArtifactPath:
+              "validation-rehearsal/prop_staging_complete/reward-payout-summary.json",
+            publicResultArtifactPath:
+              "validation-rehearsal/prop_staging_complete/public-settled-result.json",
+            publicIntegrityArtifactPath:
+              "validation-rehearsal/prop_staging_complete/public-integrity-overview.json",
+            note: "staging clean VM proof",
+            recordedByUserId: "operator_validation_chain",
+            checkedAt: "2026-06-07T00:35:00.000Z",
+            recordedAt: "2026-06-07T00:36:00.000Z",
+          };
+        },
+      },
+    });
+
+    const snapshot = await monitoring.getRuntimeContract();
+    const validationProofGate = snapshot.releaseChecklist.find(
+      (item) => item.id === "validation-proof",
+    );
+
+    assert.equal(snapshot.validationProofRecord?.proofComplete, true);
+    assert.equal(snapshot.validationProofRecord?.rewardPayoutLedgerEntryCount, 3);
+    assert.equal(snapshot.validationProofRecord?.rewardPayoutRecordCount, 2);
+    assert.equal(
+      snapshot.validationProofRecord?.rewardPayoutStatusCounts.completed,
+      1,
+    );
+    assert.equal(
+      snapshot.validationProofRecord?.rewardPayoutStaleExecutingCount,
+      1,
+    );
+    assert.equal(
+      snapshot.validationProofRecord
+        ?.rewardPayoutStaleExecutingWithoutTxHashCount,
+      1,
+    );
+    assert.equal(
+      snapshot.validationProofRecord?.rewardPayoutArtifactPath,
+      "validation-rehearsal/prop_staging_complete/reward-payout-summary.json",
+    );
+    assert.equal(validationProofGate?.status, "blocked");
+    assert.deepEqual(validationProofGate?.blockingDependencies, [
+      "validation_proof_reward_payout_incomplete",
+    ]);
+    assert.equal(snapshot.releaseReadiness.status, "blocked");
+    assert.equal(
+      snapshot.releaseReadiness.blockingDependencies.includes(
+        "validation_proof_reward_payout_incomplete",
+      ),
+      true,
+    );
+    assert.equal(snapshot.operatorSummary.focusArea, "validation-proof");
+  });
+});
+
+it("marks non-local release readiness ready when external proof and reward payout follow-through are both complete", async () => {
+  const monitoring = createMonitoringForContractTests({
+    proofRecords: {
+      async getLatestProof() {
+        return {
+          environment: "staging",
+          chainId: 8453,
+          propositionId: "prop_staging_complete",
+          proofComplete: true,
+          failures: [],
+          releaseReadinessStatus: "ready",
+          releaseBlockingDependencies: [],
+          validationRehearsalStatus: "ready",
+          validationCurrentStepId: null,
+          validationCurrentStepStatus: null,
+          completedStepCount: 5,
+          remainingStepCount: 0,
+          latestCheckpointStepId: "projection_and_settlement",
+          latestCheckpointStatus: "complete",
+          latestCheckpointAt: "2026-06-07T00:35:00.000Z",
+          publicSettledResultVisible: true,
+          publicIntegrityOverviewVisible: true,
+          rewardPayoutLedgerEntryCount: 2,
+          rewardPayoutRecordCount: 2,
+          rewardPayoutFinalizedWithoutPayoutCount: 0,
+          rewardPayoutExecutingWithoutTxHashCount: 0,
+          rewardPayoutStaleExecutingCount: 0,
+          rewardPayoutStaleExecutingWithoutTxHashCount: 0,
+          rewardPayoutStaleExecutingAwaitingConfirmationCount: 0,
+          rewardPayoutCompletedWithExecutionTxHashCount: 2,
+          rewardPayoutStatusCounts: {
+            requested: 0,
+            approved: 0,
+            executing: 0,
+            completed: 2,
+            failed: 0,
+            cancelled: 0,
+            none: 0,
+          },
+          summaryArtifactPath: "validation-rehearsal/prop_staging_complete/proof-summary.json",
+          evidenceArtifactPath: "validation-rehearsal/prop_staging_complete/evidence-bundle.json",
+          rewardPayoutArtifactPath:
+            "validation-rehearsal/prop_staging_complete/reward-payout-summary.json",
+          publicResultArtifactPath:
+            "validation-rehearsal/prop_staging_complete/public-settled-result.json",
+          publicIntegrityArtifactPath:
+            "validation-rehearsal/prop_staging_complete/public-integrity-overview.json",
+          note: "staging clean VM proof with payout closure",
+          recordedByUserId: "operator_validation_chain",
+          checkedAt: "2026-06-07T00:35:00.000Z",
+          recordedAt: "2026-06-07T00:36:00.000Z",
+        };
+      },
+    },
+  });
+
+  const snapshot = await monitoring.getRuntimeContract();
+  const validationProofGate = snapshot.releaseChecklist.find(
+    (item) => item.id === "validation-proof",
+  );
+
+  assert.equal(snapshot.validationProofRecord?.proofComplete, true);
+  assert.equal(snapshot.validationProofRecord?.rewardPayoutStaleExecutingCount, 0);
+  assert.equal(
+    snapshot.validationProofRecord?.rewardPayoutArtifactPath,
+    "validation-rehearsal/prop_staging_complete/reward-payout-summary.json",
+  );
+  assert.equal(validationProofGate?.status, "ready");
+  assert.deepEqual(validationProofGate?.blockingDependencies, []);
+  assert.equal(snapshot.releaseReadiness.status, "ready");
+  assert.deepEqual(snapshot.releaseReadiness.blockingDependencies, []);
+  assert.equal(snapshot.operatorSummary.focusArea, "healthy");
 });

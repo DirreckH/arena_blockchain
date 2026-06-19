@@ -25,6 +25,7 @@ import { DispatchTaskRepository } from "../repositories/dispatch-task.repository
 import { PropositionRepository } from "../repositories/proposition.repository";
 import { assertDispatchTaskTransition } from "../state-machines/dispatch-task-state.machine";
 import { toDate } from "../arena.utils";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 import { ReputationService } from "./reputation.service";
 import { TagService } from "./tag.service";
 
@@ -40,6 +41,7 @@ export class DispatchTaskService {
     private readonly ids: ArenaIdService,
     private readonly propositions: PropositionRepository,
     private readonly tasks: DispatchTaskRepository,
+    private readonly userIdentity: ArenaUserIdentityService,
     private readonly reputation: ReputationService,
     private readonly tags: TagService,
   ) {}
@@ -49,6 +51,7 @@ export class DispatchTaskService {
     db?: ArenaDbClient,
   ): Promise<DispatchTask> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       const proposition = await this.propositions.findById(
         input.propositionId,
         tx,

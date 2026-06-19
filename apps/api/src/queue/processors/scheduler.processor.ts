@@ -5,6 +5,7 @@ import { PinoLogger } from "nestjs-pino";
 import type { ValidationChainCommandJobPayload } from "../../arena/validation-chain/validation-chain.types";
 import { DispatchTaskExpiryAutomationService } from "../../arena/services/dispatch-task-expiry-automation.service";
 import { PropositionLifecycleAutomationService } from "../../arena/services/proposition-lifecycle-automation.service";
+import { RewardPayoutAutomationService } from "../../arena/services/reward-payout-automation.service";
 import { RequesterComparisonSetDeliveryAutomationService } from "../../arena/services/requester-comparison-set-delivery-automation.service";
 import { ValidationChainAlertService } from "../../arena/validation-chain/validation-chain-alert.service";
 import { ValidationChainCommandRuntimeService } from "../../arena/validation-chain/validation-chain-command-runtime.service";
@@ -12,6 +13,7 @@ import { ValidationChainSyncWorker } from "../../arena/validation-chain/validati
 import {
   DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
   PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+  REWARD_PAYOUT_AUTOMATION_JOB,
   REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
   SCHEDULER_HEARTBEAT_JOB,
   SCHEDULER_QUEUE,
@@ -32,6 +34,7 @@ export class SchedulerQueueProcessor extends WorkerHost {
     private readonly propositionLifecycle: PropositionLifecycleAutomationService,
     private readonly requesterComparisonSetDeliveryAutomation: RequesterComparisonSetDeliveryAutomationService,
     private readonly dispatchTaskExpiryAutomation: DispatchTaskExpiryAutomationService,
+    private readonly rewardPayoutAutomation: RewardPayoutAutomationService,
     private readonly validationChainAlerts: ValidationChainAlertService,
     private readonly workerHeartbeat: SchedulerWorkerHeartbeatService,
   ) {
@@ -123,6 +126,23 @@ export class SchedulerQueueProcessor extends WorkerHost {
       return {
         processedAt: new Date().toISOString(),
         jobName: DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
+        processedCount: String(result.processedCount),
+      };
+    }
+
+    if (job.name === REWARD_PAYOUT_AUTOMATION_JOB) {
+      const requestedAt =
+        typeof job.data.requestedAt === "string" && job.data.requestedAt.length > 0
+          ? job.data.requestedAt
+          : new Date().toISOString();
+      const result = await this.rewardPayoutAutomation.runDuePayouts({
+        now: requestedAt,
+      });
+      await this.workerHeartbeat.recordJobProcessed(job.name);
+
+      return {
+        processedAt: new Date().toISOString(),
+        jobName: REWARD_PAYOUT_AUTOMATION_JOB,
         processedCount: String(result.processedCount),
       };
     }

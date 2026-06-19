@@ -10,6 +10,7 @@ import {
 } from "../../src/queue/queue-client.module";
 import {
   PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+  REWARD_PAYOUT_AUTOMATION_JOB,
   REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
 } from "../../src/queue/queue.constants";
 import { AppQueueService } from "../../src/queue/queue.service";
@@ -19,10 +20,20 @@ const DISPATCH_TASK_EXPIRY_AUTOMATION_JOB =
   "automation.dispatch-task-expiry";
 
 class FakeLogger {
+  readonly errorCalls: Array<{
+    bindings: Record<string, unknown> | undefined;
+    message: string | undefined;
+  }> = [];
+
   setContext(): void {}
   info(): void {}
   warn(): void {}
-  error(): void {}
+  error(
+    bindings?: Record<string, unknown>,
+    message?: string,
+  ): void {
+    this.errorCalls.push({ bindings, message });
+  }
   debug(): void {}
 }
 
@@ -193,16 +204,41 @@ class FakeDispatchTaskExpiryAutomationService {
   }
 }
 
+class FakeRewardPayoutAutomationService {
+  readonly calls: Array<Record<string, unknown>> = [];
+
+  async runDuePayouts(input: { now?: string } = {}) {
+    this.calls.push({ ...input });
+    return {
+      processedAt: new Date().toISOString(),
+      processedCount: 0,
+      items: [],
+    };
+  }
+}
+
 class FakeValidationChainAlertService {
-  async runHealthCheck(): Promise<void> {}
+  runHealthCheckCalls = 0;
+  runHealthCheckError?: Error;
+
+  async runHealthCheck(): Promise<void> {
+    this.runHealthCheckCalls += 1;
+    if (this.runHealthCheckError) {
+      throw this.runHealthCheckError;
+    }
+  }
   async recordCommandRetryExhausted(): Promise<void> {}
 }
 
 class FakeRuntimeContractAlertService {
   runHealthCheckCalls = 0;
+  runHealthCheckError?: Error;
 
   async runHealthCheck(): Promise<void> {
     this.runHealthCheckCalls += 1;
+    if (this.runHealthCheckError) {
+      throw this.runHealthCheckError;
+    }
   }
 }
 
@@ -253,6 +289,7 @@ function createSchedulerProcessor(input: {
   propositionLifecycle?: FakePropositionLifecycleAutomationService;
   requesterDelivery?: FakeRequesterComparisonSetDeliveryAutomationService;
   dispatchTaskExpiry?: FakeDispatchTaskExpiryAutomationService;
+  rewardPayoutAutomation?: FakeRewardPayoutAutomationService;
   workerHeartbeat?: FakeSchedulerWorkerHeartbeatService;
 }) {
   const propositionLifecycle =
@@ -262,6 +299,8 @@ function createSchedulerProcessor(input: {
     new FakeRequesterComparisonSetDeliveryAutomationService();
   const dispatchTaskExpiry =
     input.dispatchTaskExpiry ?? new FakeDispatchTaskExpiryAutomationService();
+  const rewardPayoutAutomation =
+    input.rewardPayoutAutomation ?? new FakeRewardPayoutAutomationService();
   const workerHeartbeat =
     input.workerHeartbeat ?? new FakeSchedulerWorkerHeartbeatService();
   const sharedArgs = [
@@ -276,11 +315,13 @@ function createSchedulerProcessor(input: {
       ? new (SchedulerQueueProcessor as any)(
           ...sharedArgs,
           dispatchTaskExpiry as never,
+          rewardPayoutAutomation as never,
           new FakeValidationChainAlertService() as never,
           workerHeartbeat as never,
         )
       : new (SchedulerQueueProcessor as any)(
           ...sharedArgs,
+          rewardPayoutAutomation as never,
           new FakeValidationChainAlertService() as never,
           workerHeartbeat as never,
         );
@@ -290,6 +331,7 @@ function createSchedulerProcessor(input: {
     propositionLifecycle,
     requesterDelivery,
     dispatchTaskExpiry,
+    rewardPayoutAutomation,
     workerHeartbeat,
   };
 }
@@ -366,6 +408,27 @@ describe("Scheduler queue automations", () => {
     }
 
     await (service as any).enqueueDispatchTaskExpiryAutomation();
+
+    assert.equal(schedulerQueue.addCalls.length, 2);
+    assert.equal(retainedJob?.removed, true);
+    assert.equal(String(schedulerQueue.addCalls[1]?.opts.jobId ?? ""), jobId);
+  });
+
+  it("allows re-enqueue after a completed reward payout automation job is retained", async () => {
+    const { service, schedulerQueue } = createQueueServiceHarness();
+
+    await (service as any).enqueueRewardPayoutAutomation();
+
+    const jobId = String(schedulerQueue.addCalls[0]?.opts.jobId ?? "");
+    assert.equal(jobId, "automation.reward-payout");
+
+    const retainedJob = schedulerQueue.jobs.get(jobId);
+    assert.equal(retainedJob?.removed, false);
+    if (retainedJob) {
+      retainedJob.state = "completed";
+    }
+
+    await (service as any).enqueueRewardPayoutAutomation();
 
     assert.equal(schedulerQueue.addCalls.length, 2);
     assert.equal(retainedJob?.removed, true);
@@ -551,6 +614,47 @@ describe("Scheduler queue automations", () => {
     assert.equal(queueCalls.length, 1);
   });
 
+  it("enqueues reward payout automation from the scheduler cron entrypoint", async () => {
+    const queueCalls: Array<Record<string, unknown>> = [];
+    const queueService = {
+      async enqueuePropositionLifecycleAutomation() {
+        throw new Error("not expected");
+      },
+      async enqueueRequesterComparisonSetDeliveryAutomation() {
+        throw new Error("not expected");
+      },
+      async enqueueDispatchTaskExpiryAutomation() {
+        throw new Error("not expected");
+      },
+      async enqueueRewardPayoutAutomation() {
+        const snapshot = {
+          queue: "scheduler",
+          name: REWARD_PAYOUT_AUTOMATION_JOB,
+          jobId: "automation.reward-payout",
+        };
+        queueCalls.push(snapshot);
+        return snapshot;
+      },
+      async enqueueSchedulerHeartbeat() {
+        throw new Error("not expected");
+      },
+      async enqueueValidationChainSync() {
+        throw new Error("not expected");
+      },
+    };
+    const service = new SchedulerService(
+      { validationSyncPollIntervalMs: 60_000 } as never,
+      queueService as never,
+      new FakeValidationChainAlertService() as never,
+      new FakeRuntimeContractAlertService() as never,
+      new FakeLogger() as never,
+    );
+
+    await (service as any).runRewardPayoutAutomation();
+
+    assert.equal(queueCalls.length, 1);
+  });
+
   it("runs runtime contract audit checks from the scheduler cron entrypoint", async () => {
     const runtimeContractAlerts = new FakeRuntimeContractAlertService();
     const service = new SchedulerService(
@@ -577,6 +681,108 @@ describe("Scheduler queue automations", () => {
     await service.runRuntimeContractHealthCheck();
 
     assert.equal(runtimeContractAlerts.runHealthCheckCalls, 1);
+  });
+
+  it("runs validation chain health checks from the scheduler cron entrypoint", async () => {
+    const validationChainAlerts = new FakeValidationChainAlertService();
+    const service = new SchedulerService(
+      { validationSyncPollIntervalMs: 60_000 } as never,
+      {
+        async enqueuePropositionLifecycleAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueRequesterComparisonSetDeliveryAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueSchedulerHeartbeat() {
+          throw new Error("not expected");
+        },
+        async enqueueValidationChainSync() {
+          throw new Error("not expected");
+        },
+      } as never,
+      validationChainAlerts as never,
+      new FakeRuntimeContractAlertService() as never,
+      new FakeLogger() as never,
+    );
+
+    await service.runValidationChainHealthCheck();
+
+    assert.equal(validationChainAlerts.runHealthCheckCalls, 1);
+  });
+
+  it("logs and swallows validation chain health check failures", async () => {
+    const validationChainAlerts = new FakeValidationChainAlertService();
+    const logger = new FakeLogger();
+    validationChainAlerts.runHealthCheckError = new Error(
+      "validation chain backlog is stale",
+    );
+    const service = new SchedulerService(
+      { validationSyncPollIntervalMs: 60_000 } as never,
+      {
+        async enqueuePropositionLifecycleAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueRequesterComparisonSetDeliveryAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueSchedulerHeartbeat() {
+          throw new Error("not expected");
+        },
+        async enqueueValidationChainSync() {
+          throw new Error("not expected");
+        },
+      } as never,
+      validationChainAlerts as never,
+      new FakeRuntimeContractAlertService() as never,
+      logger as never,
+    );
+
+    await service.runValidationChainHealthCheck();
+
+    assert.equal(validationChainAlerts.runHealthCheckCalls, 1);
+    assert.equal(logger.errorCalls.length, 1);
+    assert.deepEqual(logger.errorCalls[0], {
+      bindings: { error: "validation chain backlog is stale" },
+      message: "Failed to run validation-chain health check",
+    });
+  });
+
+  it("logs and swallows runtime contract health check failures", async () => {
+    const runtimeContractAlerts = new FakeRuntimeContractAlertService();
+    const logger = new FakeLogger();
+    runtimeContractAlerts.runHealthCheckError = new Error(
+      "runtime contract polling failed",
+    );
+    const service = new SchedulerService(
+      { validationSyncPollIntervalMs: 60_000 } as never,
+      {
+        async enqueuePropositionLifecycleAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueRequesterComparisonSetDeliveryAutomation() {
+          throw new Error("not expected");
+        },
+        async enqueueSchedulerHeartbeat() {
+          throw new Error("not expected");
+        },
+        async enqueueValidationChainSync() {
+          throw new Error("not expected");
+        },
+      } as never,
+      new FakeValidationChainAlertService() as never,
+      runtimeContractAlerts as never,
+      logger as never,
+    );
+
+    await service.runRuntimeContractHealthCheck();
+
+    assert.equal(runtimeContractAlerts.runHealthCheckCalls, 1);
+    assert.equal(logger.errorCalls.length, 1);
+    assert.deepEqual(logger.errorCalls[0], {
+      bindings: { error: "runtime contract polling failed" },
+      message: "Failed to run runtime-contract health check",
+    });
   });
 
   it("processes a queued proposition lifecycle automation job", async () => {
@@ -660,5 +866,31 @@ describe("Scheduler queue automations", () => {
     ]);
     assert.equal(result?.processedAt !== undefined, true);
     assert.equal(result?.jobName, DISPATCH_TASK_EXPIRY_AUTOMATION_JOB);
+  });
+
+  it("processes a queued reward payout automation job", async () => {
+    const {
+      processor,
+      rewardPayoutAutomation,
+      workerHeartbeat,
+    } = createSchedulerProcessor({});
+
+    const result = await processor.process({
+      id: "automation_4",
+      name: REWARD_PAYOUT_AUTOMATION_JOB,
+      data: {
+        requestedAt: "2026-05-25T00:00:00.000Z",
+      },
+      opts: { attempts: 3 },
+      attemptsMade: 1,
+    } as never);
+
+    assert.equal(rewardPayoutAutomation.calls.length, 1);
+    assert.equal(typeof rewardPayoutAutomation.calls[0]?.now, "string");
+    assert.deepEqual(workerHeartbeat.processedJobNames, [
+      REWARD_PAYOUT_AUTOMATION_JOB,
+    ]);
+    assert.equal(result?.processedAt !== undefined, true);
+    assert.equal(result?.jobName, REWARD_PAYOUT_AUTOMATION_JOB);
   });
 });

@@ -27,6 +27,7 @@ import {
   assertNonNegativeIntegerString,
   toDate,
 } from "../arena.utils";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 
 @Injectable()
 export class BetService {
@@ -37,6 +38,7 @@ export class BetService {
     private readonly propositions: PropositionRepository,
     private readonly markets: MarketRepository,
     private readonly bets: BetRepository,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async placeBet(
@@ -44,6 +46,7 @@ export class BetService {
     db?: ArenaDbClient,
   ): Promise<Bet> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(input.userId, undefined, tx);
       assertBinaryOption(input.selectedOption, "selectedOption");
       assertNonNegativeIntegerString(input.stakeAmount, "stakeAmount");
 

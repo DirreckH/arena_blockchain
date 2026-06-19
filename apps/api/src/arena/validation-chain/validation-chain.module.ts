@@ -1,12 +1,16 @@
 import { Module } from "@nestjs/common";
 
 import { ArenaIdService } from "../arena-id.service";
+import { ArenaUserRepository } from "../repositories/arena-user.repository";
 import { BetRepository } from "../repositories/bet.repository";
 import { InternalAuditEventRepository } from "../repositories/internal-audit-event.repository";
 import { MarketRepository } from "../repositories/market.repository";
 import { PropositionRepository } from "../repositories/proposition.repository";
 import { SystemKeyValueRepository } from "../repositories/system-key-value.repository";
+import { ArenaUserIdentityService } from "../services/arena-user-identity.service";
 import { InternalAuditService } from "../services/internal-audit.service";
+import { OpsAlertNotifierService } from "../services/ops-alert-notifier.service";
+import { ValidationProofRecordService } from "../services/validation-proof-record.service";
 import { ValidationRehearsalCheckpointService } from "../services/validation-rehearsal-checkpoint.service";
 import { ValidationChainCursorRepository } from "../repositories/validation-chain-cursor.repository";
 import { ValidationChainEventRepository } from "../repositories/validation-chain-event.repository";
@@ -30,18 +34,24 @@ import { QueueClientModule } from "../../queue/queue-client.module";
   providers: [
     ArenaIdService,
     PropositionRepository,
+    ArenaUserRepository,
     SystemKeyValueRepository,
     MarketRepository,
     BetRepository,
     InternalAuditEventRepository,
+    ArenaUserIdentityService,
     InternalAuditService,
+    OpsAlertNotifierService,
     ValidationChainIdService,
     ValidationChainAlertService,
+    OpsAlertNotifierService,
+    ValidationProofRecordService,
     ValidationChainBetReconciliationService,
     ValidationChainCommandRuntimeService,
     ValidationChainCommandRecoveryService,
     ValidationChainManualSyncService,
     ValidationChainProjectionReplayService,
+    ValidationProofRecordService,
     ValidationRehearsalCheckpointService,
     ValidationChainContractService,
     ValidationChainEventRepository,

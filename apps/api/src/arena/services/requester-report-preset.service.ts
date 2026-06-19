@@ -24,7 +24,6 @@ export interface RequesterReportPresetConfig {
 
 export interface RequesterReportPresetViewModel {
   presetId: string;
-  userId: string;
   name: string;
   description: string | null;
   config: RequesterReportPresetConfig;
@@ -34,14 +33,12 @@ export interface RequesterReportPresetViewModel {
 
 export interface RequesterReportPresetListItemViewModel {
   presetId: string;
-  userId: string;
   name: string;
   description: string | null;
   updatedAt: string;
 }
 
 export interface RequesterReportPresetListViewModel {
-  userId: string;
   totalCount: number;
   items: RequesterReportPresetListItemViewModel[];
 }
@@ -67,12 +64,13 @@ export interface UpdateRequesterReportPresetInput {
 }
 
 export interface DeleteRequesterReportPresetResult {
-  userId: string;
   presetId: string;
   deleted: true;
 }
 
-type StoredRequesterReportPresetRecord = RequesterReportPresetViewModel;
+type StoredRequesterReportPresetRecord = RequesterReportPresetViewModel & {
+  userId: string;
+};
 type StoredRequesterComparisonSetReference = {
   comparisonSetId: string;
   presetIds: string[];
@@ -192,6 +190,19 @@ function parseStoredRequesterReportPresets(
     );
 }
 
+function toPublicReportPreset(
+  record: StoredRequesterReportPresetRecord,
+): RequesterReportPresetViewModel {
+  return {
+    presetId: record.presetId,
+    name: record.name,
+    description: record.description,
+    config: cloneValue(record.config),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
 function parseStoredComparisonSetReferences(
   value: unknown,
 ): StoredRequesterComparisonSetReference[] {
@@ -243,7 +254,6 @@ export class RequesterReportPresetService {
     const presets = await this.listStoredPresets(userId, db);
 
     return {
-      userId,
       totalCount: presets.length,
       items: presets.map((preset) => this.toListItem(preset)),
     };
@@ -270,7 +280,7 @@ export class RequesterReportPresetService {
     const nextPresets = [preset, ...currentPresets];
     await this.persistPresets(userId, nextPresets, db);
 
-    return cloneValue(preset);
+    return toPublicReportPreset(preset);
   }
 
   async getReportPresetForUser(
@@ -286,7 +296,7 @@ export class RequesterReportPresetService {
       );
     }
 
-    return cloneValue(preset);
+    return toPublicReportPreset(preset);
   }
 
   async updateReportPresetForUser(
@@ -321,7 +331,7 @@ export class RequesterReportPresetService {
     );
     await this.persistPresets(userId, nextPresets, db);
 
-    return cloneValue(updatedPreset);
+    return toPublicReportPreset(updatedPreset);
   }
 
   async deleteReportPresetForUser(
@@ -351,7 +361,6 @@ export class RequesterReportPresetService {
     await this.persistPresets(userId, nextPresets, db);
 
     return {
-      userId,
       presetId,
       deleted: true,
     };
@@ -425,7 +434,6 @@ export class RequesterReportPresetService {
   ): RequesterReportPresetListItemViewModel {
     return {
       presetId: preset.presetId,
-      userId: preset.userId,
       name: preset.name,
       description: preset.description,
       updatedAt: preset.updatedAt,

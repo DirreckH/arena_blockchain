@@ -75,6 +75,12 @@ test("market public snapshot exposes only progress data and view model hides pay
   assert.equal(view.publicProgress.progress.currentEffectiveSample, 2);
   assert.equal("odds" in view, false);
   assert.equal("totalPool" in view, false);
+  assert.equal("latestResponseStatus" in view, false);
+  assert.equal("rewardStatus" in view, false);
+  assert.equal("rewardPendingAmount" in view, false);
+  assert.equal("rewardFinalAmount" in view, false);
+  assert.equal("reviewOutcomeByOption" in view, false);
+  assert.equal("marketBias" in view, false);
   assert.equal(ensuredMarket.status, "pre_live");
 });
 

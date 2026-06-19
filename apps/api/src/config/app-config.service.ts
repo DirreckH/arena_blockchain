@@ -3,6 +3,10 @@ import { ConfigService } from "@nestjs/config";
 
 import { SystemRole, expandSystemRoles } from "@arena/shared";
 
+import type {
+  ArenaRateLimitBucket,
+  ArenaResolvedRateLimitPolicy,
+} from "../common/decorators/arena-rate-limit.decorator";
 import type { EnvironmentVariables } from "./env.schema";
 
 @Injectable()
@@ -115,33 +119,157 @@ export class AppConfigService {
     });
   }
 
-  get requesterDeliveryWebhookBearerTokens(): Record<string, string> {
-    const rawValue = this.configService.get(
-      "REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS",
+  get rewardPayoutAssetSymbol(): string {
+    return this.configService.get("ARENA_REWARD_PAYOUT_ASSET_SYMBOL", {
+      infer: true,
+    });
+  }
+
+  get rewardPayoutErc20Address(): string {
+    return this.configService.get("ARENA_REWARD_PAYOUT_ERC20_ADDRESS", {
+      infer: true,
+    });
+  }
+
+  get rewardPayoutOperatorPrivateKey(): string {
+    return this.configService.get(
+      "ARENA_REWARD_PAYOUT_OPERATOR_PRIVATE_KEY",
       {
         infer: true,
       },
     );
+  }
 
-    return rawValue
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .reduce<Record<string, string>>((tokens, entry) => {
-        const separatorIndex = entry.indexOf(":");
-        if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
-          return tokens;
-        }
+  get rewardPayoutConfirmationCount(): number {
+    return this.configService.get(
+      "ARENA_REWARD_PAYOUT_CONFIRMATION_COUNT",
+      {
+        infer: true,
+      },
+    );
+  }
 
-        const key = entry.slice(0, separatorIndex).trim();
-        const token = entry.slice(separatorIndex + 1).trim();
-        if (key.length === 0 || token.length === 0) {
-          return tokens;
-        }
+  get opsAlertWebhookTargets(): Record<string, string> {
+    return this.parseKeyedMappings("ARENA_OPS_ALERT_WEBHOOK_TARGETS", "=");
+  }
 
-        tokens[key] = token;
-        return tokens;
-      }, {});
+  get opsAlertWebhookBearerTokens(): Record<string, string> {
+    return this.parseKeyedMappings("ARENA_OPS_ALERT_WEBHOOK_BEARER_TOKENS", ":");
+  }
+
+  get opsAlertWebhookTimeoutMs(): number {
+    return (
+      this.configService.get("ARENA_OPS_ALERT_WEBHOOK_TIMEOUT_MS", {
+        infer: true,
+      }) ?? 5000
+    );
+  }
+
+  resolveArenaRateLimit(
+    bucket: ArenaRateLimitBucket,
+  ): ArenaResolvedRateLimitPolicy {
+    switch (bucket) {
+      case "auth_challenge":
+        return {
+          bucket,
+          keyStrategy: "client",
+          limit: this.configService.get("ARENA_RATE_LIMIT_AUTH_CHALLENGE_LIMIT", {
+            infer: true,
+          }),
+          windowSeconds: this.configService.get(
+            "ARENA_RATE_LIMIT_AUTH_CHALLENGE_WINDOW_SECONDS",
+            {
+              infer: true,
+            },
+          ),
+        };
+      case "auth_verify":
+        return {
+          bucket,
+          keyStrategy: "client",
+          limit: this.configService.get("ARENA_RATE_LIMIT_AUTH_VERIFY_LIMIT", {
+            infer: true,
+          }),
+          windowSeconds: this.configService.get(
+            "ARENA_RATE_LIMIT_AUTH_VERIFY_WINDOW_SECONDS",
+            {
+              infer: true,
+            },
+          ),
+        };
+      case "adjudication_response_submit":
+        return {
+          bucket,
+          keyStrategy: "user",
+          limit: this.configService.get(
+            "ARENA_RATE_LIMIT_ADJUDICATION_RESPONSE_LIMIT",
+            {
+              infer: true,
+            },
+          ),
+          windowSeconds: this.configService.get(
+            "ARENA_RATE_LIMIT_ADJUDICATION_RESPONSE_WINDOW_SECONDS",
+            {
+              infer: true,
+            },
+          ),
+        };
+      case "validation_bet_prepare":
+        return {
+          bucket,
+          keyStrategy: "user",
+          limit: this.configService.get(
+            "ARENA_RATE_LIMIT_VALIDATION_PREPARE_LIMIT",
+            {
+              infer: true,
+            },
+          ),
+          windowSeconds: this.configService.get(
+            "ARENA_RATE_LIMIT_VALIDATION_PREPARE_WINDOW_SECONDS",
+            {
+              infer: true,
+            },
+          ),
+        };
+      case "validation_bet_confirm":
+        return {
+          bucket,
+          keyStrategy: "user",
+          limit: this.configService.get(
+            "ARENA_RATE_LIMIT_VALIDATION_CONFIRM_LIMIT",
+            {
+              infer: true,
+            },
+          ),
+          windowSeconds: this.configService.get(
+            "ARENA_RATE_LIMIT_VALIDATION_CONFIRM_WINDOW_SECONDS",
+            {
+              infer: true,
+            },
+          ),
+        };
+      case "internal":
+        return {
+          bucket,
+          keyStrategy: "user",
+          limit: this.configService.get("ARENA_RATE_LIMIT_INTERNAL_LIMIT", {
+            infer: true,
+          }),
+          windowSeconds: this.configService.get(
+            "ARENA_RATE_LIMIT_INTERNAL_WINDOW_SECONDS",
+            {
+              infer: true,
+            },
+          ),
+        };
+    }
+  }
+
+  get requesterDeliveryWebhookBearerTokens(): Record<string, string> {
+    return this.parseKeyedMappings(
+      "REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS",
+      ":",
+    );
   }
 
   get operatorWalletAddresses(): string[] {
@@ -186,5 +314,36 @@ export class AppConfigService {
       .split(",")
       .map((value) => value.trim().toLowerCase())
       .filter((value) => value.length > 0);
+  }
+
+  private parseKeyedMappings<
+    TKey extends keyof Pick<
+      EnvironmentVariables,
+      | "ARENA_OPS_ALERT_WEBHOOK_TARGETS"
+      | "ARENA_OPS_ALERT_WEBHOOK_BEARER_TOKENS"
+      | "REQUESTER_DELIVERY_WEBHOOK_BEARER_TOKENS"
+    >,
+  >(key: TKey, separator: ":" | "="): Record<string, string> {
+    const rawValue = this.configService.get(key, { infer: true }) ?? "";
+
+    return rawValue
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .reduce<Record<string, string>>((tokens, entry) => {
+        const separatorIndex = entry.indexOf(separator);
+        if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
+          return tokens;
+        }
+
+        const mappingKey = entry.slice(0, separatorIndex).trim();
+        const value = entry.slice(separatorIndex + 1).trim();
+        if (mappingKey.length === 0 || value.length === 0) {
+          return tokens;
+        }
+
+        tokens[mappingKey] = value;
+        return tokens;
+      }, {});
   }
 }

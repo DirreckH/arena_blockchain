@@ -15,6 +15,7 @@ import {
   AUTH_PLACEHOLDER_JOB,
   DISPATCH_TASK_EXPIRY_AUTOMATION_JOB,
   PROPOSITION_LIFECYCLE_AUTOMATION_JOB,
+  REWARD_PAYOUT_AUTOMATION_JOB,
   REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB,
   SCHEDULER_HEARTBEAT_JOB,
   SCHEDULER_QUEUE,
@@ -52,6 +53,10 @@ const DISPATCH_TASK_EXPIRY_AUTOMATION_JOB_ID = buildSchedulerJobId(
 );
 const REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID =
   buildSchedulerJobId("automation", "requester-comparison-set-delivery");
+const REWARD_PAYOUT_AUTOMATION_JOB_ID = buildSchedulerJobId(
+  "automation",
+  "reward-payout",
+);
 
 function buildSchedulerJobId(...parts: Array<string>): string {
   return parts
@@ -218,6 +223,33 @@ export class AppQueueService {
       SAFE_RETRY_JOB_POLICY,
       {
         jobId: REQUESTER_COMPARISON_SET_DELIVERY_AUTOMATION_JOB_ID,
+      },
+    );
+
+    return {
+      ...snapshot,
+      dedupeStatus,
+    };
+  }
+
+  async enqueueRewardPayoutAutomation(
+    payload: Record<string, unknown> = {},
+  ): Promise<SchedulerEnqueueSnapshot> {
+    const dedupeStatus = await this.prepareSchedulerJob(
+      REWARD_PAYOUT_AUTOMATION_JOB_ID,
+    );
+
+    const snapshot = await this.enqueueJob(
+      this.schedulerQueue,
+      SCHEDULER_QUEUE,
+      REWARD_PAYOUT_AUTOMATION_JOB,
+      {
+        requestedAt: new Date().toISOString(),
+        ...payload,
+      },
+      SAFE_RETRY_JOB_POLICY,
+      {
+        jobId: REWARD_PAYOUT_AUTOMATION_JOB_ID,
       },
     );
 

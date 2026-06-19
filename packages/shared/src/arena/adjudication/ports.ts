@@ -11,6 +11,7 @@ import type {
   Response,
   ResponseReview,
   RewardLedger,
+  RewardPayout,
 } from "../entities.js";
 import type {
   ReputationLevel,
@@ -167,6 +168,7 @@ export interface BuildAdjudicationTaskViewModelInput {
   task: DispatchTask;
   latestReview: ResponseReview | null;
   rewardLedger?: RewardLedgerAdjudicationSnapshot | null;
+  rewardPayout?: RewardPayout | null;
   publicProgress: PublicProgressViewModel;
   now: string;
 }

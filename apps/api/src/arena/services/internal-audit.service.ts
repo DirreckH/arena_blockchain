@@ -11,6 +11,7 @@ import type {
   InternalAuditEventListPageViewModel,
   InternalAuditEventViewModel,
 } from "../internal-ops.types";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 
 const toIso = (value: Date): string => value.toISOString();
 const DEFAULT_OPS_PAGE_LIMIT = 25;
@@ -41,6 +42,7 @@ export class InternalAuditService {
     private readonly prisma: PrismaService,
     private readonly ids: ArenaIdService,
     private readonly audits: InternalAuditEventRepository,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async record(
@@ -57,6 +59,14 @@ export class InternalAuditService {
     db?: ArenaDbClient,
   ): Promise<InternalAuditEventViewModel> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      if (input.actorUserId) {
+        await this.userIdentity.ensureUserExists(
+          input.actorUserId,
+          undefined,
+          tx,
+        );
+      }
+
       const event = await this.audits.create(
         {
           id: this.ids.next("internal_audit"),

@@ -3,13 +3,19 @@ import type { AdjudicationTaskViewModel } from "@arena/shared";
 import { buildAdjudicationTaskViewModel, buildPublicProgressViewModel } from "@arena/shared";
 
 import { ArenaNotFoundError, ArenaValidationError } from "../arena.errors";
-import { toSharedDispatchTask, toSharedProposition, toSharedReview } from "../arena-view.mapper";
+import {
+  toSharedDispatchTask,
+  toSharedProposition,
+  toSharedReview,
+  toSharedRewardPayout,
+} from "../arena-view.mapper";
 import { DispatchTaskRepository } from "../repositories/dispatch-task.repository";
 import { EffectiveSampleCounterRepository } from "../repositories/effective-sample-counter.repository";
 import { PropositionRepository } from "../repositories/proposition.repository";
 import { ResponseRepository } from "../repositories/response.repository";
 import { ResponseReviewRepository } from "../repositories/response-review.repository";
 import { RewardLedgerRepository } from "../repositories/reward-ledger.repository";
+import { RewardPayoutRepository } from "../repositories/reward-payout.repository";
 
 @Injectable()
 export class AdjudicationViewService {
@@ -20,6 +26,7 @@ export class AdjudicationViewService {
     private readonly responses: ResponseRepository,
     private readonly reviews: ResponseReviewRepository,
     private readonly rewards: RewardLedgerRepository,
+    private readonly payouts?: RewardPayoutRepository,
   ) {}
 
   async listTasksForUser(userId: string): Promise<AdjudicationTaskViewModel[]> {
@@ -65,6 +72,10 @@ export class AdjudicationViewService {
       proposition.id,
       userId,
     );
+    const rewardPayout =
+      rewardLedger && this.payouts
+        ? await this.payouts.findByLedgerId(rewardLedger.id)
+        : null;
     const counter = await this.counters.findByPropositionId(proposition.id);
     const sharedProposition = toSharedProposition(proposition);
 
@@ -79,6 +90,7 @@ export class AdjudicationViewService {
             finalAmount: rewardLedger.finalAmount,
           }
         : null,
+      rewardPayout: toSharedRewardPayout(rewardPayout),
       publicProgress: buildPublicProgressViewModel({
         proposition: sharedProposition,
         reviewedCount: counter?.reviewedResponses ?? 0,

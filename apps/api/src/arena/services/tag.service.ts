@@ -18,6 +18,7 @@ import { ResponseRepository } from "../repositories/response.repository";
 import { UserReputationRepository } from "../repositories/user-reputation.repository";
 import { UserTagRepository } from "../repositories/user-tag.repository";
 import { toDate, type TimestampInput } from "../arena.utils";
+import { ArenaUserIdentityService } from "./arena-user-identity.service";
 
 const ACTIVE_TAG_VALUE = "active";
 
@@ -32,6 +33,7 @@ export class TagService {
     private readonly propositions: PropositionRepository,
     private readonly reputations: UserReputationRepository,
     private readonly tags: UserTagRepository,
+    private readonly userIdentity: ArenaUserIdentityService,
   ) {}
 
   async refreshForUser(
@@ -40,6 +42,7 @@ export class TagService {
     db?: ArenaDbClient,
   ): Promise<SharedUserTag[]> {
     return withArenaTransaction(this.prisma, db, async (tx) => {
+      await this.userIdentity.ensureUserExists(userId, undefined, tx);
       const refreshedAtDate = refreshedAt ? toDate(refreshedAt) : new Date();
       const [reputationRecord, existingTags, responses] = await Promise.all([
         this.reputations.findByUserId(userId, tx),
@@ -143,7 +146,6 @@ export class TagService {
     const tags = await this.listCurrentByUser(userId, db);
 
     return {
-      userId,
       tags: tags.map((tag) => ({
         tagKey: tag.tagKey,
         tagType: tag.tagType,

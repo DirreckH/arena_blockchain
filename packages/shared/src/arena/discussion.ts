@@ -14,7 +14,6 @@ export interface ArenaDiscussionCommentViewModel {
   id: string;
   marketId: string;
   propositionId: string;
-  userId: string;
   author: string;
   handle: string;
   tone: string;

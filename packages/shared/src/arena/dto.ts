@@ -15,6 +15,8 @@ import type {
   ResponseReviewStatus,
   RewardLedgerReasonCode,
   RewardLedgerStatus,
+  RewardPayoutMethod,
+  RewardPayoutStatus,
 } from "./enums.js";
 import type {
   Market,
@@ -339,6 +341,14 @@ export interface RespondentRewardLedgerViewModel {
   reversedAt: string | null;
   ledgerVersion: number;
   isCurrent: boolean;
+  payoutStatus: RewardPayoutStatus | null;
+  payoutMethod: RewardPayoutMethod | null;
+  payoutAmount: string | null;
+  payoutAssetSymbol: string | null;
+  payoutDestinationAddress: string | null;
+  payoutRequestedAt: string | null;
+  payoutCompletedAt: string | null;
+  payoutFailureReason: string | null;
 }
 
 export interface RespondentReputationSummaryMetricsViewModel {
@@ -352,7 +362,6 @@ export interface RespondentReputationSummaryMetricsViewModel {
 }
 
 export interface RespondentReputationSummaryViewModel {
-  userId: string;
   reputationScore: number;
   reputationLevel: ReputationLevel;
   metrics: RespondentReputationSummaryMetricsViewModel;
@@ -376,7 +385,6 @@ export interface RespondentTagSummaryTagViewModel {
 }
 
 export interface RespondentTagSummaryViewModel {
-  userId: string;
   tags: RespondentTagSummaryTagViewModel[];
 }
 
@@ -554,7 +562,6 @@ export interface RespondentResultSummaryTotalsViewModel {
 }
 
 export interface RespondentResultListViewModel {
-  userId: string;
   totals: RespondentResultSummaryTotalsViewModel;
   items: RespondentResultListItemViewModel[];
 }
@@ -673,7 +680,6 @@ export interface RespondentResultOverviewAnalyticsViewModel {
 }
 
 export interface RespondentResultOverviewViewModel {
-  userId: string;
   settledResults: RespondentResultListViewModel;
   openPositions: {
     totalCount: number;
@@ -694,7 +700,6 @@ export interface RespondentAccountRewardSummaryViewModel {
 }
 
 export interface RespondentAccountOverviewViewModel {
-  userId: string;
   rewards: RespondentRewardLedgerViewModel[];
   rewardSummary: RespondentAccountRewardSummaryViewModel;
   reputation: RespondentReputationSummaryViewModel;
@@ -786,7 +791,6 @@ export interface RespondentAccountDeveloperPreferencesViewModel {
 }
 
 export interface RespondentAccountPreferencesViewModel {
-  userId: string;
   notificationPreferences: RespondentAccountNotificationPreferencesViewModel;
   profile: RespondentAccountProfilePreferencesViewModel;
   privacy: RespondentAccountPrivacyPreferencesViewModel;
@@ -800,7 +804,7 @@ export interface RespondentAccountPreferencesViewModel {
 
 export type UpdateRespondentAccountPreferencesInput = Omit<
   RespondentAccountPreferencesViewModel,
-  "userId" | "updatedAt"
+  "updatedAt"
 >;
 
 export type RespondentAccountExportFormat = "json";
@@ -822,7 +826,6 @@ export interface RespondentAccountExportSettlementAttachmentViewModel {
 
 export interface RespondentAccountExportItemViewModel {
   exportId: string;
-  userId: string;
   status: RespondentAccountExportStatus;
   format: RespondentAccountExportFormat;
   period: RespondentAccountExportPeriod;
@@ -836,7 +839,6 @@ export interface RespondentAccountExportItemViewModel {
 
 export interface RespondentAccountExportArtifactViewModel {
   exportId: string;
-  userId: string;
   status: RespondentAccountExportStatus;
   format: RespondentAccountExportFormat;
   period: RespondentAccountExportPeriod;
@@ -852,7 +854,6 @@ export interface RespondentAccountExportArtifactViewModel {
 }
 
 export interface RespondentAccountExportListViewModel {
-  userId: string;
   totalCount: number;
   items: RespondentAccountExportItemViewModel[];
 }
@@ -928,7 +929,6 @@ export interface RespondentWatchlistItemViewModel {
 }
 
 export interface RespondentWatchlistViewModel {
-  userId: string;
   totalCount: number;
   items: RespondentWatchlistItemViewModel[];
 }
@@ -938,7 +938,6 @@ export interface UpdateRespondentWatchlistInput {
 }
 
 export interface UpdateRespondentWatchlistResultViewModel {
-  userId: string;
   marketId: string;
   propositionId: string;
   isSaved: boolean;
@@ -950,6 +949,11 @@ export type PublicDiscoveryRankingKind = "hot" | "breaking";
 export interface PublicDiscoveryCategoryViewModel {
   id: string;
   label: string;
+  // Optional explicit market id whitelist for custom capsules. When present, the
+  // ranking page filters items by intersection with these ids instead of the
+  // categoryIds-based filter. Omitted for system capsules to preserve original
+  // category-based filtering.
+  marketIds?: string[];
 }
 
 export interface PublicDiscoveryRankingItemViewModel {
@@ -1004,6 +1008,10 @@ export interface PublicLatestTopicsViewModel {
 export interface PublicCategorySidebarItemViewModel {
   label: string;
   count: string;
+  // Optional: when populated, the public CategoryDirectoryPage uses this to
+  // filter the right-side market grid when this sidebar entry is active.
+  // When omitted, the sidebar entry only highlights without filtering.
+  marketIds?: string[];
 }
 
 export interface PublicCategoryDirectoryIndexItemViewModel {
@@ -1027,7 +1035,6 @@ export interface PublicCategoryDirectoryViewModel {
 }
 
 export interface PublicRespondentLeaderboardRowViewModel {
-  userId: string;
   handle: string;
   walletShort: string;
   responseRatePercent: number;

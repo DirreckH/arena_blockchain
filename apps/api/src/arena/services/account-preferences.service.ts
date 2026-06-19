@@ -68,7 +68,6 @@ export class AccountPreferencesService {
     const preferences = mergeStoredPreferences(record?.valueJson ?? null);
 
     return {
-      userId,
       ...preferences,
       updatedAt: record?.updatedAt.toISOString() ?? null,
     };
@@ -98,7 +97,6 @@ export class AccountPreferencesService {
     );
 
     return {
-      userId,
       ...normalized,
       updatedAt: record.updatedAt.toISOString(),
     };

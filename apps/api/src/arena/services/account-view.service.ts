@@ -33,7 +33,6 @@ export class AccountViewService {
     const currentRewards = rewards.filter((reward) => reward.isCurrent);
 
     return {
-      userId,
       rewards,
       rewardSummary: {
         currentCount: currentRewards.length,

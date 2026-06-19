@@ -10,12 +10,14 @@ import {
 import { SystemRole } from "@arena/shared";
 import type { Response } from "express";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { InternalValidationChainBatchReconcileDto } from "./dto/internal-validation-chain-batch-reconcile.dto";
 import { InternalValidationChainCancelMarketDto } from "./dto/internal-validation-chain-cancel-market.dto";
 import { InternalValidationChainCommandDto } from "./dto/internal-validation-chain-command.dto";
 import { InternalValidationChainPauseDto } from "./dto/internal-validation-chain-pause.dto";
+import { InternalValidationProofRecordDto } from "./dto/internal-validation-proof-record.dto";
 import { InternalValidationRehearsalCheckpointDto } from "./dto/internal-validation-rehearsal-checkpoint.dto";
 import type { PropositionValidationRehearsalStepId } from "./internal-ops.types";
 import type { ValidationChainBetReconciliationBatchViewModel } from "./internal-ops.types";
@@ -29,8 +31,10 @@ import { ValidationChainManualSyncService } from "./validation-chain/validation-
 import { ValidationChainOracleService } from "./validation-chain/validation-chain-oracle.service";
 import { ValidationChainPauserService } from "./validation-chain/validation-chain-pauser.service";
 import { ValidationChainProjectionReplayService } from "./validation-chain/validation-chain-projection-replay.service";
+import { ValidationProofRecordService } from "./services/validation-proof-record.service";
 import { ValidationRehearsalCheckpointService } from "./services/validation-rehearsal-checkpoint.service";
 
+@ArenaSurfaceBoundary("internal")
 @Controller("arena/internal/validation-chain")
 export class ArenaInternalValidationChainController {
   constructor(
@@ -41,6 +45,7 @@ export class ArenaInternalValidationChainController {
     private readonly betReconciliation: ValidationChainBetReconciliationService,
     private readonly projectionReplay: ValidationChainProjectionReplayService,
     private readonly commandRecovery: ValidationChainCommandRecoveryService,
+    private readonly proofRecords: ValidationProofRecordService,
     private readonly rehearsalCheckpoints: ValidationRehearsalCheckpointService,
   ) {}
 
@@ -296,6 +301,67 @@ export class ArenaInternalValidationChainController {
       txHash: body.txHash,
       blockNumber: body.blockNumber,
       actorUserId: request.user?.sub,
+    });
+  }
+
+  @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
+  @Post("proof-record")
+  recordValidationProof(
+    @Body() body: InternalValidationProofRecordDto,
+    @Req() request: RequestWithUser,
+  ) {
+    return this.proofRecords.recordProof({
+      propositionId: body.propositionId,
+      proofComplete: body.proofComplete,
+      failures: body.failures,
+      releaseReadinessStatus: body.releaseReadinessStatus as
+        | "ready"
+        | "blocked"
+        | "unknown",
+      releaseBlockingDependencies: body.releaseBlockingDependencies,
+      validationRehearsalStatus:
+        (body.validationRehearsalStatus as "ready" | "blocked" | "unknown") ??
+        "unknown",
+      validationCurrentStepId:
+        (body.validationCurrentStepId as PropositionValidationRehearsalStepId | null) ??
+        null,
+      validationCurrentStepStatus:
+        (body.validationCurrentStepStatus as "complete" | "blocked" | "pending" | null) ??
+        null,
+      completedStepCount: body.completedStepCount,
+      remainingStepCount: body.remainingStepCount,
+      latestCheckpointStepId:
+        (body.latestCheckpointStepId as PropositionValidationRehearsalStepId | null) ??
+        null,
+      latestCheckpointStatus:
+        (body.latestCheckpointStatus as "complete" | "blocked" | "pending" | null) ??
+        null,
+      latestCheckpointAt: body.latestCheckpointAt ?? null,
+      publicSettledResultVisible: body.publicSettledResultVisible ?? false,
+      publicIntegrityOverviewVisible: body.publicIntegrityOverviewVisible ?? false,
+      rewardPayoutLedgerEntryCount: body.rewardPayoutLedgerEntryCount ?? 0,
+      rewardPayoutRecordCount: body.rewardPayoutRecordCount ?? 0,
+      rewardPayoutFinalizedWithoutPayoutCount:
+        body.rewardPayoutFinalizedWithoutPayoutCount ?? 0,
+      rewardPayoutExecutingWithoutTxHashCount:
+        body.rewardPayoutExecutingWithoutTxHashCount ?? 0,
+      rewardPayoutStaleExecutingCount:
+        body.rewardPayoutStaleExecutingCount ?? 0,
+      rewardPayoutStaleExecutingWithoutTxHashCount:
+        body.rewardPayoutStaleExecutingWithoutTxHashCount ?? 0,
+      rewardPayoutStaleExecutingAwaitingConfirmationCount:
+        body.rewardPayoutStaleExecutingAwaitingConfirmationCount ?? 0,
+      rewardPayoutCompletedWithExecutionTxHashCount:
+        body.rewardPayoutCompletedWithExecutionTxHashCount ?? 0,
+      rewardPayoutStatusCounts: body.rewardPayoutStatusCounts ?? null,
+      summaryArtifactPath: body.summaryArtifactPath ?? null,
+      evidenceArtifactPath: body.evidenceArtifactPath ?? null,
+      publicResultArtifactPath: body.publicResultArtifactPath ?? null,
+      rewardPayoutArtifactPath: body.rewardPayoutArtifactPath ?? null,
+      publicIntegrityArtifactPath: body.publicIntegrityArtifactPath ?? null,
+      note: body.note ?? null,
+      actorUserId: request.user?.sub,
+      checkedAt: body.checkedAt,
     });
   }
 

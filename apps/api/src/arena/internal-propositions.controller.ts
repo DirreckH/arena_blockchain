@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, Req } from "@nestjs/common";
 import { SystemRole } from "@arena/shared";
 
+import { ArenaSurfaceBoundary } from "../common/decorators/arena-surface-boundary.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import type { RequestWithUser } from "../common/interfaces/request-with-user.interface";
 import { InternalApprovePropositionDto } from "./dto/internal-approve-proposition.dto";
@@ -10,6 +11,7 @@ import { InternalRejectPropositionDto } from "./dto/internal-reject-proposition.
 import { InternalReviewQueueQueryDto } from "./dto/internal-review-queue-query.dto";
 import { InternalPropositionOpsService } from "./services/internal-proposition-ops.service";
 
+@ArenaSurfaceBoundary("internal")
 @Roles(SystemRole.Operator, SystemRole.Admin, SystemRole.System)
 @Controller("arena/internal/propositions")
 export class ArenaInternalPropositionsController {

@@ -13,6 +13,8 @@ import type {
   ResponseReviewStatus,
   RewardLedgerSourceType,
   RewardLedgerStatus,
+  RewardPayoutMethod,
+  RewardPayoutStatus,
   ValidationChainMarketStatus,
   ValidationChainResultKind,
   ValidationChainSyncStatus,
@@ -84,6 +86,48 @@ export interface RejectPropositionControlInput
 export interface EmergencyFreezePropositionControlInput
   extends PropositionControlActionInput {
   frozenAt: string;
+}
+
+export interface RewardPayoutControlActionInput {
+  ledgerId: string;
+  actorUserId: string;
+  reason: string;
+  note?: string;
+}
+
+export interface ApproveRewardPayoutControlInput
+  extends RewardPayoutControlActionInput {
+  approvedAt: string;
+}
+
+export interface StartRewardPayoutExecutionControlInput
+  extends RewardPayoutControlActionInput {
+  startedAt: string;
+}
+
+export interface CompleteRewardPayoutControlInput
+  extends RewardPayoutControlActionInput {
+  completedAt: string;
+  executionTxHash?: string;
+  externalReference?: string;
+}
+
+export interface ConfirmRewardPayoutExecutionControlInput
+  extends RewardPayoutControlActionInput {
+  confirmedAt: string;
+  externalReference?: string;
+}
+
+export interface FailRewardPayoutControlInput
+  extends RewardPayoutControlActionInput {
+  failedAt: string;
+  errorCode: string;
+  errorMessage: string;
+}
+
+export interface EnsureRewardPayoutControlInput
+  extends RewardPayoutControlActionInput {
+  ensuredAt: string;
 }
 
 export interface InternalPropositionListFilters {
@@ -722,7 +766,9 @@ export interface ValidationChainRuntimeReadinessDependencyViewModel {
     | "validation_contract_bytecode"
     | "validation_operator_signer"
     | "validation_oracle_signer"
-    | "validation_pauser_signer";
+    | "validation_pauser_signer"
+    | "reward_payout_token"
+    | "reward_payout_operator_signer";
   status: "up" | "down";
   details?: string;
 }
@@ -801,6 +847,52 @@ export interface BackendValidationRehearsalViewModel {
   steps: BackendValidationRehearsalStepViewModel[];
 }
 
+export interface BackendValidationProofRecordViewModel {
+  environment: "local" | "dev" | "staging" | "prod";
+  chainId: number;
+  propositionId: string;
+  proofComplete: boolean;
+  failures: string[];
+  releaseReadinessStatus: "ready" | "blocked" | "unknown";
+  releaseBlockingDependencies: string[];
+  validationRehearsalStatus: "ready" | "blocked" | "unknown";
+  validationCurrentStepId: BackendValidationRehearsalStepId | null;
+  validationCurrentStepStatus: "complete" | "blocked" | "pending" | null;
+  completedStepCount: number;
+  remainingStepCount: number;
+  latestCheckpointStepId: BackendValidationRehearsalStepId | null;
+  latestCheckpointStatus: "complete" | "blocked" | "pending" | null;
+  latestCheckpointAt: string | null;
+  publicSettledResultVisible: boolean;
+  publicIntegrityOverviewVisible: boolean;
+  rewardPayoutLedgerEntryCount: number;
+  rewardPayoutRecordCount: number;
+  rewardPayoutFinalizedWithoutPayoutCount: number;
+  rewardPayoutExecutingWithoutTxHashCount: number;
+  rewardPayoutStaleExecutingCount: number;
+  rewardPayoutStaleExecutingWithoutTxHashCount: number;
+  rewardPayoutStaleExecutingAwaitingConfirmationCount: number;
+  rewardPayoutCompletedWithExecutionTxHashCount: number;
+  rewardPayoutStatusCounts: {
+    requested: number;
+    approved: number;
+    executing: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+    none: number;
+  };
+  summaryArtifactPath: string | null;
+  evidenceArtifactPath: string | null;
+  publicResultArtifactPath: string | null;
+  rewardPayoutArtifactPath: string | null;
+  publicIntegrityArtifactPath: string | null;
+  note: string | null;
+  recordedByUserId: string | null;
+  checkedAt: string;
+  recordedAt: string;
+}
+
 export interface BackendRuntimeContractViewModel {
   status: "ok" | "degraded";
   generatedAt: string;
@@ -816,6 +908,7 @@ export interface BackendRuntimeContractViewModel {
   };
   validationChain: ValidationChainRuntimeReadinessViewModel;
   validationRehearsal: BackendValidationRehearsalViewModel;
+  validationProofRecord: BackendValidationProofRecordViewModel | null;
   commands: BackendRuntimeContractCommandSetViewModel;
   releaseReadiness: BackendRuntimeContractReleaseReadinessViewModel;
   releaseChecklist: BackendRuntimeContractChecklistItemViewModel[];
@@ -969,6 +1062,10 @@ export interface RewardAuditListFilters {
   userId?: string;
   responseId?: string;
   status?: RewardLedgerStatus;
+  payoutStatus?: RewardPayoutStatus;
+  missingPayoutOnly?: boolean;
+  staleExecutionOnly?: boolean;
+  actionQueue?: RewardAuditActionQueue;
   sourceType?: RewardLedgerSourceType;
   search?: string;
   sortBy?: RewardAuditListSortBy;
@@ -976,6 +1073,14 @@ export interface RewardAuditListFilters {
   limit?: number;
   offset?: number;
 }
+
+export type RewardAuditActionQueue =
+  | "missing_payout"
+  | "approval"
+  | "execution_start"
+  | "execution_confirm"
+  | "execution_recover"
+  | "retry";
 
 export type RewardAuditListSortBy =
   | "createdAt"
@@ -1003,6 +1108,22 @@ export interface InternalRewardAuditListItemViewModel {
   finalizedAt: string | null;
   voidedAt: string | null;
   reversedAt: string | null;
+  payoutId: string | null;
+  payoutStatus: RewardPayoutStatus | null;
+  payoutMethod: RewardPayoutMethod | null;
+  payoutAmount: string | null;
+  payoutAssetSymbol: string | null;
+  payoutDestinationAddress: string | null;
+  payoutRequestedAt: string | null;
+  payoutApprovedAt: string | null;
+  payoutExecutionStartedAt: string | null;
+  payoutCompletedAt: string | null;
+  payoutFailedAt: string | null;
+  payoutCancelledAt: string | null;
+  payoutExecutionTxHash: string | null;
+  payoutRetryCount: number;
+  payoutLastErrorCode: string | null;
+  payoutLastErrorMessage: string | null;
 }
 
 export type InternalRewardAuditListPageViewModel =
@@ -1029,6 +1150,169 @@ export interface InternalRewardAuditDetailViewModel {
     reviewedByUserId: string | null;
     reviewedAt: string | null;
   } | null;
+  payout: {
+    payoutId: string;
+    status: RewardPayoutStatus;
+    method: RewardPayoutMethod;
+    amount: string;
+    assetSymbol: string;
+    destinationAddress: string;
+    requestedAt: string;
+    approvedAt: string | null;
+    approvedByUserId: string | null;
+    executionStartedAt: string | null;
+    completedAt: string | null;
+    failedAt: string | null;
+    cancelledAt: string | null;
+    executionTxHash: string | null;
+    externalReference: string | null;
+    retryCount: number;
+    lastErrorCode: string | null;
+    lastErrorMessage: string | null;
+  } | null;
   chain: InternalRewardAuditListItemViewModel[];
   auditEvents: InternalAuditEventViewModel[];
+}
+
+export type InternalDiscoveryRankingCategoryLabelMap = Record<
+  | "all"
+  | "general"
+  | "politics"
+  | "sports"
+  | "tech"
+  | "research"
+  | "culture",
+  string
+>;
+
+export type InternalDiscoveryCategoryPageState =
+  | "visible"
+  | "hidden"
+  | "deleted";
+
+export type InternalDiscoveryCategoryKind = "system" | "custom";
+
+export interface InternalDiscoveryGlobalCategoryConfigViewModel {
+  slug: string;
+  pathname: string;
+  label: string;
+  title: string;
+  directoryLabel: string;
+  description: string;
+  displayOrder: number;
+  pageState: InternalDiscoveryCategoryPageState;
+  kind: InternalDiscoveryCategoryKind;
+  marketIdWhitelist: string[];
+  invalidMarketIds: string[];
+}
+
+export interface InternalDiscoveryGlobalCategoryConfigInput {
+  slug: string;
+  pathname?: string;
+  label?: string;
+  title?: string;
+  directoryLabel?: string;
+  description?: string;
+  displayOrder?: number;
+  pageState?: InternalDiscoveryCategoryPageState;
+  kind?: InternalDiscoveryCategoryKind;
+  marketIdWhitelist?: string[];
+}
+
+export type InternalDiscoverySecondaryCapsulePageState =
+  | "visible"
+  | "hidden"
+  | "deleted";
+
+export type InternalDiscoverySecondaryCapsuleKind = "system" | "custom";
+
+export type InternalDiscoverySecondaryCapsuleBaseRankingId =
+  | "all"
+  | "general"
+  | "politics"
+  | "sports"
+  | "tech"
+  | "research"
+  | "culture";
+
+export interface InternalDiscoverySecondaryCapsuleViewModel {
+  id: string;
+  label: string;
+  displayOrder: number;
+  pageState: InternalDiscoverySecondaryCapsulePageState;
+  kind: InternalDiscoverySecondaryCapsuleKind;
+  baseRankingId: InternalDiscoverySecondaryCapsuleBaseRankingId | null;
+  marketIdWhitelist: string[];
+  invalidMarketIds: string[];
+}
+
+export interface InternalDiscoverySecondaryCapsuleInput {
+  id: string;
+  label?: string;
+  displayOrder?: number;
+  pageState?: InternalDiscoverySecondaryCapsulePageState;
+  kind?: InternalDiscoverySecondaryCapsuleKind;
+  baseRankingId?: InternalDiscoverySecondaryCapsuleBaseRankingId | null;
+  marketIdWhitelist?: string[];
+}
+
+export interface InternalDiscoveryGlobalConfigViewModel {
+  categories: InternalDiscoveryGlobalCategoryConfigViewModel[];
+  rankingCategoryLabels: InternalDiscoveryRankingCategoryLabelMap;
+  secondaryCapsules: InternalDiscoverySecondaryCapsuleViewModel[];
+}
+
+export interface InternalDiscoveryGlobalConfigInput {
+  categories: InternalDiscoveryGlobalCategoryConfigInput[];
+  rankingCategoryLabels: Partial<InternalDiscoveryRankingCategoryLabelMap>;
+  secondaryCapsules?: InternalDiscoverySecondaryCapsuleInput[];
+}
+
+export interface InternalDiscoveryCategoryConfigSummaryViewModel {
+  slug: string;
+  pathname: string;
+  label: string;
+  title: string;
+  directoryLabel: string;
+  description: string;
+  sidebarItemCount: number;
+  configured: boolean;
+  pageState: InternalDiscoveryCategoryPageState;
+  kind: InternalDiscoveryCategoryKind;
+}
+
+export interface InternalDiscoverySidebarItemViewModel {
+  id: string;
+  label: string;
+  linkedMarketIds: string[];
+  resolvedLinkedMarketCount: number;
+  invalidLinkedMarketIds: string[];
+}
+
+export interface InternalDiscoverySidebarItemInput {
+  id: string;
+  label: string;
+  linkedMarketIds: string[];
+}
+
+export interface InternalDiscoveryCategoryConfigViewModel {
+  slug: string;
+  pathname: string;
+  label: string;
+  title: string;
+  directoryLabel: string;
+  description: string;
+  configured: boolean;
+  pageState: InternalDiscoveryCategoryPageState;
+  availableMarkets: Array<{
+    marketId: string;
+    title: string;
+  }>;
+  sidebarItems: InternalDiscoverySidebarItemViewModel[];
+  warnings: string[];
+  kind: InternalDiscoveryCategoryKind;
+}
+
+export interface InternalDiscoveryCategoryConfigInput {
+  sidebarItems: InternalDiscoverySidebarItemInput[];
 }

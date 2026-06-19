@@ -597,6 +597,32 @@ type MonitoringContractTestOverrides = {
   proofRecords?: { getLatestProof: () => Promise<unknown> };
 };
 
+const markArtifactDependenciesReady = (
+  monitoring: InternalMonitoringService,
+): InternalMonitoringService => {
+  const patchedMonitoring = monitoring as unknown as {
+    checkArenaArtifactDependency: () => {
+      name: "arena_artifact";
+      status: "up";
+    };
+    checkValidationArtifactDependency: () => {
+      name: "validation_artifact";
+      status: "up";
+    };
+  };
+
+  patchedMonitoring.checkArenaArtifactDependency = () => ({
+    name: "arena_artifact",
+    status: "up",
+  });
+  patchedMonitoring.checkValidationArtifactDependency = () => ({
+    name: "validation_artifact",
+    status: "up",
+  });
+
+  return monitoring;
+};
+
 function createMonitoringForContractTests(
   overrides: MonitoringContractTestOverrides = {},
 ) {
@@ -689,46 +715,48 @@ function createMonitoringForContractTests(
       },
     } as const);
 
-  return new InternalMonitoringService(
-    {
-      async assertReady() {
-        return undefined;
-      },
-    } as never,
-    {
-      ...defaultConfig,
-      ...overrides.config,
-    } as never,
-    {
-      ...defaultBlockchain,
-      ...overrides.blockchain,
-    } as never,
-    {
-      ...defaultRedis,
-      ...overrides.redis,
-    } as never,
-    {
-      ...defaultHealth,
-      ...overrides.health,
-    } as never,
-    {
-      ...defaultQueue,
-      ...overrides.queue,
-    } as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {
-      async listByEntity() {
-        return [];
-      },
-    } as never,
-    validationContract as never,
-    undefined as never,
-    proofRecords as never,
+  return markArtifactDependenciesReady(
+    new InternalMonitoringService(
+      {
+        async assertReady() {
+          return undefined;
+        },
+      } as never,
+      {
+        ...defaultConfig,
+        ...overrides.config,
+      } as never,
+      {
+        ...defaultBlockchain,
+        ...overrides.blockchain,
+      } as never,
+      {
+        ...defaultRedis,
+        ...overrides.redis,
+      } as never,
+      {
+        ...defaultHealth,
+        ...overrides.health,
+      } as never,
+      {
+        ...defaultQueue,
+        ...overrides.queue,
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        async listByEntity() {
+          return [];
+        },
+      } as never,
+      validationContract as never,
+      undefined as never,
+      proofRecords as never,
+    ),
   );
 }
 
@@ -3517,94 +3545,96 @@ describe("Validation chain phase six runtime integration", () => {
   });
 
   it("reports degraded validation-chain runtime readiness when signer env is incomplete or dependencies fail", async () => {
-    const monitoring = new InternalMonitoringService(
-      {
-        async assertReady() {
-          return undefined;
-        },
-      } as never,
-      {
-        validationEnvironment: "staging",
-        chainId: 8453,
-        rpcUrl: "https://rpc.example",
-        arenaContractAddress: "0x0000000000000000000000000000000000000001",
-        validationContractAddress: "0x0000000000000000000000000000000000000002",
-        validationOperatorPrivateKey: "",
-        validationOraclePrivateKey: "",
-        validationPauserPrivateKey: "",
-      } as never,
-      {
-        async assertReady() {
-          throw new Error("rpc timeout");
-        },
-      } as never,
-      {
-        async ping() {
-          throw new Error("redis timeout");
-        },
-      } as never,
-      {
-        getLiveSnapshot() {
-          return {
-            status: "ok",
-            timestamp: "2026-04-24T00:36:00.000Z",
-          };
-        },
-        async getReadinessSnapshot() {
-          return {
-            status: "degraded",
-            timestamp: "2026-04-24T00:36:00.000Z",
-            dependencies: [
-              { name: "database", status: "up" },
-              { name: "redis", status: "down", details: "redis timeout" },
-              { name: "rpc", status: "down", details: "rpc timeout" },
-              { name: "scheduler_queue", status: "up" },
-            ],
-          };
-        },
-      } as never,
-      {
-        async getQueueOverview() {
-          return {
-            status: "ok",
-            timestamp: "2026-04-24T00:36:00.000Z",
-            redis: { status: "up" },
-            queues: [
-              {
-                name: "scheduler",
-                status: "up",
-                policy: {
-                  retryable: true,
-                  attempts: 5,
-                  backoffType: "exponential",
-                  backoffDelayMs: 1000,
+    const monitoring = markArtifactDependenciesReady(
+      new InternalMonitoringService(
+        {
+          async assertReady() {
+            return undefined;
+          },
+        } as never,
+        {
+          validationEnvironment: "staging",
+          chainId: 8453,
+          rpcUrl: "https://rpc.example",
+          arenaContractAddress: "0x0000000000000000000000000000000000000001",
+          validationContractAddress: "0x0000000000000000000000000000000000000002",
+          validationOperatorPrivateKey: "",
+          validationOraclePrivateKey: "",
+          validationPauserPrivateKey: "",
+        } as never,
+        {
+          async assertReady() {
+            throw new Error("rpc timeout");
+          },
+        } as never,
+        {
+          async ping() {
+            throw new Error("redis timeout");
+          },
+        } as never,
+        {
+          getLiveSnapshot() {
+            return {
+              status: "ok",
+              timestamp: "2026-04-24T00:36:00.000Z",
+            };
+          },
+          async getReadinessSnapshot() {
+            return {
+              status: "degraded",
+              timestamp: "2026-04-24T00:36:00.000Z",
+              dependencies: [
+                { name: "database", status: "up" },
+                { name: "redis", status: "down", details: "redis timeout" },
+                { name: "rpc", status: "down", details: "rpc timeout" },
+                { name: "scheduler_queue", status: "up" },
+              ],
+            };
+          },
+        } as never,
+        {
+          async getQueueOverview() {
+            return {
+              status: "ok",
+              timestamp: "2026-04-24T00:36:00.000Z",
+              redis: { status: "up" },
+              queues: [
+                {
+                  name: "scheduler",
+                  status: "up",
+                  policy: {
+                    retryable: true,
+                    attempts: 5,
+                    backoffType: "exponential",
+                    backoffDelayMs: 1000,
+                  },
+                  paused: false,
+                  counts: {
+                    waiting: 0,
+                    active: 0,
+                    delayed: 0,
+                    completed: 0,
+                    failed: 0,
+                  },
                 },
-                paused: false,
-                counts: {
-                  waiting: 0,
-                  active: 0,
-                  delayed: 0,
-                  completed: 0,
-                  failed: 0,
-                },
-              },
-            ],
-          };
-        },
-      } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {
-        async listByEntity() {
-          return [];
-        },
-      } as never,
-      new FakeValidationChainContractService() as never,
-      undefined,
+              ],
+            };
+          },
+        } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {
+          async listByEntity() {
+            return [];
+          },
+        } as never,
+        new FakeValidationChainContractService() as never,
+        undefined,
+      ),
     );
 
     const snapshot = await monitoring.getValidationChainRuntimeReadiness();
@@ -3631,104 +3661,106 @@ describe("Validation chain phase six runtime integration", () => {
   });
 
   it("surfaces bootstrap-first local runtime guidance when the validation environment is local", async () => {
-    const monitoring = new InternalMonitoringService(
-      {
-        async assertReady() {
-          throw new Error("database offline");
-        },
-      } as never,
-      {
-        validationEnvironment: "local",
-        chainId: 1337,
-        rpcUrl: "http://127.0.0.1:8545",
-        arenaContractAddress: "0x0000000000000000000000000000000000000001",
-        validationContractAddress: "0x0000000000000000000000000000000000000002",
-        validationOperatorPrivateKey: "",
-        validationOraclePrivateKey: "",
-        validationPauserPrivateKey: "",
-        nodeEnv: "development",
-        port: 4000,
-      } as never,
-      {
-        async assertReady() {
-          throw new Error("rpc offline");
-        },
-      } as never,
-      {
-        async ping() {
-          throw new Error("redis offline");
-        },
-      } as never,
-      {
-        getLiveSnapshot() {
-          return {
-            status: "ok",
-            timestamp: "2026-05-27T00:36:00.000Z",
-          };
-        },
-        async getReadinessSnapshot() {
-          return {
-            status: "degraded",
-            timestamp: "2026-05-27T00:36:00.000Z",
-            dependencies: [
-              { name: "database", status: "down", details: "database offline" },
-              { name: "redis", status: "down", details: "redis offline" },
-              { name: "rpc", status: "down", details: "rpc offline" },
-              { name: "scheduler_queue", status: "up" },
-            ],
-          };
-        },
-      } as never,
-      {
-        async getQueueOverview() {
-          return {
-            status: "ok",
-            timestamp: "2026-05-27T00:36:00.000Z",
-            redis: { status: "up" },
-            queues: [
-              {
-                name: "scheduler",
-                status: "up",
-                policy: {
-                  retryable: true,
-                  attempts: 5,
-                  backoffType: "exponential",
-                  backoffDelayMs: 1000,
-                },
-                paused: false,
-                counts: {
-                  waiting: 0,
-                  active: 0,
-                  delayed: 0,
-                  completed: 0,
-                  failed: 0,
-                },
-              },
-            ],
-          };
-        },
-      } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {
-        async listByEntity() {
-          return [];
-        },
-      } as never,
-      new FakeValidationChainContractService({
-        hasRuntimeCode: false,
-        signerIssues: {
-          operator: {
-            hasBalance: false,
-            hasRequiredRole: false,
+    const monitoring = markArtifactDependenciesReady(
+      new InternalMonitoringService(
+        {
+          async assertReady() {
+            throw new Error("database offline");
           },
-        },
-      }) as never,
-      undefined,
+        } as never,
+        {
+          validationEnvironment: "local",
+          chainId: 1337,
+          rpcUrl: "http://127.0.0.1:8545",
+          arenaContractAddress: "0x0000000000000000000000000000000000000001",
+          validationContractAddress: "0x0000000000000000000000000000000000000002",
+          validationOperatorPrivateKey: "",
+          validationOraclePrivateKey: "",
+          validationPauserPrivateKey: "",
+          nodeEnv: "development",
+          port: 4000,
+        } as never,
+        {
+          async assertReady() {
+            throw new Error("rpc offline");
+          },
+        } as never,
+        {
+          async ping() {
+            throw new Error("redis offline");
+          },
+        } as never,
+        {
+          getLiveSnapshot() {
+            return {
+              status: "ok",
+              timestamp: "2026-05-27T00:36:00.000Z",
+            };
+          },
+          async getReadinessSnapshot() {
+            return {
+              status: "degraded",
+              timestamp: "2026-05-27T00:36:00.000Z",
+              dependencies: [
+                { name: "database", status: "down", details: "database offline" },
+                { name: "redis", status: "down", details: "redis offline" },
+                { name: "rpc", status: "down", details: "rpc offline" },
+                { name: "scheduler_queue", status: "up" },
+              ],
+            };
+          },
+        } as never,
+        {
+          async getQueueOverview() {
+            return {
+              status: "ok",
+              timestamp: "2026-05-27T00:36:00.000Z",
+              redis: { status: "up" },
+              queues: [
+                {
+                  name: "scheduler",
+                  status: "up",
+                  policy: {
+                    retryable: true,
+                    attempts: 5,
+                    backoffType: "exponential",
+                    backoffDelayMs: 1000,
+                  },
+                  paused: false,
+                  counts: {
+                    waiting: 0,
+                    active: 0,
+                    delayed: 0,
+                    completed: 0,
+                    failed: 0,
+                  },
+                },
+              ],
+            };
+          },
+        } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {
+          async listByEntity() {
+            return [];
+          },
+        } as never,
+        new FakeValidationChainContractService({
+          hasRuntimeCode: false,
+          signerIssues: {
+            operator: {
+              hasBalance: false,
+              hasRequiredRole: false,
+            },
+          },
+        }) as never,
+        undefined,
+      ),
     );
 
     const snapshot = await monitoring.getRuntimeContract();
@@ -4064,101 +4096,103 @@ it("builds a validation rehearsal contract for environment-backed operator verif
   });
 
   it("treats reward payout readiness as a release gate without blocking validation rehearsal progress", async () => {
-    const monitoring = new InternalMonitoringService(
-      {
-        async assertReady() {
-          return undefined;
-        },
-      } as never,
-      {
-        validationEnvironment: "staging",
-        chainId: 8453,
-        rpcUrl: "https://rpc.example",
-        arenaContractAddress: "0x0000000000000000000000000000000000000001",
-        validationContractAddress: "0x0000000000000000000000000000000000000002",
-        validationOperatorPrivateKey:
-          "0x1111111111111111111111111111111111111111111111111111111111111111",
-        validationOraclePrivateKey:
-          "0x2222222222222222222222222222222222222222222222222222222222222222",
-        validationPauserPrivateKey:
-          "0x3333333333333333333333333333333333333333333333333333333333333333",
-        rewardPayoutErc20Address: "",
-        rewardPayoutOperatorPrivateKey: "",
-        nodeEnv: "production",
-        port: 4000,
-      } as never,
-      {
-        async assertReady() {
-          return undefined;
-        },
-      } as never,
-      {
-        async ping() {
-          return "PONG";
-        },
-      } as never,
-      {
-        getLiveSnapshot() {
-          return {
-            status: "ok",
-            timestamp: "2026-06-07T00:36:00.000Z",
-          };
-        },
-        async getReadinessSnapshot() {
-          return {
-            status: "ok",
-            timestamp: "2026-06-07T00:36:00.000Z",
-            dependencies: [
-              { name: "database", status: "up" },
-              { name: "redis", status: "up" },
-              { name: "rpc", status: "up" },
-              { name: "scheduler_queue", status: "up" },
-            ],
-          };
-        },
-      } as never,
-      {
-        async getQueueOverview() {
-          return {
-            status: "ok",
-            timestamp: "2026-06-07T00:36:00.000Z",
-            redis: { status: "up" },
-            queues: [
-              {
-                name: "scheduler",
-                status: "up",
-                policy: {
-                  retryable: true,
-                  attempts: 5,
-                  backoffType: "exponential",
-                  backoffDelayMs: 1000,
+    const monitoring = markArtifactDependenciesReady(
+      new InternalMonitoringService(
+        {
+          async assertReady() {
+            return undefined;
+          },
+        } as never,
+        {
+          validationEnvironment: "staging",
+          chainId: 8453,
+          rpcUrl: "https://rpc.example",
+          arenaContractAddress: "0x0000000000000000000000000000000000000001",
+          validationContractAddress: "0x0000000000000000000000000000000000000002",
+          validationOperatorPrivateKey:
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+          validationOraclePrivateKey:
+            "0x2222222222222222222222222222222222222222222222222222222222222222",
+          validationPauserPrivateKey:
+            "0x3333333333333333333333333333333333333333333333333333333333333333",
+          rewardPayoutErc20Address: "",
+          rewardPayoutOperatorPrivateKey: "",
+          nodeEnv: "production",
+          port: 4000,
+        } as never,
+        {
+          async assertReady() {
+            return undefined;
+          },
+        } as never,
+        {
+          async ping() {
+            return "PONG";
+          },
+        } as never,
+        {
+          getLiveSnapshot() {
+            return {
+              status: "ok",
+              timestamp: "2026-06-07T00:36:00.000Z",
+            };
+          },
+          async getReadinessSnapshot() {
+            return {
+              status: "ok",
+              timestamp: "2026-06-07T00:36:00.000Z",
+              dependencies: [
+                { name: "database", status: "up" },
+                { name: "redis", status: "up" },
+                { name: "rpc", status: "up" },
+                { name: "scheduler_queue", status: "up" },
+              ],
+            };
+          },
+        } as never,
+        {
+          async getQueueOverview() {
+            return {
+              status: "ok",
+              timestamp: "2026-06-07T00:36:00.000Z",
+              redis: { status: "up" },
+              queues: [
+                {
+                  name: "scheduler",
+                  status: "up",
+                  policy: {
+                    retryable: true,
+                    attempts: 5,
+                    backoffType: "exponential",
+                    backoffDelayMs: 1000,
+                  },
+                  paused: false,
+                  counts: {
+                    waiting: 0,
+                    active: 0,
+                    delayed: 0,
+                    completed: 0,
+                    failed: 0,
+                  },
                 },
-                paused: false,
-                counts: {
-                  waiting: 0,
-                  active: 0,
-                  delayed: 0,
-                  completed: 0,
-                  failed: 0,
-                },
-              },
-            ],
-          };
-        },
-      } as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {
-        async listByEntity() {
-          return [];
-        },
-      } as never,
-      new FakeValidationChainContractService() as never,
-      undefined,
+              ],
+            };
+          },
+        } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {
+          async listByEntity() {
+            return [];
+          },
+        } as never,
+        new FakeValidationChainContractService() as never,
+        undefined,
+      ),
     );
 
     const snapshot = await monitoring.getRuntimeContract();

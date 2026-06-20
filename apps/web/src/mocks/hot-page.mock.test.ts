@@ -15,7 +15,9 @@ describe('hot page mock', () => {
       'culture',
     ])
 
-    const coveredCategoryIds = new Set(HOT_PAGE_CONFIG.items.flatMap((item) => item.categoryIds))
+    const coveredCategoryIds = new Set<string>(
+      HOT_PAGE_CONFIG.items.flatMap((item) => item.categoryIds),
+    )
 
     HOT_PAGE_CONFIG.categories
       .filter((item) => item.id !== 'all')

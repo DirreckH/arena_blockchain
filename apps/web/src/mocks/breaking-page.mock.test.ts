@@ -18,7 +18,7 @@ describe('breaking page mock', () => {
       'culture',
     ])
 
-    const coveredCategoryIds = new Set(
+    const coveredCategoryIds = new Set<string>(
       BREAKING_PAGE_CONFIG.items.flatMap((item) => item.categoryIds),
     )
 

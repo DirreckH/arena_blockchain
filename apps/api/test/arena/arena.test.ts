@@ -8090,6 +8090,59 @@ test("validation rehearsal checkpoint history preserves repeated step attempts w
   assert.equal(detail.validationRehearsalCheckpoints.length, 2);
 });
 
+test("validation rehearsal checkpoint history keeps publish/open automation order stable when timestamps tie", async () => {
+  const harness = createArenaHarness();
+  const proposition = await createLiveProposition(harness, {
+    marketEnabled: true,
+    title: "Validation rehearsal tied automation checkpoint proposition",
+  });
+  const recordedAt = "2026-04-18T10:09:15.000Z";
+
+  await harness.validationRehearsalCheckpointService.recordCheckpoint({
+    propositionId: proposition.id,
+    stepId: "publish_and_open",
+    status: "complete",
+    reason: "validation_rehearsal.auto.create_market_submitted",
+    evidence: ["tx:0xaaa1"],
+    txHash: `0x${"a".repeat(64)}`,
+    actorUserId: "operator_chain",
+    recordedAt,
+  });
+  await harness.validationRehearsalCheckpointService.recordCheckpoint({
+    propositionId: proposition.id,
+    stepId: "publish_and_open",
+    status: "complete",
+    reason: "validation_rehearsal.auto.open_market_submitted",
+    evidence: ["tx:0xbbb2"],
+    txHash: `0x${"b".repeat(64)}`,
+    actorUserId: "operator_chain",
+    recordedAt,
+  });
+
+  const checkpoints =
+    await harness.internalPropositionOpsService.listValidationRehearsalCheckpoints(
+      proposition.id,
+    );
+  const detail = await harness.internalPropositionOpsService.getPropositionDetail(
+    proposition.id,
+  );
+  const publishStep = detail.validationRehearsal.steps.find(
+    (step) => step.id === "publish_and_open",
+  );
+
+  assert.deepEqual(
+    checkpoints.map((item) => item.reason),
+    [
+      "validation_rehearsal.auto.open_market_submitted",
+      "validation_rehearsal.auto.create_market_submitted",
+    ],
+  );
+  assert.equal(
+    publishStep?.manualCheckpoint?.reason,
+    "validation_rehearsal.auto.open_market_submitted",
+  );
+});
+
 test("reward audit detail and retriggered correction preserve ledger history", async () => {
   const harness = createArenaHarness();
   const controller = new ArenaInternalRewardsController(

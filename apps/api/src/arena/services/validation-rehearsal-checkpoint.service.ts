@@ -36,7 +36,29 @@ const VALIDATION_REHEARSAL_STEP_STATUSES =
     "blocked",
   ]);
 
+const VALIDATION_REHEARSAL_REASON_SORT_PRIORITY: Record<string, number> = {
+  "validation_rehearsal.auto.create_market_submitted": 10,
+  "validation_rehearsal.auto.open_market_submitted": 20,
+  "validation_rehearsal.auto.freeze_market_submitted": 10,
+  "validation_rehearsal.auto.resolve_market_submitted": 20,
+};
+
 const cloneValue = <T>(value: T): T => structuredClone(value);
+
+const getCheckpointSortPriority = (
+  checkpoint: PropositionValidationRehearsalCheckpointViewModel,
+): number => VALIDATION_REHEARSAL_REASON_SORT_PRIORITY[checkpoint.reason] ?? 0;
+
+const compareCheckpoints = (
+  left: PropositionValidationRehearsalCheckpointViewModel,
+  right: PropositionValidationRehearsalCheckpointViewModel,
+): number =>
+  Date.parse(right.recordedAt) - Date.parse(left.recordedAt) ||
+  getCheckpointSortPriority(right) - getCheckpointSortPriority(left) ||
+  right.reason.localeCompare(left.reason) ||
+  (right.txHash ?? "").localeCompare(left.txHash ?? "") ||
+  (right.recordedByUserId ?? "").localeCompare(left.recordedByUserId ?? "") ||
+  right.stepId.localeCompare(left.stepId);
 
 const parseStoredCheckpoint = (
   value: unknown,
@@ -207,10 +229,7 @@ export class ValidationRehearsalCheckpointService {
           ): record is PropositionValidationRehearsalCheckpointViewModel =>
             record !== null,
         )
-        .sort(
-          (left, right) =>
-            Date.parse(right.recordedAt) - Date.parse(left.recordedAt),
-        );
+        .sort(compareCheckpoints);
     });
   }
 

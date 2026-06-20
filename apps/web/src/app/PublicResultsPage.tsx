@@ -59,6 +59,8 @@ function formatWinningOptionLabel(result: PublicSettledResultItemViewModel) {
 
 function categoryMonogram(category: PropositionCategory | string) {
   switch (category) {
+    case 'dao':
+      return 'DAO'
     case 'politics':
       return 'PP'
     case 'ai':

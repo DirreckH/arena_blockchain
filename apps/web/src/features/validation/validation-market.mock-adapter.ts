@@ -1,5 +1,6 @@
 import { breakingNews, hotTopics, marketCards } from '../../mocks/arena-market.mock'
 import type { ArenaMarketCard, ArenaOption, TrendingItem } from '../../mocks/arena-market.mock'
+import { getFeaturedMarketComments } from './featured-market-comments'
 import type {
   PublicValidationMarketCard,
   PublicValidationMarketDetail,
@@ -107,6 +108,7 @@ const toPublicMarket = (market: ArenaMarketCard): PublicValidationMarketCard => 
     imageSrc: market.image,
     isSettled: metadata.isSettled,
     publicResult: metadata.publicResult ?? market.previousResult,
+    featuredComments: getFeaturedMarketComments(market.id),
   }
 }
 

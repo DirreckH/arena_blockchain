@@ -3,6 +3,12 @@ import { VALIDATION_PRE_REVEAL_FORBIDDEN_FIELDS } from '../features/arena-inform
 import { HOT_PAGE_CONFIG, getHotItemsForCategory } from './hot-page.mock'
 
 describe('hot page mock', () => {
+  it('expands the hot ranking to twelve more entertainment-driven topics', () => {
+    expect(HOT_PAGE_CONFIG.items).toHaveLength(12)
+    expect(HOT_PAGE_CONFIG.items.some((item) => item.title.includes('梅西比 C 罗更配得上现代足球 GOAT'))).toBe(true)
+    expect(HOT_PAGE_CONFIG.items.some((item) => item.title.includes('比特币网络手续费是否会在本月维持高拥堵状态'))).toBe(false)
+  })
+
   it('exposes the expected category navigation', () => {
     expect(HOT_PAGE_CONFIG.categories.map((item) => item.id)).toEqual([
       'all',

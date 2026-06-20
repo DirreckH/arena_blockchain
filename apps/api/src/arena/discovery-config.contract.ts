@@ -6,6 +6,7 @@ import type {
 export type DiscoveryRankingCategoryId =
   | "all"
   | "general"
+  | "dao"
   | "politics"
   | "sports"
   | "tech"
@@ -30,6 +31,7 @@ export type DiscoveryDirectoryDefinition = {
 export const DISCOVERY_RANKING_CATEGORY_IDS: DiscoveryRankingCategoryId[] = [
   "all",
   "general",
+  "dao",
   "politics",
   "sports",
   "tech",
@@ -45,6 +47,7 @@ export const displayCategoryByArenaCategory: Record<
   DiscoveryDisplayCategoryId
 > = {
   general: "general",
+  dao: "dao",
   politics: "politics",
   sports: "sports",
   ai: "tech",
@@ -57,6 +60,7 @@ export const defaultDiscoveryRankingCategoryLabels: Record<
   { label: string; tile: string }
 > = {
   general: { label: "General", tile: "GEN" },
+  dao: { label: "DAO", tile: "DAO" },
   politics: { label: "Politics", tile: "POL" },
   sports: { label: "Sports", tile: "SPT" },
   tech: { label: "Tech", tile: "AI" },
@@ -70,6 +74,7 @@ export const defaultDiscoveryRankingFilterLabels: Record<
 > = {
   all: "All",
   general: defaultDiscoveryRankingCategoryLabels.general.label,
+  dao: defaultDiscoveryRankingCategoryLabels.dao.label,
   politics: defaultDiscoveryRankingCategoryLabels.politics.label,
   sports: defaultDiscoveryRankingCategoryLabels.sports.label,
   tech: defaultDiscoveryRankingCategoryLabels.tech.label,
@@ -171,13 +176,13 @@ export const discoveryDirectoryDefinitions: DiscoveryDirectoryDefinition[] = [
       market.category === "brand_research" || market.category === "general",
   },
   {
-    slug: "weather",
-    pathname: "/zh/weather",
-    label: "天气",
-    title: "天气",
-    directoryLabel: "天气滚动命题",
-    description: "天气与滚动观察命题",
-    marketFilter: (market) => market.category === "general",
+    slug: "dao",
+    pathname: "/zh/dao",
+    label: "DAO",
+    title: "DAO",
+    directoryLabel: "DAO 命题",
+    description: "DAO 治理、国库、委托与协议研究命题",
+    marketFilter: (market) => market.category === "dao",
   },
   {
     slug: "surveys",

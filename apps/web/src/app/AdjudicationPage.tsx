@@ -46,6 +46,7 @@ function classifyTask(task: AdjudicationTaskViewModel): TaskTabId {
 
 function adjudicationCategoryLabel(category: PropositionCategory | null | undefined): string {
   switch (category) {
+    case 'dao': return 'DAO 命题'
     case 'ai': return 'AI 命题'
     case 'sports': return '体育命题'
     case 'politics': return '公共议题'

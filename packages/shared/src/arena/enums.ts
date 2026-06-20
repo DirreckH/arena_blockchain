@@ -4,6 +4,7 @@ export const ARENA_ROLLING_MODES = ["non_rolling"] as const;
 export const ARENA_SETTLEMENT_TARGETS = ["final"] as const;
 export const PROPOSITION_CATEGORIES = [
   "general",
+  "dao",
   "sports",
   "ai",
   "brand_research",

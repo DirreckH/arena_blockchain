@@ -3453,10 +3453,82 @@ img {
 }
 
 .trending-card-body {
+  position: relative;
   display: grid;
   gap: 14px;
   min-width: 0;
   align-self: end;
+}
+
+.trending-card-commentary {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 2px);
+  left: 0;
+  height: 152px;
+  overflow: hidden;
+  border-radius: 18px;
+  pointer-events: none;
+}
+
+.trending-card-commentary-stage {
+  position: relative;
+  height: 100%;
+  padding: 10px 0;
+}
+
+.trending-card-comment {
+  position: absolute;
+  left: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  animation: featured-comment-marquee linear infinite;
+}
+
+.trending-card-comment.tone-support {
+  background: rgba(236, 253, 245, 0.96);
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.trending-card-comment.tone-oppose {
+  background: rgba(255, 247, 237, 0.96);
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.trending-card-comment.tone-meta {
+  background: rgba(239, 246, 255, 0.96);
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.trending-card-comment-handle {
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.trending-card-comment-body {
+  color: #0f172a;
+}
+
+@keyframes featured-comment-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(calc(-100% - 120vw), 0, 0);
+  }
 }
 
 .trending-card-metrics {
@@ -3678,6 +3750,16 @@ img {
 
   .trending-card-title {
     font-size: 18px;
+  }
+
+  .trending-card-commentary {
+    display: none;
+  }
+
+  .trending-card-comment {
+    gap: 8px;
+    padding: 9px 12px;
+    font-size: 12px;
   }
 
   .trending-card-metrics {
@@ -13968,6 +14050,26 @@ select:focus-visible {
   .workspace {
     padding-top: var(--arena-space-5);
     padding-bottom: var(--arena-space-6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trending-card-commentary {
+    overflow: visible;
+  }
+
+  .trending-card-commentary-stage {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .trending-card-comment {
+    position: static;
+    width: fit-content;
+    max-width: 100%;
+    animation: none;
+    white-space: normal;
   }
 }
 

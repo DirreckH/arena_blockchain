@@ -19,6 +19,7 @@ const SAMPLE_CONSTRAINT_LABELS: Record<string, string> = {
   stable_responder: '稳定答题人',
   risky_responder: '高风险样本',
   interested_in_sports: '体育兴趣',
+  interested_in_dao: 'DAO 兴趣',
   interested_in_ai: 'AI 兴趣',
   interested_in_brand_research: '品牌调研兴趣',
   interested_in_politics: '公共政策兴趣',
@@ -61,6 +62,8 @@ export function formatRelativeTime(isoTimestamp: string) {
 
 export function formatCategoryLabel(category: PropositionCategory | string) {
   switch (category) {
+    case 'dao':
+      return 'DAO'
     case 'ai':
       return 'AI / Technology'
     case 'sports':

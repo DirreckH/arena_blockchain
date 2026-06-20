@@ -1177,6 +1177,7 @@ export interface InternalRewardAuditDetailViewModel {
 export type InternalDiscoveryRankingCategoryLabelMap = Record<
   | "all"
   | "general"
+  | "dao"
   | "politics"
   | "sports"
   | "tech"
@@ -1229,6 +1230,7 @@ export type InternalDiscoverySecondaryCapsuleKind = "system" | "custom";
 export type InternalDiscoverySecondaryCapsuleBaseRankingId =
   | "all"
   | "general"
+  | "dao"
   | "politics"
   | "sports"
   | "tech"

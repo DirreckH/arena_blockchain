@@ -27,6 +27,7 @@ enum SettlementTarget {
 
 enum PropositionCategory {
   general
+  dao
   sports
   ai
   brand_research

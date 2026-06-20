@@ -242,6 +242,7 @@ export function OpsPropositionsPage({
                 >
                   <option value="">{opsCopy.filters.all}</option>
                   <option value="general">{statusLabel('category', 'general')}</option>
+                  <option value="dao">{statusLabel('category', 'dao')}</option>
                   <option value="sports">{statusLabel('category', 'sports')}</option>
                   <option value="ai">{statusLabel('category', 'ai')}</option>
                   <option value="brand_research">{statusLabel('category', 'brand_research')}</option>

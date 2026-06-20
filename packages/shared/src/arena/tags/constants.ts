@@ -10,6 +10,7 @@ export const RESPONDENT_QUALITY_TAG_KEYS = [
 
 export const RESPONDENT_INTEREST_TAG_KEYS = [
   "interested_in_sports",
+  "interested_in_dao",
   "interested_in_ai",
   "interested_in_brand_research",
   "interested_in_politics",
@@ -18,6 +19,7 @@ export const RESPONDENT_INTEREST_TAG_KEYS = [
 
 export const RESPONDENT_INTEREST_TAG_BY_CATEGORY = {
   sports: "interested_in_sports",
+  dao: "interested_in_dao",
   ai: "interested_in_ai",
   brand_research: "interested_in_brand_research",
   politics: "interested_in_politics",

@@ -46,6 +46,7 @@ export class InternalPropositionListQueryDto {
   @IsEnum(
     {
       general: "general",
+      dao: "dao",
       sports: "sports",
       ai: "ai",
       brand_research: "brand_research",

@@ -27,6 +27,7 @@ import { useAuthSession } from '../features/auth/auth-session'
 
 const categoryOptions = [
   'General',
+  'DAO',
   'AI / Technology',
   'Sports / Competition',
   'Public Policy',
@@ -36,6 +37,7 @@ const categoryOptions = [
 
 const categoryDisplayLabels: Record<(typeof categoryOptions)[number], string> = {
   General: '综合',
+  DAO: 'DAO',
   'AI / Technology': 'AI / 科技',
   'Sports / Competition': '体育 / 竞技',
   'Public Policy': '公共政策',
@@ -94,6 +96,12 @@ const sampleConstraintOptions = [
     key: 'interested_in_sports',
     label: '体育兴趣',
     description: '偏向历史上持续参与体育类任务的人群。',
+    group: 'Interest',
+  },
+  {
+    key: 'interested_in_dao',
+    label: 'DAO 兴趣',
+    description: '偏向历史上持续参与 DAO 治理、国库与委托类任务的人群。',
     group: 'Interest',
   },
   {
@@ -235,6 +243,8 @@ function formatSampleConstraintLabel(value: string) {
 
 function mapCategoryLabelToApiValue(label: string): PropositionCategory {
   switch (label) {
+    case 'DAO':
+      return 'dao'
     case 'AI / Technology':
       return 'ai'
     case 'Sports / Competition':

@@ -6,6 +6,12 @@ import {
 } from './breaking-page.mock'
 
 describe('breaking page mock', () => {
+  it('expands the breaking ranking to twelve higher-drama topics', () => {
+    expect(BREAKING_PAGE_CONFIG.items).toHaveLength(12)
+    expect(BREAKING_PAGE_CONFIG.items.some((item) => item.title.includes('汉密尔顿在法拉利的话题性已经超过冠军争夺本身'))).toBe(true)
+    expect(BREAKING_PAGE_CONFIG.items.some((item) => item.title.includes('Will Lando Norris win the Sprint'))).toBe(false)
+  })
+
   it('exposes the expected category navigation', () => {
     expect(BREAKING_PAGE_CONFIG.categories.map((item) => item.id)).toEqual([
       'all',

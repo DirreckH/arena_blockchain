@@ -11056,6 +11056,7 @@ test("internal discovery-config routes allow operator reads but reserve writes f
           rankingCategoryLabels: {
             all: "全部赛道",
             general: "综合",
+            dao: "DAO",
             politics: "政策",
             sports: "竞技",
             tech: "科技",
@@ -11092,6 +11093,7 @@ test("internal discovery-config routes allow operator reads but reserve writes f
           rankingCategoryLabels: {
             all: "全部赛道",
             general: "综合",
+            dao: "DAO",
             politics: "政策",
             sports: "竞技",
             tech: "科技",

@@ -109,3 +109,28 @@ test("dispatch selection keeps a general-pool reserve when interest matches are 
     true,
   );
 });
+
+test("dispatch selection recognizes dao interest tags for dao propositions", () => {
+  const proposition = buildLiveProposition({ category: "dao" });
+  const selection = engine.select({
+    proposition,
+    maxAssignments: 1,
+    candidates: [
+      buildRankedCandidate({
+        userId: "dao-user",
+        activeTagKeys: ["interested_in_dao"],
+      }),
+      buildRankedCandidate({
+        userId: "general-user",
+        activeTagKeys: [],
+      }),
+    ],
+  });
+
+  assert.deepEqual(selection.selectedUserIds, ["dao-user"]);
+  assert.equal(
+    selection.candidates.find((candidate) => candidate.userId === "dao-user")
+      ?.reasons.includes("boost_interest_match:interested_in_dao"),
+    true,
+  );
+});

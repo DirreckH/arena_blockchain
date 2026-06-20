@@ -19,6 +19,18 @@ export type PublicValidationOption = {
   displayOrder: number
 }
 
+export type FeaturedMarketCommentTone = 'support' | 'oppose' | 'meta'
+
+export type FeaturedMarketComment = {
+  id: string
+  handle: string
+  body: string
+  tone?: FeaturedMarketCommentTone
+  lane?: number
+  delayMs?: number
+  durationMs?: number
+}
+
 export type PublicValidationMarketCard = {
   id: string
   renderKey?: string
@@ -33,6 +45,7 @@ export type PublicValidationMarketCard = {
   imageSrc?: string
   isSettled?: boolean
   publicResult?: string
+  featuredComments?: FeaturedMarketComment[]
 }
 
 export type PublicValidationMarketDetail = PublicValidationMarketCard

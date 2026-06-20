@@ -1,4 +1,5 @@
 import type { ValidationMarketViewModel } from '@arena/shared'
+import { getFeaturedMarketComments } from './featured-market-comments'
 import type {
   PublicValidationMarketCard,
   PublicValidationMarketDetail,
@@ -108,6 +109,7 @@ export function toPublicValidationMarket(
     closesAt: market.bettingClosesAt,
     isSettled: status === 'settled',
     publicResult: buildPublicResult(market),
+    featuredComments: getFeaturedMarketComments(market.marketId),
   }
 }
 

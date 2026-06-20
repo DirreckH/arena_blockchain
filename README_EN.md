@@ -1,103 +1,107 @@
 # Arena
 
-English | [简体中文](./README.md)
+English | [Chinese](./README.md)
 
-[![Status](https://img.shields.io/badge/status-consensus_prediction_market_mvp-0A66C2?style=flat-square)](./README_EN.md)
+[![Status](https://img.shields.io/badge/status-crowd_consensus_prediction_market_mvp-0A66C2?style=flat-square)](./README_EN.md)
 
-Arena is a consensus prediction market: it turns "how a real target group will ultimately judge something" into a tradable, verifiable, and settleable market.
+Arena is a crowd consensus prediction market.
 
-Traditional prediction markets are good at trading external events: prices, games, elections, and public news. Arena focuses on a different, more frequent class of outcomes that show up in business, AI, and community decision-making: which option a target audience will support, which direction real users will choose, or whether a proposal, piece of content, product concept, or contribution will pass collective validation.
+It does not only trade external facts. It turns the future judgment, choice, or acceptance of a clearly defined group into a market that can be created, joined, verified, and settled.
 
-Those outcomes usually live inside surveys, polls, research reports, or internal review workflows. They carry signal, but they rarely have market incentives, public progress, settlement records, or composable financial expression. Arena's core idea is simple: once collective judgment can be defined, sampled, hidden, revealed, and settled, it can become a new prediction-market asset.
+Traditional prediction markets are good at answering whether an external event will happen: a price move, a game result, an election outcome, or a public news event. Arena focuses on a more frequent and more participatory class of outcomes: which side a target audience will take, which direction real users will choose, whether a community will accept a proposal, or whether an audience will converge around a shared judgment.
 
-The current minimum loop is:
+This market matters because many high-participation, high-distribution outcomes already happen inside crowds.
 
-`create an outcome market -> participants stake / verify -> target group responds -> effective samples form -> consensus result is revealed -> market settles`
+"Messi vs Cristiano Ronaldo GOAT", "Is ticketing chaos more talked about than the concert itself?", and "Will AI search change how heavy internet users look things up?" are not fringe entertainment prompts. They represent real demand: people like taking positions, comparing judgments, arguing in public, and watching where the crowd lands.
 
-Before reveal, the market shows progress but not direction. Participants can take positions without seeing the live response trend; once sample and time conditions are met, Arena reveals the official result and settles claims or refunds around it.
+Arena's opportunity is to turn consensus that currently lives inside comments, polls, surveys, community debates, and brand research into a product with market incentives, public progress, verification, and settlement records.
 
 ## TL;DR
 
-- `One-liner`: Arena is a Web3 prediction market for trading collective consensus outcomes.
-- `Core asset`: not just betting on public news, but trading how a defined group will ultimately choose or judge.
-- `Core experience`: market creation, hidden sampling, public progress, result reveal, settlement.
+- `One-liner`: Arena is a Web3 prediction market for trading crowd consensus outcomes.
+- `Core difference`: Polymarket-style markets mainly predict external facts; Arena predicts how a target crowd will ultimately judge.
+- `Important market`: sports, culture, crypto, tech, DAO, public policy, finance, and entertainment all produce high-topic, high-participation consensus questions.
+- `Why users join`: people naturally want to stake, comment, verify, and share around identity, preference, taste, and group judgment.
 - `Current MVP`: non-rolling, single-question, binary consensus markets.
 - `Live demo`: `pnpm install` -> `pnpm web:dev` -> open `http://localhost:5173` -> type `demo`.
-- `Current status`: browsable product shell, real backend paths, demo fallback, and minimum on-chain settlement capability.
 
-## Why This Market Matters
+## Why This Is A Market
 
-Many important decisions do not have a natural price feed, but they do have a clear group outcome.
+Many valuable questions do not have a natural price feed, but they do have a clear crowd outcome.
 
-Brands want to know whether a target audience will accept a new concept. AI teams want to know which model output human reviewers trust more. DAOs want to know whether a grant, proposal, or contribution will pass community validation. Content platforms want to know whether a creator, curation result, or governance action will be accepted by the intended community.
+Brands want to know whether core users will accept a new concept. AI teams want to know which model output human reviewers trust more. DAOs want to know whether a proposal or grant will pass community validation. Content platforms want to know whether a creator, ranking, or governance action will be accepted by the intended community.
 
-Today, these questions usually fall into three imperfect categories:
+More importantly, highly entertaining topics have market value too.
 
-- `Surveys`: collect answers, but do not create market risk or externally settleable outcomes.
-- `Votes`: express preferences, but often become identity or mobilization contests and rarely preserve hidden sampling.
-- `Traditional prediction markets`: trade events well, but lack stable resolution sources for subjective group outcomes.
+Strong topical markets share several traits:
 
-Arena combines the useful parts into one product path: define a resolvable group question, open a market around the future result, then use effective samples to produce the official outcome and settle the market.
+- `Low cognitive cost`: users instantly understand why they might care, as with "Messi vs Cristiano Ronaldo GOAT".
+- `High expression value`: participants are not only guessing a result; they are expressing identity, preference, and judgment.
+- `Strong distribution`: the topics naturally invite discussion, comments, sharing, and remixing.
+- `High-frequency supply`: sports, pop culture, crypto narratives, tech products, and DAO governance generate new debates every day.
+- `Commercial expansion`: the same mechanism can serve brand testing, community governance, AI evaluation, content validation, and user research.
 
-This is not a survey page with wallet login. It is a way to make collective consensus tradable and verifiable.
+Arena is not only making a market for public news outcomes. It is opening a broader source of market supply: crowd consensus results.
 
-## Why Now
+## Product Mechanism
 
-Three shifts make consensus markets more timely:
+Arena's minimum loop is:
 
-- `AI is creating more subjective evaluation`: model outputs, content quality, preference signals, and safety boundaries increasingly depend on human feedback, but that feedback is still trapped in closed labeling and scoring systems.
-- `On-chain settlement lowers trust costs`: custody, settlement, and claim records belong in a transparent settlement layer, while the full sampling workflow does not need to be forced on-chain.
-- `Communities and brands need faster decision markets`: DAOs, creator communities, consumer brands, and content platforms need something faster than research studies and more incentive-aligned than ordinary voting.
+`create a proposition market -> participants stake or verify -> target crowd responds -> effective samples form -> consensus result is revealed -> market settles`
 
-Arena starts with a narrow, legible market type: binary, non-rolling, one-shot consensus questions. That is small enough to demo end to end in a hackathon MVP, but broad enough to expand into AI evaluation, consumer research, DAO governance, content validation, and open task markets.
+Before reveal, the market shows progress but not direction.
 
-## How The Product Works
-
-The user story is direct.
-
-1. A market creator proposes a resolvable question.
-2. Arena defines the target group, sample requirements, time window, and binary outcomes.
-3. Market participants stake or verify before reveal.
-4. The target group submits answers; Arena reviews them and counts effective samples.
-5. The frontend shows progress, but not which side is leading.
-6. Once resolution conditions are met, Arena reveals the official result.
-7. The market settles from that result, and users claim gains or receive refunds.
+Participants can take positions without seeing the live response trend. Once sample and time conditions are met, Arena reveals the official result and settles gains, claims, or refunds around it.
 
 This creates two useful roles at once:
 
-- `Market participants`: express a view before reveal, take risk, then claim gains or receive refunds after settlement.
-- `Market creators`: launch an outcome market with progress, incentives, and settlement records instead of a static poll or survey.
+- `Market participants`: make a judgment about future crowd consensus, take risk, then claim gains or receive refunds after reveal.
+- `Market creators`: get an outcome market with incentives, progress, verification, and settlement records instead of a static poll or survey.
+
+## Why Now
+
+Arena sits at the intersection of three shifts.
+
+- `Attention markets are becoming topic-driven`: users increasingly form public positions around sports, culture, tech, crypto, and public events. Strong topics create a natural entry point.
+- `AI and community decisions need more human feedback`: model output, content quality, brand preference, and governance decisions increasingly depend on target-crowd feedback, but current feedback often remains trapped in labeling, surveys, or simple votes.
+- `On-chain settlement lowers trust costs`: custody, settlement, and claim records fit a transparent settlement layer, while the full sampling workflow does not need to be forced on-chain.
+
+Arena starts with binary, non-rolling, one-shot consensus questions. That scope is small enough to demonstrate end to end in a hackathon MVP, and large enough to expand into AI evaluation, consumer research, DAO governance, content validation, and open task markets.
 
 ## Example Markets
 
-Arena can turn many hard-to-trade questions into prediction markets.
+Arena is especially suited to questions where the result comes from crowd judgment rather than an external price feed.
 
 | Scenario | Market that can be formed |
 | --- | --- |
-| AI model evaluation | Will target reviewers choose Model A or Model B? |
-| Consumer brand testing | Will core users prefer concept A or concept B? |
-| DAO grants | Will effective samples support this project entering the next round? |
-| Content governance | Will the target community say this content should be promoted or removed? |
-| Product roadmap | Will beta users accept this feature direction? |
-| Contribution review | Will maintainers validate this open-source contribution? |
+| Sports debate | Will fans broadly agree that Messi deserves the modern football GOAT label more than Cristiano Ronaldo? |
+| Pop culture | Will audiences broadly agree that ticketing chaos creates more social discussion than the concert itself? |
+| Crypto narratives | Will crypto users broadly agree that meme coins drive retail sentiment more than AI coins? |
+| Tech behavior | Will heavy internet users broadly agree that AI search is better than traditional search for ask-first workflows? |
+| DAO governance | Will effective samples support a DAO grant project entering the next round? |
+| Brand testing | Will core users prefer concept A over concept B? |
+| AI model evaluation | Will target reviewers choose Model A's output or Model B's output? |
+| Content governance | Will the target community say this content should be promoted, downranked, or removed? |
 
-The shared pattern is that the result is not an external price feed. It is a clearly defined collective consensus outcome. Arena's goal is to give these outcomes markets, progress, and settlement.
+The first few categories are especially strong for demos and early growth. They are topical, entertaining, and participatory. They show that Arena is not a cold survey wrapper, but a prediction market people can willingly enter, discuss, and interact with.
 
-## Why Judges And Investors Should Care
+## Why Investors And Judges Should Care
 
-Arena's hackathon value is not "another prediction-market UI." It introduces a new supply source for markets: collective consensus outcomes.
+Arena's core claim is not "another prediction-market UI." It introduces a new supply source for markets: crowd consensus.
 
-- `New asset class`: turns research, review, preference testing, and community validation into tradable results.
-- `New market supply`: markets do not need to wait for public news; brands, DAOs, AI teams, and platforms can create them directly.
-- `New trust model`: direction is hidden before reveal, then settlement happens around the official result.
-- `Expansion path`: from the binary MVP into rolling questions, multi-question research, AI evaluation markets, and requester dashboards.
-- `Demoable today`: the repository already runs a product shell, demo session, market detail views, results, account state, and a local settlement path.
+- `New asset`: research, review, preference testing, community validation, and entertainment debates can become tradable results.
+- `More market supply`: markets do not need to wait for external news; brands, DAOs, AI teams, platforms, and communities can create them directly.
+- `Lower participation barrier`: strong topical propositions let regular users participate without first understanding complex financial events.
+- `Clear trust model`: direction is hidden before reveal, then settlement happens around the effective-sample result.
+- `Expansion path`: start with entertainment and consensus propositions, then expand into requester dashboards, research networks, AI evaluation, and DAO governance.
 
-That makes Arena closer to infrastructure for continuously creating new markets than a one-off betting page.
+For hackathon judges, Arena is no longer just a concept. The repository can demo the home feed, topic markets, staking experience, demo session, proposition creation, response tasks, results, watchlist, account state, and a minimum settlement path.
+
+For investors, the key question is not whether a single topic can go viral. It is whether this mechanism can continuously generate new markets. Entertainment propositions are the front door; brand research, AI evaluation, and community governance are the commercial expansion paths.
 
 ## Current MVP
 
-The current version is intentionally narrow. The goal is to run one complete consensus prediction-market path, not to build a full exchange all at once.
+The current version is intentionally narrow. The goal is to run one complete crowd consensus prediction-market path, not to build a full exchange all at once.
 
 In scope:
 
@@ -107,7 +111,7 @@ In scope:
 - Simple staking and one-shot settlement.
 - Platform dispatch, answer submission, basic review, effective-sample counting, and unified reveal.
 - Pre-reveal progress display without direction leakage.
-- Replaceable seams between demo sessions and real APIs.
+- Replaceable data paths between demo sessions and real APIs.
 
 Explicitly out of scope:
 
@@ -119,12 +123,15 @@ Explicitly out of scope:
 - Multi-asset staking.
 - Any pre-reveal directional intermediate state.
 
-## What You Can See Today
+## What You Can Demo Today
 
-The current repository already has a demoable product shape:
+The current repository already has a product shape suitable for judges and investors:
 
 - Home and market feed.
-- Market ranking and detail pages.
+- Hot, breaking, latest, and category directories.
+- More topical and entertaining demo propositions.
+- Market detail pages and binary participation experience.
+- Featured-card comment danmaku for demo engagement.
 - Challenge / draft creation path.
 - Response task reading and submission path.
 - Results, watchlist, activity, and account shell.
@@ -143,7 +150,9 @@ pnpm web:dev
 
 Open:
 
-- `http://localhost:5173`
+```text
+http://localhost:5173
+```
 
 For the first pass, type `demo` in the login flow and walk through home, market detail, drafts, challenge submission, adjudication, results, and watchlist.
 
@@ -153,7 +162,7 @@ The following details are kept for reproducibility and continued development. Fo
 
 ### Local Integration
 
-If you want the local backend, validation runtime, and frontend to work together, use the repository wrapper:
+If the local backend, validation runtime, and frontend should work together, use the repository wrapper:
 
 ```powershell
 pnpm install
@@ -233,11 +242,10 @@ Arena/
 ├─ packages/
 │  └─ shared/
 ├─ contracts/
-│  ├─ validation/
-│  └─ Arena.sol
+│  └─ validation/
+│     └─ Arena.sol
 ├─ docs/
-│  ├─ PRODUCT_SCOPE.md
-│  └─ contracts/
+│  └─ PRODUCT_SCOPE.md
 ├─ scripts/
 ├─ test/
 ├─ docker-compose.yml
@@ -250,18 +258,18 @@ Arena is past the idea-or-page-mock stage, but it is not claiming to be a comple
 
 What can be claimed clearly today:
 
-- a browsable, demoable consensus prediction-market product shell with replaceable mock / real seams
-- runnable application services and local data dependencies
-- application paths across proposition / result production / validation
-- validation-market contract, deploy scripts, sync, projection, monitoring, and runbooks
+- A browsable, demoable crowd consensus prediction-market product shell with replaceable mock / real data paths.
+- Runnable application services and local data dependencies.
+- Application paths across proposition / result production / validation.
+- Validation-market contract, deploy scripts, sync, projection, monitoring, and runbooks.
 
 What it explicitly does not claim:
 
-- survey / hybrid / rolling are already complete
-- complex AMMs, order books, or multi-asset markets are complete
-- the frontend is already prepared for every future trading model
-- the old legacy Arena contract is still the core protocol path
-- production-grade rollback / observability / operator platform are fully complete
+- Survey / hybrid / rolling are already complete.
+- Complex AMMs, order books, or multi-asset markets are complete.
+- The frontend is already prepared for every future trading model.
+- The old legacy Arena contract is still the core protocol path.
+- Production-grade rollback / observability / operator platform are fully complete.
 
 ## Further Reading
 

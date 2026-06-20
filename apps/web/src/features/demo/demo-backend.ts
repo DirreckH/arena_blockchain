@@ -125,7 +125,7 @@ const DEMO_USER_ID = 'demo-user'
 const DEMO_CHAIN_ID = 31337
 const DEMO_NOW = '2026-05-08T09:30:00.000Z'
 const DEMO_CLOSING_SOON_URGENT_WINDOW_MS = 3 * 60 * 60 * 1000
-const DEMO_DISCOVERY_RANKING_CATEGORY_ORDER = ['all', 'general', 'politics', 'sports', 'tech', 'research', 'culture'] as const
+const DEMO_DISCOVERY_RANKING_CATEGORY_ORDER = ['all', 'general', 'dao', 'politics', 'sports', 'tech', 'research', 'culture'] as const
 
 const DEMO_CUSTOM_DIRECTORY_PATHNAME_PREFIX = '/zh/c/'
 const DEMO_CUSTOM_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,31}$/
@@ -155,7 +155,7 @@ const demoCategoryDirectoryIndexItems: PublicCategoryDirectoryIndexViewModel['it
               : pathname === '/zh/finance' ? '金融'
                 : pathname === '/zh/pop-culture' ? '文化'
                   : pathname === '/zh/economy' ? '经济'
-                    : pathname === '/zh/weather' ? '天气'
+                    : pathname === '/zh/dao' ? 'DAO'
                       : pathname === '/zh/surveys' ? '调研'
                       : '滚动命题',
   title: config.title,
@@ -168,7 +168,7 @@ const demoCategoryDirectoryIndexItems: PublicCategoryDirectoryIndexViewModel['it
               : pathname === '/zh/finance' ? '金融观察'
                 : pathname === '/zh/pop-culture' ? '文化调研'
                   : pathname === '/zh/economy' ? '经济观察'
-                    : pathname === '/zh/weather' ? '天气滚动命题'
+                    : pathname === '/zh/dao' ? 'DAO 命题'
                       : pathname === '/zh/surveys' ? '调研网络'
                         : '滚动命题',
   description:
@@ -180,7 +180,7 @@ const demoCategoryDirectoryIndexItems: PublicCategoryDirectoryIndexViewModel['it
               : pathname === '/zh/finance' ? '资产价格与宏观经济'
                 : pathname === '/zh/pop-culture' ? '娱乐、媒体与大众文化'
                   : pathname === '/zh/economy' ? '就业、消费与产业数据'
-                    : pathname === '/zh/weather' ? '天气与滚动观察命题'
+                    : pathname === '/zh/dao' ? 'DAO 治理、国库、委托与协议研究命题'
                       : pathname === '/zh/surveys' ? '开发者、消费者与品牌调研'
                         : '周期更新与上期结果归档',
 }))
@@ -202,6 +202,7 @@ const DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG: InternalDiscoveryGlobalConfigViewMod
   rankingCategoryLabels: {
     all: '全部',
     general: '综合',
+    dao: 'DAO',
     politics: '政策',
     sports: '体育',
     tech: '科技',
@@ -213,11 +214,12 @@ const DEFAULT_DEMO_DISCOVERY_GLOBAL_CONFIG: InternalDiscoveryGlobalConfigViewMod
     label:
       id === 'all' ? '全部'
         : id === 'general' ? '综合'
-          : id === 'politics' ? '政策'
-            : id === 'sports' ? '体育'
-              : id === 'tech' ? '科技'
-                : id === 'research' ? '研究'
-                  : '文化',
+          : id === 'dao' ? 'DAO'
+            : id === 'politics' ? '政策'
+              : id === 'sports' ? '体育'
+                : id === 'tech' ? '科技'
+                  : id === 'research' ? '研究'
+                    : '文化',
     displayOrder: index,
     pageState: 'visible',
     kind: 'system',
@@ -251,6 +253,8 @@ function toCategory(categoryHref: string): PropositionCategory {
   switch (categoryHref) {
     case '/zh/politics':
       return 'politics'
+    case '/zh/dao':
+      return 'dao'
     case '/zh/sports/live':
       return 'sports'
     case '/zh/crypto':
@@ -260,7 +264,6 @@ function toCategory(categoryHref: string): PropositionCategory {
       return 'entertainment'
     case '/zh/finance':
     case '/zh/geopolitics':
-    case '/zh/weather':
     case '/zh/surveys':
     case '/zh/economy':
     default:
@@ -594,6 +597,8 @@ function mapDemoRankingCategoryId(categoryId: string) {
   switch (categoryId) {
     case 'all':
       return 'all'
+    case 'dao':
+      return 'dao'
     case 'politics':
       return 'politics'
     case 'sports':
@@ -760,6 +765,27 @@ function buildDemoMarkets(): ValidationMarketViewModel[] {
 
 function buildDemoDrafts(): PropositionDraftRecord[] {
   return [
+    {
+      propositionId: 'draft-demo-dao-treasury',
+      title: 'DAO 观察者是否会普遍认为，该 DAO 本季度的国库配置更偏向稳健防守而非风险扩张？',
+      summary: '围绕 DAO 国库披露、资产结构变化与治理讨论，评估参与者是否会普遍认为该 DAO 本季度的国库配置更偏向稳健防守而非风险扩张，作为候选命题进入平台审核。',
+      optionA: '会被视为更偏向稳健防守',
+      optionB: '不会被视为更偏向稳健防守',
+      category: 'dao',
+      sampleConstraints: ['experienced_user', 'interested_in_dao'],
+      minEffectiveSample: 5,
+      minBetAmount: '10',
+      minDurationSeconds: 7200,
+      maxDurationSeconds: 604800,
+      rewardBudget: '660',
+      baseResponseReward: '22',
+      marketEnabled: true,
+      status: 'draft',
+      submissionStatus: 'draft',
+      createdAt: minusDays(3),
+      updatedAt: minusHours(2),
+      submittedAt: null,
+    },
     {
       propositionId: 'draft-demo-consensus-window',
       title: '未来四周独立开发者是否会更偏好“研究型搜索 + 代码助手”组合工作流？',
@@ -1541,6 +1567,11 @@ function buildDemoExportArtifact(
 }
 
 function buildDemoDiscoveryHome(markets: ValidationMarketViewModel[]): PublicDiscoverPageViewModel {
+  const hotFeaturedMarketIds = Array.from(new Set(
+    HOT_PAGE_CONFIG.items
+      .map((item) => item.href.startsWith('/zh/event/') ? item.href.replace('/zh/event/', '') : null)
+      .filter((marketId): marketId is string => Boolean(marketId)),
+  )).slice(0, 10)
   const categorySections = getDemoVisibleDiscoveryCategoriesSorted().map((category) => ({
     href: category.pathname,
     label: category.label,
@@ -1568,7 +1599,7 @@ function buildDemoDiscoveryHome(markets: ValidationMarketViewModel[]): PublicDis
     })
 
   return {
-    featuredMarketIds: ['public-trust', 'ai-model-review'],
+    featuredMarketIds: hotFeaturedMarketIds,
     sections: [...topSections, ...categorySections],
   }
 }
@@ -3655,6 +3686,22 @@ function buildDemoPublicIntegrityOverview(): PublicIntegrityOverviewViewModel {
 function buildDemoPublicRespondentLeaderboard(): PublicRespondentLeaderboardViewModel {
   return {
     categories: [
+      {
+        id: 'dao',
+        label: 'DAO',
+        description: 'DAO 治理、国库、委托与协议研究命题的回答率排行。',
+        rows: [
+          {
+            handle: 'delegate.scope',
+            walletShort: '0x5ab1…8d42',
+            responseRatePercent: 95.8,
+            reviewedCount: 148,
+            acceptedCount: 141,
+            reputationScore: 1886,
+            topTag: 'DAO 研究',
+          },
+        ],
+      },
       {
         id: 'public-policy',
         label: '公共政策',

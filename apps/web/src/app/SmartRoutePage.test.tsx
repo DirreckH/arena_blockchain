@@ -35,6 +35,14 @@ describe('smart route page routes', () => {
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
   })
 
+  it('redirects the legacy /zh/weather route to /zh/dao', async () => {
+    renderApp(['/zh/weather'], <LocationProbe />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-path')).toHaveTextContent('/zh/dao')
+    })
+  })
+
   it('renders requester submissions page on /zh/submissions', async () => {
     window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, DEMO_SESSION_TOKEN)
     window.localStorage.setItem(AUTH_IDENTITY_STORAGE_KEY, JSON.stringify(buildDemoIdentity(31337)))

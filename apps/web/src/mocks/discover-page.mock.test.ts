@@ -19,7 +19,7 @@ describe('discover page section configs', () => {
       '/zh/finance',
       '/zh/pop-culture',
       '/zh/economy',
-      '/zh/weather',
+      '/zh/dao',
       '/zh/surveys',
       '/zh/rolling',
     ])

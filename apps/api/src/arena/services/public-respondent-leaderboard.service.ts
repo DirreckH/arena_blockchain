@@ -66,6 +66,12 @@ const FINALIZED_REVIEW_STATUSES = new Set<ResponseReviewStatus>([
 
 const LEADERBOARD_CATEGORIES: LeaderboardCategoryConfig[] = [
   {
+    id: "dao",
+    label: "DAO",
+    description: "DAO 治理、国库、委托与协议研究命题的回答率排行。",
+    categories: ["dao"],
+  },
+  {
     id: "public-policy",
     label: "公共政策",
     description: "公共政策、公共服务、舆情类命题的回答率排行。",
@@ -103,6 +109,7 @@ const TAG_LABELS: Record<string, string> = {
   low_anomaly: "低异常率",
   stable_responder: "稳定应答",
   interested_in_sports: "体育观察",
+  interested_in_dao: "DAO 研究",
   interested_in_ai: "AI 调研",
   interested_in_brand_research: "品牌研究",
   interested_in_politics: "公共政策",

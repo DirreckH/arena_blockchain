@@ -14,6 +14,7 @@ const propositionDraftInput = {
   category:
     "general" as
       | "general"
+      | "dao"
       | "sports"
       | "ai"
       | "brand_research"
@@ -125,6 +126,12 @@ test("custom discovery categories and capsules flow through public discovery out
     title: "Config politics proposition",
     category: "politics",
   });
+  const dao = await createLiveProposition(harness, {
+    marketEnabled: true,
+    minEffectiveSample: 2,
+    title: "Config dao proposition",
+    category: "dao",
+  });
   const sports = await createLiveProposition(harness, {
     marketEnabled: true,
     minEffectiveSample: 1,
@@ -144,8 +151,15 @@ test("custom discovery categories and capsules flow through public discovery out
     minuteOffset: 331,
     reviewStatus: "valid",
   });
+  await createReviewedResponseForProposition(harness, {
+    propositionId: dao.id,
+    userId: "config_dao_user",
+    minuteOffset: 332,
+    reviewStatus: "valid",
+  });
 
   await harness.counterService.rebuildCounterForProposition(politics.id);
+  await harness.counterService.rebuildCounterForProposition(dao.id);
   await harness.counterService.rebuildCounterForProposition(sports.id);
 
   const validationViews = createValidationViews(harness);
@@ -157,6 +171,9 @@ test("custom discovery categories and capsules flow through public discovery out
 
   const politicsMarket = (
     await harness.marketRepository.findByPropositionId(politics.id)
+  )!;
+  const daoMarket = (
+    await harness.marketRepository.findByPropositionId(dao.id)
   )!;
   const sportsMarket = (
     await harness.marketRepository.findByPropositionId(sports.id)
@@ -189,6 +206,7 @@ test("custom discovery categories and capsules flow through public discovery out
       general: "General",
       politics: "Policy",
       sports: "Sports",
+      dao: "DAO",
       tech: "Tech",
       research: "Research",
       culture: "Culture",
@@ -197,6 +215,11 @@ test("custom discovery categories and capsules flow through public discovery out
       {
         id: "sports",
         label: "Sports",
+        pageState: "visible",
+      },
+      {
+        id: "dao",
+        label: "DAO",
         pageState: "visible",
       },
       {
@@ -214,6 +237,7 @@ test("custom discovery categories and capsules flow through public discovery out
   const index = await publicDiscovery.getCategoryDirectoryIndex();
   const home = await publicDiscovery.getHome();
   const ranking = await publicDiscovery.getRanking("hot");
+  const daoDirectory = await publicDiscovery.getCategoryDirectory("dao");
   const customDirectory = await publicDiscovery.getCategoryDirectory("esports");
 
   assert.deepEqual(
@@ -239,8 +263,23 @@ test("custom discovery categories and capsules flow through public discovery out
     true,
   );
   assert.equal(
+    index.items.some((item) => item.slug === "dao" && item.pathname === "/zh/dao"),
+    true,
+  );
+  assert.equal(
     home.sections.some((section) => section.href === "/zh/c/esports"),
     true,
+  );
+  assert.equal(
+    home.sections.some((section) => section.href === "/zh/dao"),
+    true,
+  );
+  assert.deepEqual(
+    ranking.categories.find((category) => category.id === "dao"),
+    {
+      id: "dao",
+      label: "DAO",
+    },
   );
   assert.deepEqual(
     ranking.categories.find((category) => category.id === "cap-esports"),
@@ -250,6 +289,9 @@ test("custom discovery categories and capsules flow through public discovery out
       marketIds: [sportsMarket.id],
     },
   );
+  assert.equal(daoDirectory?.title, "DAO");
+  assert.equal(daoDirectory?.featuredMarketId, daoMarket.id);
+  assert.equal(daoDirectory?.marketIds.includes(daoMarket.id), true);
   assert.equal(customDirectory?.title, "Esports");
   assert.equal(customDirectory?.featuredMarketId, sportsMarket.id);
   assert.deepEqual(customDirectory?.marketIds, [sportsMarket.id]);

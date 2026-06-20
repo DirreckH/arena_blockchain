@@ -11,6 +11,25 @@ describe('arenaApi operator demo mode', () => {
     vi.unstubAllGlobals()
   })
 
+  it('uses the hot all-top-ten topics as the home featured carousel in demo mode', async () => {
+    const [{ arenaApi }, { demoBackend }, { HOT_PAGE_CONFIG }] = await Promise.all([
+      import('./arena-api'),
+      import('../demo/demo-backend'),
+      import('../../mocks/hot-page.mock'),
+    ])
+    demoBackend.reset()
+
+    const expectedFeaturedMarketIds = HOT_PAGE_CONFIG.items
+      .map((item) => item.href.replace('/zh/event/', ''))
+      .slice(0, 10)
+
+    await expect(arenaApi.getDiscoveryHomeFeed()).resolves.toMatchObject({
+      data: {
+        featuredMarketIds: expectedFeaturedMarketIds,
+      },
+    })
+  })
+
   it('serves internal monitoring and audit reads from demo state without fetch', async () => {
     const [{ arenaApi }, { demoBackend }] = await Promise.all([
       import('./arena-api'),
@@ -313,6 +332,7 @@ describe('arenaApi operator demo mode', () => {
       rankingCategoryLabels: {
         all: '全部赛道',
         general: '综合',
+        dao: 'DAO',
             politics: '政策轨道',
             sports: '竞技赛道',
             tech: '科技',

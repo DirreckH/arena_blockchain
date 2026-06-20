@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getPublicValidationMarkets } from '../features/validation/validation-market.mock-adapter'
+import { CATEGORY_PREPEND_MARKET_IDS } from './arena-market.mock'
 import {
   CATEGORY_DIRECTORY_CONFIGS,
   CATEGORY_DIRECTORY_PATHS,
@@ -17,7 +18,7 @@ describe('category directory configs', () => {
       '/zh/finance',
       '/zh/pop-culture',
       '/zh/economy',
-      '/zh/weather',
+      '/zh/dao',
       '/zh/surveys',
       '/zh/rolling',
     ]
@@ -40,6 +41,16 @@ describe('category directory configs', () => {
       config.marketIds.forEach((marketId) => {
         expect(knownMarketIds.has(marketId)).toBe(true)
       })
+    })
+  })
+
+  it('prepends eight fresh mock cards for every category directory', () => {
+    Object.entries(CATEGORY_PREPEND_MARKET_IDS).forEach(([pathname, prependedMarketIds]) => {
+      const config = CATEGORY_DIRECTORY_CONFIGS[pathname]
+
+      expect(prependedMarketIds).toHaveLength(8)
+      expect(config.featuredMarketId).toBe(prependedMarketIds[0])
+      expect(config.marketIds.slice(0, 8)).toEqual(prependedMarketIds)
     })
   })
 })

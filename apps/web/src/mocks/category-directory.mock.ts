@@ -1,3 +1,5 @@
+import { CATEGORY_PREPEND_MARKET_IDS } from './arena-market.mock'
+
 export type CategorySidebarItem = {
   label: string
   count: string
@@ -28,8 +30,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '印度选举', count: '6' },
       { label: '哥伦比亚选举', count: '6' },
     ],
-    featuredMarketId: 'public-trust',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/politics'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/politics'],
       'public-trust',
       'regional-dialogue',
       'ceasefire-durability',
@@ -50,8 +53,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '高尔夫', count: '23' },
       { label: '奥运', count: '18' },
     ],
-    featuredMarketId: 'nba-final-consensus',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/sports/live'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/sports/live'],
       'nba-final-consensus',
       'f1-season-result',
       'public-trust',
@@ -72,8 +76,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '稳定币', count: '43' },
       { label: 'Layer 2', count: '62' },
     ],
-    featuredMarketId: 'btc-network-fee',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/crypto'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/crypto'],
       'btc-network-fee',
       'ai-model-review',
       'rolling-temperature',
@@ -94,8 +99,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '开发者工具', count: '32' },
       { label: '机器人', count: '18' },
     ],
-    featuredMarketId: 'ai-model-review',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/tech'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/tech'],
       'ai-model-review',
       'btc-network-fee',
       'public-trust',
@@ -116,8 +122,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '停火', count: '22' },
       { label: '峰会', count: '18' },
     ],
-    featuredMarketId: 'regional-dialogue',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/geopolitics'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/geopolitics'],
       'regional-dialogue',
       'ceasefire-durability',
       'public-trust',
@@ -138,8 +145,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '风险偏好', count: '39' },
       { label: '外汇', count: '27' },
     ],
-    featuredMarketId: 'btc-network-fee',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/finance'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/finance'],
       'btc-network-fee',
       'public-trust',
       'ai-model-review',
@@ -160,8 +168,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '颁奖季', count: '16' },
       { label: '现场活动', count: '11' },
     ],
-    featuredMarketId: 'ai-model-review',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/pop-culture'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/pop-culture'],
       'ai-model-review',
       'rolling-temperature',
       'public-trust',
@@ -182,8 +191,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '制造业', count: '41' },
       { label: '增长', count: '55' },
     ],
-    featuredMarketId: 'public-trust',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/economy'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/economy'],
       'public-trust',
       'btc-network-fee',
       'rolling-temperature',
@@ -192,26 +202,27 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       'f1-season-result',
     ],
   },
-  '/zh/weather': {
-    title: '天气',
+  '/zh/dao': {
+    title: 'DAO',
     sidebarItems: [
-      { label: '全部', count: '284' },
-      { label: '气温', count: '101' },
-      { label: '降雨', count: '46' },
-      { label: '风暴', count: '28' },
-      { label: '农业', count: '17' },
-      { label: '用电负荷', count: '22' },
-      { label: '能源', count: '19' },
-      { label: '滚动命题', count: '51' },
+      { label: '全部', count: '312' },
+      { label: '治理提案', count: '84' },
+      { label: '链上投票', count: '63' },
+      { label: '委托代理', count: '41' },
+      { label: '国库配置', count: '36' },
+      { label: 'Grant / 资助', count: '27' },
+      { label: '协议收入', count: '24' },
+      { label: '社区活跃', count: '37' },
     ],
-    featuredMarketId: 'rolling-temperature',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/dao'][0],
     marketIds: [
-      'rolling-temperature',
-      'public-trust',
-      'btc-network-fee',
-      'regional-dialogue',
-      'ceasefire-durability',
-      'ai-model-review',
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/dao'],
+      'dao-voter-turnout',
+      'dao-treasury-diversification',
+      'dao-delegate-concentration',
+      'dao-grants-approval',
+      'dao-protocol-revenue',
+      'dao-forum-activity',
     ],
   },
   '/zh/surveys': {
@@ -226,8 +237,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '满意度', count: '44' },
       { label: '样本观察', count: '18' },
     ],
-    featuredMarketId: 'ai-model-review',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/surveys'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/surveys'],
       'ai-model-review',
       'public-trust',
       'rolling-temperature',
@@ -248,8 +260,9 @@ export const CATEGORY_DIRECTORY_CONFIGS: Record<string, CategoryDirectoryConfig>
       { label: '上期结果', count: '18' },
       { label: '即将更新', count: '15' },
     ],
-    featuredMarketId: 'rolling-temperature',
+    featuredMarketId: CATEGORY_PREPEND_MARKET_IDS['/zh/rolling'][0],
     marketIds: [
+      ...CATEGORY_PREPEND_MARKET_IDS['/zh/rolling'],
       'rolling-temperature',
       'public-trust',
       'btc-network-fee',

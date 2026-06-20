@@ -107,3 +107,20 @@ test("tag engine generates top interest tags from stable participation categorie
   ]);
   assert.equal(interestKeys.includes("interested_in_brand_research"), false);
 });
+
+test("tag engine maps dao participation into the dao interest tag", () => {
+  const tags = engine.compute({
+    reputation: null,
+    categoryParticipation: [
+      { category: "dao", responseCount: 5, share: 0.5 },
+      { category: "ai", responseCount: 3, share: 0.3 },
+      { category: "sports", responseCount: 2, share: 0.2 },
+    ],
+    totalCategorizedResponses: 10,
+  });
+
+  assert.deepEqual(
+    tags.map((tag) => tag.tagKey),
+    ["interested_in_dao"],
+  );
+});

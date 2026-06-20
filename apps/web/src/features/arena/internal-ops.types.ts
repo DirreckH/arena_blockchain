@@ -1079,7 +1079,7 @@ export type OpsValidationChainPropositionCommand =
   | 'resolve-market'
 
 export type InternalDiscoveryRankingCategoryLabelMap = Record<
-  'all' | 'general' | 'politics' | 'sports' | 'tech' | 'research' | 'culture',
+  'all' | 'general' | 'dao' | 'politics' | 'sports' | 'tech' | 'research' | 'culture',
   string
 >
 
@@ -1121,6 +1121,7 @@ export type InternalDiscoverySecondaryCapsuleKind = 'system' | 'custom'
 export type InternalDiscoverySecondaryCapsuleBaseRankingId =
   | 'all'
   | 'general'
+  | 'dao'
   | 'politics'
   | 'sports'
   | 'tech'

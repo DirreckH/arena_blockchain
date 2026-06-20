@@ -1,6 +1,9 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import type { PublicValidationMarketCard } from '../../features/validation/validation-market.types'
+import type {
+  FeaturedMarketComment,
+  PublicValidationMarketCard,
+} from '../../features/validation/validation-market.types'
 
 const marketHref = (marketId: string) => `/zh/event/${marketId}`
 
@@ -15,6 +18,21 @@ const revealLabel = (market: PublicValidationMarketCard) =>
 const effectiveSampleLabel = (market: PublicValidationMarketCard) =>
   `${market.progress.effectiveSampleCount} / ${market.progress.minEffectiveSample}`
 
+const COMMENT_BASE_OFFSET = 10
+const COMMENT_LANE_GAP = 34
+
+const buildFeaturedCommentStyle = (
+  comment: FeaturedMarketComment,
+  index: number,
+): CSSProperties => {
+  const lane = comment.lane ?? index
+  return {
+    top: `${COMMENT_BASE_OFFSET + lane * COMMENT_LANE_GAP}px`,
+    animationDelay: `${comment.delayMs ?? index * -2200}ms`,
+    animationDuration: `${comment.durationMs ?? 19000 + index * 1300}ms`,
+  }
+}
+
 export function FeaturedCarousel({
   market,
   pager,
@@ -28,6 +46,7 @@ export function FeaturedCarousel({
   const effectiveSample = effectiveSampleLabel(market)
   const timePercent = clampPercent(market.progress.timeProgressPercent)
   const samplePercent = clampPercent(market.progress.effectiveSampleProgressPercent)
+  const featuredComments = market.featuredComments?.filter((comment) => comment.body.trim().length > 0) ?? []
 
   return (
     <article className="trending-card" aria-label={market.title}>
@@ -45,6 +64,23 @@ export function FeaturedCarousel({
       </Link>
 
       <div className="trending-card-body">
+        {featuredComments.length > 0 ? (
+          <section className="trending-card-commentary" aria-label="用户评论弹幕">
+            <div className="trending-card-commentary-stage">
+              {featuredComments.map((comment, index) => (
+                <div
+                  key={comment.id}
+                  className={`trending-card-comment tone-${comment.tone ?? 'meta'}`}
+                  style={buildFeaturedCommentStyle(comment, index)}
+                >
+                  <span className="trending-card-comment-handle">{comment.handle}</span>
+                  <span className="trending-card-comment-body">{comment.body}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <div className="trending-card-metrics" aria-label="\u547d\u9898\u8fdb\u5ea6">
           <div className="trending-card-metric">
             <div className="trending-card-metric-row">

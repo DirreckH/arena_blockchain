@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PropositionDraftRecord } from '../api/arena-api'
-import { buildDraftTags, formatSampleConstraintLabel } from './arena-ui-mappers'
+import { buildDraftTags, formatCategoryLabel, formatSampleConstraintLabel } from './arena-ui-mappers'
 
 function buildDraft(sampleConstraints: string[]): PropositionDraftRecord {
   return {
@@ -46,9 +46,14 @@ describe('arena ui mappers', () => {
 
   it('formats supported sample-constraint keys into readable labels', () => {
     expect(formatSampleConstraintLabel('experienced_user')).toBe('资深答题人')
+    expect(formatSampleConstraintLabel('interested_in_dao')).toBe('DAO 兴趣')
     expect(formatSampleConstraintLabel('interested_in_brand_research')).toBe(
       '品牌调研兴趣',
     )
     expect(formatSampleConstraintLabel('custom_constraint')).toBe('custom_constraint')
+  })
+
+  it('formats the dao proposition category into a readable label', () => {
+    expect(formatCategoryLabel('dao')).toBe('DAO')
   })
 })

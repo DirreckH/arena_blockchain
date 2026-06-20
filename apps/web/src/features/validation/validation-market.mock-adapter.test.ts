@@ -17,6 +17,7 @@ const allowedMarketKeys = new Set([
   'imageSrc',
   'isSettled',
   'publicResult',
+  'featuredComments',
 ])
 
 const allowedProgressKeys = new Set([
@@ -28,6 +29,7 @@ const allowedProgressKeys = new Set([
 ])
 
 const allowedOptionKeys = new Set(['id', 'label', 'displayOrder'])
+const allowedCommentKeys = new Set(['id', 'handle', 'body', 'tone', 'lane', 'delayMs', 'durationMs'])
 
 const asRecord = (value: object): Record<string, unknown> =>
   value as Record<string, unknown>
@@ -78,6 +80,21 @@ describe('validation market public mock adapter', () => {
         expectNoForbiddenFields(option)
       })
     })
+  })
+
+  it('attaches featured comments to demo spotlight markets only', () => {
+    const featuredMarket = getPublicValidationMarketById('sports-messi-ronaldo-goat')
+    const regularMarket = getPublicValidationMarketById('public-trust')
+
+    expect(featuredMarket?.featuredComments?.length).toBeGreaterThan(0)
+    featuredMarket?.featuredComments?.forEach((comment) => {
+      expect(comment.handle).toEqual(expect.any(String))
+      expect(comment.body).toEqual(expect.any(String))
+      expectOnlyAllowedKeys(comment, allowedCommentKeys)
+      expectNoForbiddenFields(comment)
+    })
+
+    expect(regularMarket?.featuredComments).toBeUndefined()
   })
 
   it('finds known public market details and returns undefined for unknown ids', () => {

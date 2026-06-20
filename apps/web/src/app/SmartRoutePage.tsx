@@ -43,6 +43,16 @@ function QuickMenuAliasPage() {
   return null
 }
 
+function LegacyRouteRedirect({ pathname }: { pathname: string }) {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    navigate(pathname, { replace: true })
+  }, [navigate, pathname])
+
+  return null
+}
+
 export function SmartRoutePage() {
   const { pathname } = useLocation()
   const { hasCategoryPath, isLoading: discoveryIsLoading } = useDiscoveryData()
@@ -78,6 +88,10 @@ export function SmartRoutePage() {
 
   if (pathname === '/zh/menu') {
     return <QuickMenuAliasPage />
+  }
+
+  if (pathname === '/zh/weather') {
+    return <LegacyRouteRedirect pathname="/zh/dao" />
   }
 
   if (pathname === '/zh/pages') {

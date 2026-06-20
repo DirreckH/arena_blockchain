@@ -79,10 +79,11 @@ class InternalDiscoverySecondaryCapsuleDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(["all", "general", "politics", "sports", "tech", "research", "culture"])
+  @IsIn(["all", "general", "dao", "politics", "sports", "tech", "research", "culture"])
   baseRankingId?:
     | 'all'
     | 'general'
+    | 'dao'
     | 'politics'
     | 'sports'
     | 'tech'
@@ -104,6 +105,10 @@ class InternalDiscoveryRankingCategoryLabelsDto {
   @IsOptional()
   @IsString()
   general?: string;
+
+  @IsOptional()
+  @IsString()
+  dao?: string;
 
   @IsOptional()
   @IsString()

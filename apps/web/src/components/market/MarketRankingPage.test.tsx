@@ -51,6 +51,13 @@ describe('MarketRankingPage', () => {
     expect(screen.queryByRole('heading', { name: BREAKING_PAGE_CONFIG.title })).not.toBeInTheDocument()
   })
 
+  it('renders twelve ranked rows on breaking pages when twelve items are configured', () => {
+    renderRankingPage(BREAKING_PAGE_CONFIG)
+
+    const rankingList = screen.getByRole('list', { name: BREAKING_PAGE_CONFIG.listAriaLabel })
+    expect(within(rankingList).getAllByRole('listitem')).toHaveLength(12)
+  })
+
   it('renders the ranking list without the banner hero on hot pages', () => {
     const { container } = renderRankingPage(HOT_PAGE_CONFIG)
 
@@ -59,6 +66,13 @@ describe('MarketRankingPage', () => {
     expect(screen.getByRole('heading', { name: HOT_PAGE_CONFIG.items[0].title })).toBeInTheDocument()
     expect(container.querySelector('.breaking-hero')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: HOT_PAGE_CONFIG.title })).not.toBeInTheDocument()
+  })
+
+  it('renders twelve ranked rows on hot pages when twelve items are configured', () => {
+    renderRankingPage(HOT_PAGE_CONFIG)
+
+    const rankingList = screen.getByRole('list', { name: HOT_PAGE_CONFIG.listAriaLabel })
+    expect(within(rankingList).getAllByRole('listitem')).toHaveLength(12)
   })
 
   it('hides the search bar by default', () => {

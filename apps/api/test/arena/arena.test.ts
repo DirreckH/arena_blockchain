@@ -58,6 +58,7 @@ const propositionDraftInput = {
   category:
     "general" as
       | "general"
+      | "dao"
       | "sports"
       | "ai"
       | "brand_research"
@@ -278,7 +279,14 @@ async function createSubmittedResponse(
   harness: ReturnType<typeof createArenaHarness>,
   input: {
     userId: string;
-    category?: "general" | "sports" | "ai" | "brand_research" | "politics" | "entertainment";
+    category?:
+      | "general"
+      | "dao"
+      | "sports"
+      | "ai"
+      | "brand_research"
+      | "politics"
+      | "entertainment";
     minuteOffset: number;
   },
 ) {
@@ -312,7 +320,14 @@ async function createReviewedResponse(
   harness: ReturnType<typeof createArenaHarness>,
   input: {
     userId: string;
-    category?: "general" | "sports" | "ai" | "brand_research" | "politics" | "entertainment";
+    category?:
+      | "general"
+      | "dao"
+      | "sports"
+      | "ai"
+      | "brand_research"
+      | "politics"
+      | "entertainment";
     minuteOffset: number;
     reviewStatus?: "valid" | "partial_valid" | "invalid" | "fraud_suspected";
     flags?: string[];
@@ -417,7 +432,14 @@ async function createParticipationHistory(
   harness: ReturnType<typeof createArenaHarness>,
   input: {
     userId: string;
-    category: "general" | "sports" | "ai" | "brand_research" | "politics" | "entertainment";
+    category:
+      | "general"
+      | "dao"
+      | "sports"
+      | "ai"
+      | "brand_research"
+      | "politics"
+      | "entertainment";
     count: number;
     startMinuteOffset: number;
   },
@@ -435,7 +457,14 @@ async function createReviewedHistory(
   harness: ReturnType<typeof createArenaHarness>,
   input: {
     userId: string;
-    category: "general" | "sports" | "ai" | "brand_research" | "politics" | "entertainment";
+    category:
+      | "general"
+      | "dao"
+      | "sports"
+      | "ai"
+      | "brand_research"
+      | "politics"
+      | "entertainment";
     count: number;
     startMinuteOffset: number;
     reviewStatus: "valid" | "partial_valid" | "invalid" | "fraud_suspected";
@@ -3780,6 +3809,7 @@ test("public discovery merges persisted discovery-config overrides into public o
     rankingCategoryLabels: {
       all: "全部赛道",
       general: "综合",
+      dao: "DAO",
       politics: "政策",
       sports: "竞技",
       tech: "科技",
@@ -4530,6 +4560,25 @@ test("participation category changes recompute interest tags and expire stale ta
   assert.equal(aiTag?.expiresAt, null);
   assert.ok(sportsTag);
   assert.notEqual(sportsTag?.expiresAt, null);
+});
+
+test("dao participation generates the dao interest tag", async () => {
+  const harness = createArenaHarness();
+
+  for (let index = 0; index < 4; index += 1) {
+    await createSubmittedResponse(harness, {
+      userId: "tag_dao_user",
+      category: "dao",
+      minuteOffset: index,
+    });
+  }
+
+  const internalView = await harness.tagService.getInternalViewForUser("tag_dao_user");
+  const currentKeys = internalView.tags
+    .filter((tag) => tag.expiresAt === null && tag.tagType === "interest")
+    .map((tag) => tag.tagKey);
+
+  assert.deepEqual(currentKeys, ["interested_in_dao"]);
 });
 
 test("low-sample respondents do not receive aggressive quality or interest tags", async () => {

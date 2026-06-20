@@ -113,6 +113,7 @@ describe('OpsConsolePage demo operator flow', () => {
       rankingCategoryLabels: {
         all: '全部赛道',
         general: '综合',
+        dao: 'DAO',
         politics: '政策轨道',
         sports: '竞技赛道',
         tech: '科技',

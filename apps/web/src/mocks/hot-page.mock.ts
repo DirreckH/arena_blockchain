@@ -1,16 +1,54 @@
-import { eventHref } from './arena-market.mock'
+import { eventHref, marketCards } from './arena-market.mock'
 import {
   filterRankedMarketItems,
   type RankedMarketFilterId,
+  type RankedMarketPageItem,
   type RankedMarketPageConfig,
 } from './ranked-market-page.mock'
+
+const hotMarketCardById = new Map(marketCards.map((market) => [market.id, market]))
+
+function buildHotItem(
+  marketId: string,
+  score: number,
+  change: number,
+  sparkline: number[],
+  categoryIds: RankedMarketPageItem['categoryIds'],
+  options?: {
+    id?: string
+    isVerified?: boolean
+    tileLabel?: RankedMarketPageItem['tileLabel']
+    tileTone?: RankedMarketPageItem['tileTone']
+  },
+): RankedMarketPageItem {
+  const market = hotMarketCardById.get(marketId)
+
+  if (!market) {
+    throw new Error(`Missing hot ranking market fixture for ${marketId}`)
+  }
+
+  return {
+    id: options?.id ?? `hot-${marketId}`,
+    href: eventHref(marketId),
+    title: market.title,
+    score,
+    change,
+    imageSrc: market.image,
+    imageAlt: market.title,
+    tileLabel: options?.tileLabel,
+    tileTone: options?.tileTone,
+    sparkline,
+    categoryIds,
+    isVerified: options?.isVerified,
+  }
+}
 
 export const HOT_PAGE_CONFIG: RankedMarketPageConfig = {
   pageClassName: 'hot-page',
   heroVariant: 'hot',
   dateLabel: '最近 7 天',
   title: '近期热门',
-  description: '查看过去 7 天内关注度最高的验证命题',
+  description: '查看过去 7 天内讨论度最高、传播性最强的 Arena 共识命题',
   categoryAriaLabel: 'Hot market categories',
   listAriaLabel: 'Hot markets',
   categories: [
@@ -24,95 +62,18 @@ export const HOT_PAGE_CONFIG: RankedMarketPageConfig = {
     { id: 'culture', label: '文化' },
   ],
   items: [
-    {
-      id: 'hot-public-trust',
-      href: eventHref('public-trust'),
-      title: '公众是否认为本季度公共服务响应速度有所改善？',
-      score: 98,
-      change: 26,
-      imageSrc: '/arena-assets/kash-patel.jpg',
-      imageAlt: 'Public service discussion portrait',
-      sparkline: [44, 48, 51, 55, 62, 68, 74, 81, 89, 98],
-      categoryIds: ['politics', 'finance'],
-      isVerified: true,
-    },
-    {
-      id: 'hot-regional-dialogue',
-      href: eventHref('regional-dialogue'),
-      title: '区域外交会谈是否会在公开窗口内形成可验证结果？',
-      score: 94,
-      change: 21,
-      imageSrc: '/arena-assets/iran-meeting.jpg',
-      imageAlt: 'Regional diplomacy meeting',
-      sparkline: [36, 40, 43, 46, 53, 60, 66, 72, 84, 94],
-      categoryIds: ['global', 'politics'],
-    },
-    {
-      id: 'hot-btc-network-fee',
-      href: eventHref('btc-network-fee'),
-      title: '比特币网络手续费是否会在本月维持高拥堵状态？',
-      score: 91,
-      change: 19,
-      imageSrc: '/arena-assets/btc.png',
-      imageAlt: 'Bitcoin icon',
-      sparkline: [32, 35, 38, 46, 49, 57, 63, 74, 83, 91],
-      categoryIds: ['crypto', 'finance', 'tech'],
-    },
-    {
-      id: 'hot-ai-model-review',
-      href: eventHref('ai-model-review'),
-      title: '开发者对下一代 AI 工具链的可验证满意度调研',
-      score: 88,
-      change: 18,
-      imageSrc: '/arena-assets/ai-model.jpg',
-      imageAlt: 'AI model panel',
-      sparkline: [28, 33, 35, 41, 48, 56, 61, 69, 77, 88],
-      categoryIds: ['tech'],
-    },
-    {
-      id: 'hot-nba-final-consensus',
-      href: eventHref('nba-final-consensus'),
-      title: '球迷对 2026 总决赛公开结果的赛前共识调研',
-      score: 84,
-      change: 17,
-      imageSrc: '/arena-assets/nba.jpg',
-      imageAlt: 'Basketball arena',
-      sparkline: [30, 32, 39, 43, 47, 55, 59, 67, 73, 84],
-      categoryIds: ['sports'],
-    },
-    {
-      id: 'hot-f1-season-result',
-      href: eventHref('f1-season-result'),
-      title: 'F1 赛季公开积分结果的验证层观察命题',
-      score: 79,
-      change: 14,
-      tileLabel: 'F1',
-      tileTone: 'f1',
-      sparkline: [27, 30, 34, 36, 42, 49, 54, 60, 69, 79],
-      categoryIds: ['sports'],
-    },
-    {
-      id: 'hot-ceasefire-durability',
-      href: eventHref('ceasefire-durability'),
-      title: '停火安排是否会在观察期内保持公开可验证状态？',
-      score: 74,
-      change: 12,
-      imageSrc: '/arena-assets/iran-peace.jpg',
-      imageAlt: 'Ceasefire update visual',
-      sparkline: [24, 28, 31, 35, 40, 45, 49, 57, 66, 74],
-      categoryIds: ['global'],
-    },
-    {
-      id: 'hot-rolling-temperature',
-      href: eventHref('rolling-temperature'),
-      title: '城市日温度滚动命题的上一期开奖结果是否完成归档？',
-      score: 68,
-      change: 11,
-      imageSrc: '/arena-assets/iran-peace.jpg',
-      imageAlt: 'Rolling result archive visual',
-      sparkline: [22, 24, 27, 31, 35, 39, 46, 54, 61, 68],
-      categoryIds: ['culture'],
-    },
+    buildHotItem('sports-messi-ronaldo-goat', 99, 34, [41, 46, 51, 58, 64, 71, 79, 86, 93, 99], ['sports', 'culture'], { isVerified: true }),
+    buildHotItem('culture-concert-ticket-chaos', 96, 30, [38, 43, 47, 53, 60, 66, 73, 81, 89, 96], ['culture']),
+    buildHotItem('tech-ai-search-habit', 93, 27, [35, 38, 42, 47, 54, 60, 68, 76, 85, 93], ['tech']),
+    buildHotItem('crypto-meme-vs-ai-coins', 91, 25, [32, 36, 40, 45, 49, 57, 64, 73, 82, 91], ['crypto', 'finance', 'tech']),
+    buildHotItem('finance-fed-one-liner', 88, 23, [28, 31, 35, 40, 46, 52, 59, 67, 77, 88], ['finance']),
+    buildHotItem('sports-hamilton-ferrari-spotlight', 85, 21, [27, 30, 34, 38, 44, 50, 57, 65, 74, 85], ['sports', 'culture'], { tileLabel: 'F1', tileTone: 'f1' }),
+    buildHotItem('politics-short-video-turnout', 82, 20, [25, 27, 31, 36, 41, 47, 54, 62, 72, 82], ['politics', 'culture']),
+    buildHotItem('geo-summit-photo-signal', 79, 18, [23, 26, 30, 34, 39, 44, 50, 58, 67, 79], ['global', 'politics']),
+    buildHotItem('culture-red-carpet-over-awards', 76, 17, [20, 24, 27, 31, 36, 41, 48, 56, 66, 76], ['culture']),
+    buildHotItem('tech-robot-videos-viral', 73, 15, [18, 21, 24, 29, 33, 38, 44, 51, 61, 73], ['tech', 'culture']),
+    buildHotItem('rolling-one-episode-viral', 71, 14, [17, 20, 23, 27, 31, 36, 42, 49, 59, 71], ['culture']),
+    buildHotItem('surveys-friend-vs-kol', 68, 13, [16, 18, 21, 24, 28, 33, 39, 45, 55, 68], ['tech', 'culture']),
   ],
 }
 

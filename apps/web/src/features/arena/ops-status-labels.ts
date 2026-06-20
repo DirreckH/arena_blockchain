@@ -108,6 +108,7 @@ const REHEARSAL_STEP_ID: LabelMap = {
 
 const CATEGORY: LabelMap = {
   general: '综合',
+  dao: 'DAO',
   sports: '体育竞技',
   ai: 'AI / 科技',
   brand_research: '消费者调研',
